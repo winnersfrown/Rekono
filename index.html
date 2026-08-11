@@ -608,7 +608,38 @@
   footer nav { display: flex; gap: 22px; font-size: 0.85rem; }
   footer nav a { text-decoration: none; color: var(--muted); }
   footer nav a:hover { color: var(--paper); }
+
+  /* ---------- scroll reveal ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-delay, 0s);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .proof-strip .proof-item:nth-child(1) { --reveal-delay: 0s; }
+  .proof-strip .proof-item:nth-child(2) { --reveal-delay: 0.08s; }
+  .proof-strip .proof-item:nth-child(3) { --reveal-delay: 0.16s; }
+  .feature-grid .feature-card:nth-child(1) { --reveal-delay: 0s; }
+  .feature-grid .feature-card:nth-child(2) { --reveal-delay: 0.07s; }
+  .feature-grid .feature-card:nth-child(3) { --reveal-delay: 0.14s; }
+  .feature-grid .feature-card:nth-child(4) { --reveal-delay: 0.07s; }
+  .feature-grid .feature-card:nth-child(5) { --reveal-delay: 0.14s; }
+  .feature-grid .feature-card:nth-child(6) { --reveal-delay: 0.21s; }
+  .pricing-grid .price-card:nth-child(1) { --reveal-delay: 0s; }
+  .pricing-grid .price-card:nth-child(2) { --reveal-delay: 0.07s; }
+  .pricing-grid .price-card:nth-child(3) { --reveal-delay: 0.14s; }
+  .pricing-grid .price-card:nth-child(4) { --reveal-delay: 0.21s; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { transition-delay: 0s !important; }
+  }
 </style>
+<noscript><style>.reveal{opacity:1!important;transform:none!important;}</style></noscript>
+
 
 <header class="site-header">
   <div class="wrap">
@@ -684,17 +715,17 @@
   <!-- PROOF STRIP -->
   <section class="proof-strip">
     <div class="wrap">
-      <div class="proof-item">
+      <div class="proof-item reveal">
         <span class="proof-num">Cross-checked</span>
         <h3>Line items vs. totals, every time</h3>
         <p>Every extraction is checked against its own math before it reaches you — not just scored, verified.</p>
       </div>
-      <div class="proof-item">
+      <div class="proof-item reveal">
         <span class="proof-num">Confidence-scored</span>
         <h3>Nothing is silently guessed</h3>
         <p>Fields the model isn't sure about are flagged for a human, not shipped straight to your ledger.</p>
       </div>
-      <div class="proof-item">
+      <div class="proof-item reveal">
         <span class="proof-num">Fully audited</span>
         <h3>Every decision, attributable</h3>
         <p>Corrections, approvals, and matches are logged with who, when, and what changed.</p>
@@ -705,7 +736,7 @@
   <!-- HOW IT WORKS -->
   <section class="block" id="how-it-works">
     <div class="wrap">
-      <div class="block-head">
+      <div class="block-head reveal">
         <span class="eyebrow">How it works</span>
         <h2>One pipeline, from inbox to reconciled record.</h2>
         <p class="sub">Five steps, in order — each one a real stage the document passes through, not a marketing simplification.</p>
@@ -714,7 +745,7 @@
       <div class="steps">
         <div class="step">
           <div class="step-num-col"><span class="step-num">01</span><span class="step-rail"></span></div>
-          <div class="step-body">
+          <div class="step-body reveal">
             <h3>Upload</h3>
             <p>Drop in a PDF or a photo of an invoice, one at a time or as a batch. It's queued immediately and processed in the background — nothing blocks on the upload.</p>
             <span class="step-tag">async job queue</span>
@@ -722,7 +753,7 @@
         </div>
         <div class="step">
           <div class="step-num-col"><span class="step-num">02</span><span class="step-rail"></span></div>
-          <div class="step-body">
+          <div class="step-body reveal">
             <h3>Read</h3>
             <p>OCR lifts the raw text from the page, then a language model parses it into a fixed schema — vendor, dates, PO reference, line items, tax, and totals.</p>
             <span class="step-tag">OCR + structured extraction</span>
@@ -730,7 +761,7 @@
         </div>
         <div class="step">
           <div class="step-num-col"><span class="step-num">03</span><span class="step-rail"></span></div>
-          <div class="step-body">
+          <div class="step-body reveal">
             <h3>Check</h3>
             <p>Line items are summed and compared against the stated total. Every field also carries its own self-reported confidence score.</p>
             <span class="step-tag">automatic cross-check</span>
@@ -738,7 +769,7 @@
         </div>
         <div class="step">
           <div class="step-num-col"><span class="step-num">04</span><span class="step-rail"></span></div>
-          <div class="step-body">
+          <div class="step-body reveal">
             <h3>Review</h3>
             <p>Anything below the confidence bar — or that fails the cross-check — lands in the review queue. Source document and extracted fields sit side by side; corrections are one click and get logged.</p>
             <span class="step-tag">human-in-the-loop</span>
@@ -746,7 +777,7 @@
         </div>
         <div class="step">
           <div class="step-num-col"><span class="step-num">05</span></div>
-          <div class="step-body">
+          <div class="step-body reveal">
             <h3>Reconcile &amp; export</h3>
             <p>Approved invoices are fuzzy-matched against your PO list or bank statement — vendor name, amount tolerance, date window — then exported to CSV or Excel, or synced onward.</p>
             <span class="step-tag">matching engine + export</span>
@@ -759,39 +790,39 @@
   <!-- FEATURES -->
   <section class="block" id="features">
     <div class="wrap">
-      <div class="block-head">
+      <div class="block-head reveal">
         <span class="eyebrow">Features</span>
         <h2>Built for the part of AP automation people don't trust yet.</h2>
         <p class="sub">Every feature here exists because "fully autonomous" isn't a real option for your books — "flags what needs a human" is.</p>
       </div>
 
       <div class="feature-grid">
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Extraction</span>
           <h3>Structured, every time</h3>
           <p>Vendor, invoice number, dates, PO reference, line items, tax, and totals — pulled into one consistent schema regardless of layout.</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Trust</span>
           <h3>Confidence scoring</h3>
           <p>Every field carries its own score. A cross-check of line items against the stated total catches what confidence alone misses.</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Review</span>
           <h3>Human review queue</h3>
           <p>Low-confidence fields are flagged, not shipped. Correct them side by side with the source document in a single pass.</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Reconciliation</span>
           <h3>Fuzzy matching engine</h3>
           <p>Vendor names, amounts, and dates matched against your POs or bank statement, with tolerance rules — not exact-string demands.</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Compliance</span>
           <h3>Full audit trail</h3>
           <p>Every extraction, correction, approval, and match decision is logged — who made it, when, and exactly what changed.</p>
         </div>
-        <div class="feature-card">
+        <div class="feature-card reveal">
           <span class="f-tag">Output</span>
           <h3>Export &amp; sync</h3>
           <p>CSV and Excel today, built on the same data your ledger needs next — QuickBooks, Xero, and NetSuite sync are on the roadmap.</p>
@@ -803,14 +834,14 @@
   <!-- PRICING -->
   <section class="block" id="pricing">
     <div class="wrap">
-      <div class="block-head">
+      <div class="block-head reveal">
         <span class="eyebrow">Pricing</span>
         <h2>Flat monthly plans with a document cap.</h2>
         <p class="sub">No per-document metering to watch nervously. Every plan runs the same extraction, review, and matching engine — you're paying for volume and support.</p>
       </div>
 
       <div class="pricing-grid">
-        <div class="price-card">
+        <div class="price-card reveal">
           <div class="plan-tag">Starter</div>
           <h3>For a single AP owner</h3>
           <div class="price">$99<span class="per">/mo</span></div>
@@ -824,7 +855,7 @@
           <a href="#final-cta" class="btn btn-ghost">Start free</a>
         </div>
 
-        <div class="price-card featured">
+        <div class="price-card featured reveal">
           <div class="plan-tag">Growth <span class="plan-badge">Most teams start here</span></div>
           <h3>For a small AP team</h3>
           <div class="price">$249<span class="per">/mo</span></div>
@@ -838,7 +869,7 @@
           <a href="#final-cta" class="btn btn-primary">Start free</a>
         </div>
 
-        <div class="price-card">
+        <div class="price-card reveal">
           <div class="plan-tag">Business</div>
           <h3>For growing volume</h3>
           <div class="price">$499<span class="per">/mo</span></div>
@@ -852,7 +883,7 @@
           <a href="#final-cta" class="btn btn-ghost">Start free</a>
         </div>
 
-        <div class="price-card">
+        <div class="price-card reveal">
           <div class="plan-tag">Enterprise</div>
           <h3>For custom deployments</h3>
           <div class="price">Custom</div>
@@ -874,41 +905,41 @@
   <!-- FAQ -->
   <section class="block" id="faq">
     <div class="wrap">
-      <div class="block-head">
+      <div class="block-head reveal">
         <span class="eyebrow">FAQ</span>
         <h2>Questions worth answering before you upload anything.</h2>
       </div>
 
       <div class="faq-list">
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>What file types does Rekono accept?<span class="q-mark">+</span></summary>
           <div class="a">PDF and common image formats — PNG, JPG, TIFF, BMP, WEBP. If you can scan it or photograph it, Rekono can read it.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>What happens to invoices Rekono isn't confident about?<span class="q-mark">+</span></summary>
           <div class="a">They're routed to the review queue instead of auto-approved. You see the source document and the extracted fields side by side, correct whatever's off, and the correction is written to the audit log.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>How does matching actually work?<span class="q-mark">+</span></summary>
           <div class="a">Rekono fuzzy-matches vendor name, amount (within a tolerance you set — percentage or flat dollar), and a date window against an uploaded PO list or bank statement, plus an exact PO/reference check when one is present on the invoice.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>Can I try it without an API key?<span class="q-mark">+</span></summary>
           <div class="a">Yes. Without a key, Rekono falls back to a heuristic extractor so you can run the full pipeline end to end. Production-grade extraction runs on a Claude API key you provide.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>Is there an audit trail?<span class="q-mark">+</span></summary>
           <div class="a">Every extraction, human correction, approval, rejection, and match decision is written to an audit log with a timestamp and who did it — the record accounting and compliance conversations ask for.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>Do you integrate with QuickBooks, Xero, or NetSuite?<span class="q-mark">+</span></summary>
           <div class="a">Not yet. CSV and Excel export ship today, built on the same data those integrations will need — direct sync is next on the roadmap as we work with early customers.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>Can I self-host it?<span class="q-mark">+</span></summary>
           <div class="a">Yes — Rekono runs on Postgres or SQLite and ships with a Dockerfile and docker-compose setup for running it entirely on your own infrastructure.</div>
         </details>
-        <details class="faq-item">
+        <details class="faq-item reveal">
           <summary>What happens if I go over my document cap?<span class="q-mark">+</span></summary>
           <div class="a">You're billed a per-document overage rate rather than cut off mid-month or forced into a plan change. You'll see it coming before it happens.</div>
         </details>
@@ -918,7 +949,7 @@
 
   <!-- FINAL CTA -->
   <section class="final-cta" id="final-cta">
-    <div class="wrap">
+    <div class="wrap reveal">
       <span class="eyebrow">Get started</span>
       <h2 style="margin-top:16px;">Stop retyping invoices.</h2>
       <p class="sub">Start free, no card required — or talk to us if you've got a real pile of invoices and want to build the matching rules around them together.</p>
@@ -945,3 +976,26 @@
     </nav>
   </div>
 </footer>
+
+<script>
+(function () {
+  var items = document.querySelectorAll('.reveal');
+  if (!items.length) return;
+
+  if (!('IntersectionObserver' in window) || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    items.forEach(function (el) { el.classList.add('is-visible'); });
+    return;
+  }
+
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+
+  items.forEach(function (el) { observer.observe(el); });
+})();
+</script>
