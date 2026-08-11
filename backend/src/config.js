@@ -33,4 +33,12 @@ export const settings = {
 
   secretKey: loadOrCreateSecretKey(),
   accessTokenExpiresIn: "14d",
+
+  // Contact form (marketing site "Talk to us"). Unset RESEND_API_KEY ->
+  // POST /api/contact responds 503 rather than crashing, so the form can
+  // ship before the account exists and fail loudly (not silently) until
+  // it's configured.
+  resendApiKey: process.env.RESEND_API_KEY || "",
+  contactToEmail: process.env.CONTACT_TO_EMAIL || "aiden.lai@yahoo.com",
+  contactFromEmail: process.env.CONTACT_FROM_EMAIL || "onboarding@resend.dev",
 };

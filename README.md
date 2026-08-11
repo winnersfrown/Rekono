@@ -158,10 +158,20 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/hea
 | `POST /api/matching/run` | Run the matching engine over all extracted invoices |
 | `GET /api/matching/results` | All match results (newest first) |
 | `GET /api/export/csv` \| `/api/export/xlsx` | Export all invoices with status + latest match result |
+| `POST /api/contact` | Public (no auth) -- the marketing site's "Talk to us" form. Rate-limited, honeypot-protected. |
 
 ## Configuration
 
 See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an invoice is flagged `needs_review` instead of fast-tracked as `extracted`), and `MATCH_AMOUNT_TOLERANCE_PCT` / `MATCH_AMOUNT_TOLERANCE_ABS` / `MATCH_DATE_WINDOW_DAYS` / `MATCH_VENDOR_SCORE_THRESHOLD` for the matching engine.
+
+### Contact form email (Resend)
+
+`POST /api/contact` sends through [Resend](https://resend.com) and needs `RESEND_API_KEY` set, or it responds `503` (the marketing site's contact modal falls back to a `mailto:` link automatically when that happens, so the form degrading gracefully doesn't mean visitors are stuck).
+
+1. Sign up at [resend.com](https://resend.com) (free tier: 3,000 emails/month, 100/day).
+2. Get an API key from the dashboard (**API Keys → Create API Key**).
+3. Set `RESEND_API_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally).
+4. By default, `CONTACT_FROM_EMAIL` is `onboarding@resend.dev` -- Resend's shared sandbox sender, which works without any domain setup as long as `CONTACT_TO_EMAIL` (defaults to `aiden.lai@yahoo.com`) is the same address you signed up to Resend with. To send from your own domain instead, verify it in Resend (**Domains** tab) and set `CONTACT_FROM_EMAIL` to an address at that domain.
 
 ## Roadmap (beyond this MVP)
 

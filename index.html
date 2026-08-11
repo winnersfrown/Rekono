@@ -637,6 +637,86 @@
   @media (prefers-reduced-motion: reduce) {
     .reveal { transition-delay: 0s !important; }
   }
+
+  /* ---------- contact modal ---------- */
+  .contact-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .contact-modal.is-open { display: flex; }
+  .contact-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 11, 24, 0.72);
+    backdrop-filter: blur(3px);
+  }
+  .contact-modal-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 440px;
+    background: var(--ink-900);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 30px 28px 26px;
+    box-shadow: 0 40px 90px -30px rgba(0,0,0,0.65);
+  }
+  .contact-modal-card h2 { font-size: 1.3rem; margin-bottom: 8px; }
+  .contact-modal-card .hint { margin-bottom: 20px; }
+  .contact-modal-close {
+    position: absolute;
+    top: 14px; right: 14px;
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .contact-modal-close:hover { color: var(--paper); border-color: var(--blue-bright); }
+  #contact-form { display: flex; flex-direction: column; gap: 14px; }
+  #contact-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  #contact-form input,
+  #contact-form textarea {
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    color: var(--paper);
+    background: var(--ink-850);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 10px 12px;
+    resize: vertical;
+  }
+  #contact-form input:focus,
+  #contact-form textarea:focus { outline: 2px solid var(--blue-bright); outline-offset: 1px; }
+  .contact-honeypot { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  #contact-form button[type="submit"] { margin-top: 4px; }
+  .contact-status {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 7px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .contact-status.status-ok { background: rgba(62,203,132,0.1); border: 1px solid rgba(62,203,132,0.3); color: var(--green); }
+  .contact-status.status-error { background: rgba(232,169,59,0.1); border: 1px solid rgba(232,169,59,0.3); color: var(--amber); }
+  .contact-status a { color: inherit; text-decoration: underline; }
 </style>
 <noscript><style>.reveal{opacity:1!important;transform:none!important;}</style></noscript>
 
@@ -977,6 +1057,26 @@
   </div>
 </footer>
 
+
+<div id="contact-modal" class="contact-modal" aria-hidden="true">
+  <div class="contact-modal-backdrop" data-close-modal></div>
+  <div class="contact-modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title">
+    <button type="button" class="contact-modal-close" data-close-modal aria-label="Close">&times;</button>
+    <h2 id="contact-modal-title">Talk to us</h2>
+    <p class="hint">Tell us a bit about what you're looking for and we'll get back to you.</p>
+    <form id="contact-form">
+      <label>Name<input type="text" id="contact-name" required maxlength="256" /></label>
+      <label>Email<input type="email" id="contact-email" required /></label>
+      <label>Message<textarea id="contact-message" rows="4" required maxlength="5000"></textarea></label>
+      <div class="contact-honeypot" aria-hidden="true">
+        <label>Company<input type="text" id="contact-company" tabindex="-1" autocomplete="off" /></label>
+      </div>
+      <button type="submit" class="btn btn-primary">Send message</button>
+    </form>
+    <div id="contact-status" class="contact-status" hidden></div>
+  </div>
+</div>
+
 <script>
 (function () {
   var items = document.querySelectorAll('.reveal');
@@ -997,5 +1097,88 @@
   }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
 
   items.forEach(function (el) { observer.observe(el); });
+})();
+</script>
+
+<script>
+(function () {
+  var API_BASE = 'https://rekono-crv7.onrender.com';
+  var modal = document.getElementById('contact-modal');
+  var form = document.getElementById('contact-form');
+  var statusEl = document.getElementById('contact-status');
+  var triggers = document.querySelectorAll('a[href^="mailto:aiden.lai@yahoo.com"]');
+
+  function openModal(e) {
+    if (e) e.preventDefault();
+    statusEl.hidden = true;
+    statusEl.className = 'contact-status';
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.getElementById('contact-name').focus();
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  triggers.forEach(function (el) { el.addEventListener('click', openModal); });
+  modal.querySelectorAll('[data-close-modal]').forEach(function (el) {
+    el.addEventListener('click', closeModal);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+  });
+
+  function showStatus(kind, html) {
+    statusEl.hidden = false;
+    statusEl.className = 'contact-status status-' + kind;
+    statusEl.innerHTML = html;
+  }
+
+  var MAILTO_FALLBACK = 'mailto:aiden.lai@yahoo.com?subject=Rekono%20contact%20form';
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+
+    var payload = {
+      name: document.getElementById('contact-name').value.trim(),
+      email: document.getElementById('contact-email').value.trim(),
+      message: document.getElementById('contact-message').value.trim(),
+      company: document.getElementById('contact-company').value,
+    };
+
+    fetch(API_BASE + '/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(function (res) {
+        return res.json().then(function (body) { return { ok: res.ok, body: body }; });
+      })
+      .then(function (result) {
+        if (result.ok) {
+          showStatus('ok', "Message sent \u2014 we'll get back to you soon.");
+          form.reset();
+        } else {
+          showStatus(
+            'error',
+            (result.body && result.body.detail ? result.body.detail : 'Something went wrong.') +
+              ' <a href="' + MAILTO_FALLBACK + '">Email us directly instead \u2192</a>'
+          );
+        }
+      })
+      .catch(function () {
+        showStatus(
+          'error',
+          'Couldn\'t reach the server. <a href="' + MAILTO_FALLBACK + '">Email us directly instead \u2192</a>'
+        );
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+      });
+  });
 })();
 </script>
