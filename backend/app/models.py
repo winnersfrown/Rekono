@@ -23,6 +23,35 @@ def _uuid() -> str:
     return uuid.uuid4().hex
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    users: Mapped[list["User"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+
+
+class UserRole(str, enum.Enum):
+    OWNER = "owner"
+    MEMBER = "member"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(256))
+    full_name: Mapped[str] = mapped_column(String(256), default="")
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.OWNER)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    organization: Mapped[Organization] = relationship(back_populates="users")
+
+
 class InvoiceStatus(str, enum.Enum):
     QUEUED = "queued"
     PROCESSING = "processing"
@@ -37,6 +66,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
     original_filename: Mapped[str] = mapped_column(String(512))
     storage_path: Mapped[str] = mapped_column(String(1024))
     content_type: Mapped[str] = mapped_column(String(128), default="")
@@ -98,7 +128,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
     invoice_id: Mapped[str | None] = mapped_column(ForeignKey("invoices.id"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(128))
     actor: Mapped[str] = mapped_column(String(256), default="system")
     details: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -116,6 +148,7 @@ class MatchSource(Base):
     __tablename__ = "match_sources"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
     name: Mapped[str] = mapped_column(String(512))
     source_type: Mapped[MatchSourceType] = mapped_column(Enum(MatchSourceType))
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

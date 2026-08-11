@@ -32,7 +32,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   const statusEl = document.getElementById("upload-status");
   statusEl.textContent = "Uploading...";
   try {
-    const res = await fetch("/api/invoices/upload", { method: "POST", body: fd });
+    const res = await apiFetch("/api/invoices/upload", { method: "POST", body: fd });
     if (!res.ok) {
       const err = await res.json();
       statusEl.textContent = `Error: ${err.detail || res.statusText}`;
@@ -48,7 +48,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 });
 
 async function loadRecentUploads() {
-  const res = await fetch("/api/invoices");
+  const res = await apiFetch("/api/invoices");
   const invoices = await res.json();
   const el = document.getElementById("recent-uploads");
   el.innerHTML = "<h3>Recent uploads</h3>" + invoices.slice(0, 8).map((inv) => (
@@ -68,7 +68,7 @@ document.querySelectorAll(".filter-btn").forEach((btn) => {
 
 async function loadInvoices() {
   const qs = state.statusFilter ? `?status=${state.statusFilter}` : "";
-  const res = await fetch(`/api/invoices${qs}`);
+  const res = await apiFetch(`/api/invoices${qs}`);
   const invoices = await res.json();
   const tbody = document.querySelector("#invoice-table tbody");
   tbody.innerHTML = invoices.map((inv) => `
@@ -87,7 +87,7 @@ async function loadInvoices() {
 
 async function selectInvoice(id) {
   state.selectedInvoiceId = id;
-  const res = await fetch(`/api/invoices/${id}`);
+  const res = await apiFetch(`/api/invoices/${id}`);
   const inv = await res.json();
   renderDetail(inv);
 }
@@ -197,7 +197,7 @@ async function saveCorrections(id) {
     line_items: lineItems,
   };
 
-  const res = await fetch(`/api/invoices/${id}`, {
+  const res = await apiFetch(`/api/invoices/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -208,14 +208,14 @@ async function saveCorrections(id) {
 }
 
 async function approveInvoice(id) {
-  const res = await fetch(`/api/invoices/${id}/approve`, { method: "POST" });
+  const res = await apiFetch(`/api/invoices/${id}/approve`, { method: "POST" });
   const inv = await res.json();
   renderDetail(inv);
   loadInvoices();
 }
 
 async function rejectInvoice(id) {
-  const res = await fetch(`/api/invoices/${id}/reject`, { method: "POST" });
+  const res = await apiFetch(`/api/invoices/${id}/reject`, { method: "POST" });
   const inv = await res.json();
   renderDetail(inv);
   loadInvoices();
@@ -230,7 +230,7 @@ document.getElementById("source-form").addEventListener("submit", async (e) => {
   const fd = new FormData();
   fd.append("file", fileInput.files[0]);
 
-  const res = await fetch(`/api/matching/sources?source_type=${sourceType}`, { method: "POST", body: fd });
+  const res = await apiFetch(`/api/matching/sources?source_type=${sourceType}`, { method: "POST", body: fd });
   if (!res.ok) {
     const err = await res.json();
     alert(`Error: ${err.detail || res.statusText}`);
@@ -241,7 +241,7 @@ document.getElementById("source-form").addEventListener("submit", async (e) => {
 });
 
 async function loadSources() {
-  const res = await fetch("/api/matching/sources");
+  const res = await apiFetch("/api/matching/sources");
   const sources = await res.json();
   document.getElementById("sources-list").innerHTML = "<h3>Uploaded sources</h3>" + (sources.map((s) => (
     `<div>${s.name} (${s.source_type}) — ${s.entry_count} rows</div>`
@@ -249,7 +249,7 @@ async function loadSources() {
 }
 
 document.getElementById("run-matching-btn").addEventListener("click", async () => {
-  const res = await fetch("/api/matching/run", { method: "POST" });
+  const res = await apiFetch("/api/matching/run", { method: "POST" });
   const summary = await res.json();
   document.getElementById("matching-summary").textContent =
     `Evaluated ${summary.invoices_evaluated} invoices — matched ${summary.matched}, partial ${summary.partial}, unmatched ${summary.unmatched}.`;
@@ -258,8 +258,8 @@ document.getElementById("run-matching-btn").addEventListener("click", async () =
 
 async function loadMatchResults() {
   const [resultsRes, invoicesRes] = await Promise.all([
-    fetch("/api/matching/results"),
-    fetch("/api/invoices"),
+    apiFetch("/api/matching/results"),
+    apiFetch("/api/invoices"),
   ]);
   const results = await resultsRes.json();
   const invoices = await invoicesRes.json();
@@ -286,4 +286,8 @@ async function loadMatchResults() {
 }
 
 // ---- Init ----
-loadRecentUploads();
+// Called by auth.js once a valid session is confirmed (not on script load,
+// since there's nothing to load until we know the user is authenticated).
+function onAuthenticated() {
+  loadRecentUploads();
+}

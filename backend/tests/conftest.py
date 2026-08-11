@@ -38,3 +38,16 @@ def client(tmp_path, monkeypatch):
 
     main.app.dependency_overrides.clear()
     get_settings.cache_clear()
+
+
+def signup(client, email="owner@example.co", org_name="Test Org", password="correcthorse123"):
+    res = client.post(
+        "/api/auth/signup",
+        json={"org_name": org_name, "full_name": "Test Owner", "email": email, "password": password},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["access_token"]
+
+
+def auth_headers(token):
+    return {"Authorization": f"Bearer {token}"}

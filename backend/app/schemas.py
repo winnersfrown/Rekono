@@ -1,6 +1,33 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class SignupRequest(BaseModel):
+    org_name: str = Field(min_length=1, max_length=256)
+    full_name: str = Field(min_length=1, max_length=256)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=256)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    org_id: str
+    email: str
+    full_name: str
+    role: str
 
 
 class LineItemOut(BaseModel):

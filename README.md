@@ -10,6 +10,7 @@ This repo is the MVP described below: upload → extract → review → export �
 2. Review UI: side-by-side source document + editable extracted fields, low-confidence fields highlighted, approve/reject with a full audit trail.
 3. Export approved (or all) invoices to CSV/Excel.
 4. One matching rule: fuzzy vendor name + amount tolerance + date window against an uploaded PO or bank statement CSV.
+5. Accounts: email/password signup creates an organization; every invoice, match source, and audit log entry is scoped to it, so separate customers/teams never see each other's data.
 
 ## Architecture
 
@@ -53,7 +54,9 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Matching/reconciliation engine** (`matching.py`, `routers/matching.py`): fuzzy vendor-name matching (`rapidfuzz`) plus configurable amount tolerance (% and absolute) and a date window, with an exact PO/reference-number match as a strong signal. Produces `matched` / `partial` / `unmatched` with a human-readable reasoning string for every decision — this is the part of the system closest to a constraint-matching problem.
 
-**Data layer** (`models.py`): Postgres in production (SQLite by default for local dev — no separate DB server needed to try it out) via SQLAlchemy. Every extraction, human correction, approval/rejection, and match decision writes an `AuditLog` row — the audit trail that finance/compliance conversations will ask about.
+**Data layer** (`models.py`): Postgres in production (SQLite by default for local dev — no separate DB server needed to try it out) via SQLAlchemy. Every extraction, human correction, approval/rejection, and match decision writes an `AuditLog` row — the audit trail that finance/compliance conversations will ask about. Every table that holds customer data (`Invoice`, `MatchSource`, `AuditLog`) carries an `org_id`, and every query in every router filters by the authenticated user's `org_id` — see `auth.py` and `models.py` (`Organization`, `User`).
+
+**Auth** (`auth.py`, `routers/auth.py`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User`; there's no cross-org signup/invite flow yet (see Roadmap). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint does this for you) for any deployment with more than one replica.
 
 **Output/integration layer** (`routers/export.py`): CSV/Excel export today. QuickBooks/Xero/NetSuite push integrations are additive on top of the same Invoice/MatchResult data (see Roadmap).
 
@@ -91,6 +94,17 @@ docker compose up --build
 
 Runs the app against Postgres instead of SQLite. Set `ANTHROPIC_API_KEY` in your shell environment before `docker compose up` to enable LLM extraction.
 
+### Deploying a live instance (Render)
+
+Everything above runs locally or in your own Docker Compose — nothing is publicly reachable until you deploy it somewhere. `render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions a web service (built from the repo's `Dockerfile`) plus a managed Postgres database and a persistent disk for uploaded files, under **your own** Render account:
+
+1. Push/fork this repo to your own GitHub.
+2. In Render: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and provisions both resources.
+3. Once deployed, set `ANTHROPIC_API_KEY` in the web service's environment variables (Render dashboard) if you want LLM extraction instead of the heuristic fallback — everything else (`DATABASE_URL`, `SECRET_KEY`) is wired up automatically by the Blueprint.
+4. Your app is live at `https://<service-name>.onrender.com`. Sign up from there — that creates the first organization and account.
+
+Both resources default to the **starter** (paid) plan rather than free: Render's free Postgres expires after 30 days, and free web services can't attach a persistent disk, which would silently lose uploaded invoice files on every restart. Edit `render.yaml` yourself if you'd rather accept that tradeoff for a quick test.
+
 ### Tests
 
 ```bash
@@ -102,8 +116,13 @@ Covers the confidence cross-check logic, the fuzzy matching engine, the heuristi
 
 ## API surface
 
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization.
+
 | Endpoint | Purpose |
 |---|---|
+| `POST /api/auth/signup` | Create an organization + first user, returns a bearer token |
+| `POST /api/auth/login` | Email + password → bearer token |
+| `GET /api/auth/me` | Current user, for verifying a stored token |
 | `POST /api/invoices/upload` | Upload a PDF/image; queues extraction |
 | `GET /api/invoices` | List invoices, optional `?status=` filter |
 | `GET /api/invoices/{id}` | Full invoice detail incl. line items, confidence, match results |
