@@ -1,0 +1,50 @@
+# Fly.io app config for Rekono.
+#
+# Deploy (from repo root, with flyctl installed and `fly auth login` done):
+#   fly apps create <your-unique-app-name>      # "rekono-api" is likely taken globally -- pick your own
+#   # edit the `app = "..."` line below to match
+#   fly postgres create --name rekono-db         # separate free-allowance Postgres app
+#   fly postgres attach rekono-db                # wires DATABASE_URL into this app automatically
+#   fly volumes create rekono_storage --size 3   # persistent disk for uploaded invoices
+#   fly secrets set SECRET_KEY=<random value>    # see README for how to generate one
+#   fly secrets set ANTHROPIC_API_KEY=<your key> # optional -- omit to run in heuristic/demo mode
+#   fly deploy
+#
+# See README.md "Deploying a live instance (Fly.io)" for the full walkthrough.
+
+app = "rekono-api" # change this -- app names are global across all Fly users
+primary_region = "iad"
+
+[build]
+
+[env]
+  STORAGE_DIR = "/data/storage"
+  ANTHROPIC_MODEL = "claude-sonnet-5"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  # Kept at 1 rather than letting Fly scale to zero: Rekono processes
+  # uploads on an in-process background worker thread, not tied to any
+  # single HTTP request, so a machine that stops right after an upload
+  # would strand that job mid-pipeline.
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/health"
+
+[mounts]
+  source = "rekono_storage"
+  destination = "/data/storage"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
