@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rekono
+      POSTGRES_PASSWORD: rekono
+      POSTGRES_DB: rekono
+    volumes:
+      - rekono_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql+psycopg2://rekono:rekono@db:5432/rekono
+      STORAGE_DIR: /data/storage
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+    volumes:
+      - rekono_storage:/data/storage
+    ports:
+      - "8000:8000"
+
+volumes:
+  rekono_pgdata:
+  rekono_storage:
