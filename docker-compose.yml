@@ -15,7 +15,7 @@ services:
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql+psycopg2://rekono:rekono@db:5432/rekono
+      DATABASE_URL: postgresql://rekono:rekono@db:5432/rekono
       STORAGE_DIR: /data/storage
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}

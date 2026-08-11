@@ -44,27 +44,29 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
           CSV / Excel export ◀────────────┘
 ```
 
-**Ingestion layer** (`backend/app/storage.py`, `routers/ingestion.py`): accepts direct file upload today. Everything downstream depends only on "there's a normalized PDF/image on disk and an Invoice row" — so email-inbox and watched-folder/Drive ingestion (see Roadmap) are additive front-ends onto the same pipeline, not a redesign.
+**Ingestion layer** (`backend/src/storage.js`, `routes/ingestion.js`): accepts direct file upload today. Everything downstream depends only on "there's a normalized PDF/image on disk and an Invoice row" — so email-inbox and watched-folder/Drive ingestion (see Roadmap) are additive front-ends onto the same pipeline, not a redesign.
 
-**Extraction layer** (`ocr.py`, `extraction.py`, `confidence.py`) — the core IP:
-- OCR via Tesseract (`pytesseract` + `pdf2image`). Swapping in AWS Textract or Google Document AI's purpose-built invoice parser is a drop-in replacement behind `ocr.extract_text`.
-- Structured extraction via Claude, using tool-use to force a fixed JSON schema (vendor, invoice #, dates, PO reference, totals, line items) with a self-reported confidence per field.
+**Extraction layer** (`ocr.js`, `extraction.js`, `confidence.js`) — the core IP:
+- OCR by shelling out to Tesseract + Poppler's `pdftoppm` (same system binaries a Python OCR stack would use, so behavior/accuracy doesn't depend on the runtime language). Swapping in AWS Textract or Google Document AI's purpose-built invoice parser is a drop-in replacement behind `ocr.extractText`.
+- Structured extraction via Claude (`@anthropic-ai/sdk`), using tool-use to force a fixed JSON schema (vendor, invoice #, dates, PO reference, totals, line items) with a self-reported confidence per field.
 - If `ANTHROPIC_API_KEY` isn't set, a heuristic regex extractor takes over so the full pipeline (ingest → extract → review → export → match) still runs end-to-end for demos, tests, and CI. Heuristic fields get a flat, low confidence score, which naturally routes them into the review queue instead of silently shipping bad data.
 - Confidence scoring combines per-field confidence with an automatic cross-check (do line items sum to the total, or subtotal + tax = total?). A failed cross-check pulls overall confidence down independent of what the model claimed.
 
-**Matching/reconciliation engine** (`matching.py`, `routers/matching.py`): fuzzy vendor-name matching (`rapidfuzz`) plus configurable amount tolerance (% and absolute) and a date window, with an exact PO/reference-number match as a strong signal. Produces `matched` / `partial` / `unmatched` with a human-readable reasoning string for every decision — this is the part of the system closest to a constraint-matching problem.
+**Matching/reconciliation engine** (`matching.js`, `routes/matching.js`): fuzzy vendor-name matching (`fuzzball`, a FuzzyWuzzy/rapidfuzz-style token-sort ratio) plus configurable amount tolerance (% and absolute) and a date window, with an exact PO/reference-number match as a strong signal. Produces `matched` / `partial` / `unmatched` with a human-readable reasoning string for every decision — this is the part of the system closest to a constraint-matching problem.
 
-**Data layer** (`models.py`): Postgres in production (SQLite by default for local dev — no separate DB server needed to try it out) via SQLAlchemy. Every extraction, human correction, approval/rejection, and match decision writes an `AuditLog` row — the audit trail that finance/compliance conversations will ask about. Every table that holds customer data (`Invoice`, `MatchSource`, `AuditLog`) carries an `org_id`, and every query in every router filters by the authenticated user's `org_id` — see `auth.py` and `models.py` (`Organization`, `User`).
+**Data layer** (`models/`): Postgres in production (SQLite by default for local dev — no separate DB server needed to try it out) via Sequelize. Every extraction, human correction, approval/rejection, and match decision writes an `AuditLog` row — the audit trail that finance/compliance conversations will ask about. Every table that holds customer data (`Invoice`, `MatchSource`, `AuditLog`) carries an `orgId`, and every route filters by the authenticated user's org — see `auth.js` and `models/` (`Organization`, `User`).
 
-**Auth** (`auth.py`, `routers/auth.py`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User`; there's no cross-org signup/invite flow yet (see Roadmap). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint does this for you) for any deployment with more than one replica.
+**Auth** (`auth.js`, `routes/auth.js`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User`; there's no cross-org signup/invite flow yet (see Roadmap). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint and the Fly.io instructions below both do this for you) for any deployment with more than one replica.
 
-**Output/integration layer** (`routers/export.py`): CSV/Excel export today. QuickBooks/Xero/NetSuite push integrations are additive on top of the same Invoice/MatchResult data (see Roadmap).
+**Output/integration layer** (`routes/export.js`): CSV/Excel export today. QuickBooks/Xero/NetSuite push integrations are additive on top of the same Invoice/MatchResult data (see Roadmap).
 
-**Review UI** (`backend/static/`): a small vanilla-JS single-page app (no build step) — Upload / Review Queue / Matching / Export tabs. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/{id}` and logged to the audit trail.
+**Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) — Upload / Review Queue / Matching / Export tabs, in front of a login/signup gate. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail.
+
+**Stack**: Node.js 22 + Express + Sequelize (SQLite/Postgres), plain JavaScript (ESM, no build step/TypeScript compile) so `docker run`/`node src/server.js` is all it takes to run it, matching the no-build-step philosophy of the frontend it's paired with.
 
 ## Running locally
 
-Requires Python 3.11+, and the Tesseract + Poppler system binaries for OCR:
+Requires Node.js 20+, and the Tesseract + Poppler system binaries for OCR:
 
 ```bash
 # macOS
@@ -74,17 +76,15 @@ sudo apt-get install tesseract-ocr poppler-utils
 ```
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # set ANTHROPIC_API_KEY to enable LLM extraction (optional)
-
 cd backend
-uvicorn app.main:app --reload
+npm install
+cp ../.env.example .env   # set ANTHROPIC_API_KEY to enable LLM extraction (optional)
+npm run dev
 ```
 
 Open http://localhost:8000 for the review UI. Without `ANTHROPIC_API_KEY` set, extraction falls back to the heuristic extractor, so you can exercise the whole pipeline immediately.
 
-Try it with the bundled sample data in `sample_data/`: upload `sample_invoice.pdf` on the Upload tab, then upload `sample_po.csv` (as Purchase Orders) and `sample_bank.csv` (as Bank Statement) on the Matching tab and click "Run Matching". Regenerate the sample PDF with `python sample_data/generate_sample_invoice.py` (needs `pip install reportlab`, not a runtime dependency).
+Try it with the bundled sample data in `sample_data/`: sign up (creates your organization), then upload `sample_invoice.pdf` on the Upload tab, then upload `sample_po.csv` (as Purchase Orders) and `sample_bank.csv` (as Bank Statement) on the Matching tab and click "Run Matching". Regenerate the sample PDF with `python sample_data/generate_sample_invoice.py` (needs `pip install reportlab` -- this one utility script is Python since it's dev-tooling, not part of the running app).
 
 ### Docker
 
@@ -108,7 +108,7 @@ fly apps create <your-unique-app-name>   # "rekono-api" is likely taken globally
 fly postgres create --name rekono-db     # a separate Postgres app, on the same free allowance
 fly postgres attach rekono-db            # wires DATABASE_URL into this app automatically
 fly volumes create rekono_storage --size 3
-fly secrets set SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+fly secrets set SECRET_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 fly secrets set ANTHROPIC_API_KEY=<your key>   # optional -- omit to run in heuristic/demo mode
 fly deploy
 ```
@@ -126,18 +126,16 @@ Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.f
 3. Once deployed, set `ANTHROPIC_API_KEY` in the web service's environment variables (Render dashboard) if you want LLM extraction instead of the heuristic fallback — everything else (`DATABASE_URL`, `SECRET_KEY`) is wired up automatically by the Blueprint.
 4. Your app is live at `https://<service-name>.onrender.com`.
 
-Both resources default to Render's **starter** (paid) plan rather than free, for the same reason as above: free Postgres there expires after 30 days, and free web services can't attach a persistent disk.
-
 Both resources default to the **starter** (paid) plan rather than free: Render's free Postgres expires after 30 days, and free web services can't attach a persistent disk, which would silently lose uploaded invoice files on every restart. Edit `render.yaml` yourself if you'd rather accept that tradeoff for a quick test.
 
 ### Tests
 
 ```bash
 cd backend
-pytest
+npm test
 ```
 
-Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — all without requiring Tesseract, Poppler, or an Anthropic API key, so they run in plain CI.
+Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 24 tests total, all without requiring Tesseract, Poppler, or an Anthropic API key, so they run in plain CI.
 
 ## API surface
 
@@ -150,11 +148,11 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/hea
 | `GET /api/auth/me` | Current user, for verifying a stored token |
 | `POST /api/invoices/upload` | Upload a PDF/image; queues extraction |
 | `GET /api/invoices` | List invoices, optional `?status=` filter |
-| `GET /api/invoices/{id}` | Full invoice detail incl. line items, confidence, match results |
-| `GET /api/invoices/{id}/file` | Serve the original document (for preview) |
-| `PATCH /api/invoices/{id}` | Human corrections; writes an audit log entry |
-| `POST /api/invoices/{id}/approve` \| `/reject` | Review decision |
-| `GET /api/invoices/{id}/audit-log` | Full audit trail for one invoice |
+| `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
+| `GET /api/invoices/:id/file` | Serve the original document (for preview) |
+| `PATCH /api/invoices/:id` | Human corrections; writes an audit log entry |
+| `POST /api/invoices/:id/approve` \| `/reject` | Review decision |
+| `GET /api/invoices/:id/audit-log` | Full audit trail for one invoice |
 | `POST /api/matching/sources?source_type=po\|bank` | Upload a PO or bank statement CSV |
 | `POST /api/matching/run` | Run the matching engine over all extracted invoices |
 | `GET /api/matching/results` | All match results (newest first) |
@@ -168,9 +166,9 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 
 Deliberately not built yet, to keep the MVP demoable and honest about what's real:
 
-- **Email ingestion** (forward invoices to a dedicated address) and **watched folder/Drive integration** — additive front-ends onto `storage.save_upload` + the existing job queue.
-- **Production job queue**: swap the in-process `queue.Queue` worker (`app/jobs.py`) for Celery/RQ or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
-- **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extract_text` for better accuracy on messy scans.
+- **Email ingestion** (forward invoices to a dedicated address) and **watched folder/Drive integration** — additive front-ends onto `storage.js`'s upload handling + the existing job queue.
+- **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
+- **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: push approved invoices to QuickBooks/Xero/NetSuite via API/webhook — this is what makes it sellable rather than a CSV toy, and the natural next step once export is validated with a design partner.
 - **Dashboard**: exceptions queue, reconciliation status, aging report, once there's enough volume for those views to matter.
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.

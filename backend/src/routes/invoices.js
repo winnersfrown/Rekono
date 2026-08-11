@@ -1,0 +1,191 @@
+import { Router } from "express";
+import { z } from "zod";
+import { requireAuth } from "../auth.js";
+import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
+import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
+
+const router = Router();
+
+async function getOwnedInvoice(invoiceId, orgId, options = {}) {
+  const invoice = await Invoice.findOne({
+    where: { id: invoiceId, orgId },
+    include: [{ model: LineItem, as: "lineItems" }, { model: MatchResult, as: "matchResults" }],
+    order: [[{ model: LineItem, as: "lineItems" }, "position", "ASC"]],
+    ...options,
+  });
+  return invoice;
+}
+
+router.get("/api/invoices", requireAuth, async (req, res, next) => {
+  try {
+    const where = { orgId: req.currentUser.orgId };
+    if (req.query.status) where.status = req.query.status;
+    const invoices = await Invoice.findAll({ where, order: [["createdAt", "DESC"]] });
+    res.json(invoices.map(serializeInvoiceListItem));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/invoices/:id", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    res.json(serializeInvoiceDetail(invoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/invoices/:id/file", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    res.sendFile(invoice.storagePath, { headers: { "Content-Type": invoice.contentType || "application/octet-stream" } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/invoices/:id/audit-log", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    const entries = await AuditLog.findAll({ where: { invoiceId: invoice.id }, order: [["createdAt", "ASC"]] });
+    res.json(entries.map(serializeAuditLog));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const lineItemSchema = z.object({
+  description: z.string(),
+  quantity: z.number().nullable().optional(),
+  unit_price: z.number().nullable().optional(),
+  amount: z.number().nullable().optional(),
+});
+
+const correctionSchema = z.object({
+  vendor_name: z.string().nullable().optional(),
+  invoice_number: z.string().nullable().optional(),
+  invoice_date: z.string().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  currency: z.string().nullable().optional(),
+  po_reference: z.string().nullable().optional(),
+  subtotal: z.number().nullable().optional(),
+  tax: z.number().nullable().optional(),
+  total: z.number().nullable().optional(),
+  line_items: z.array(lineItemSchema).nullable().optional(),
+});
+
+const FIELD_TO_ATTR = {
+  vendor_name: "vendorName",
+  invoice_number: "invoiceNumber",
+  invoice_date: "invoiceDate",
+  due_date: "dueDate",
+  currency: "currency",
+  po_reference: "poReference",
+  subtotal: "subtotal",
+  tax: "tax",
+  total: "total",
+};
+
+router.patch("/api/invoices/:id", requireAuth, async (req, res, next) => {
+  try {
+    const parsed = correctionSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const payload = parsed.data;
+
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+
+    const changed = {};
+    for (const [field, attr] of Object.entries(FIELD_TO_ATTR)) {
+      if (!(field in payload) || payload[field] === undefined) continue;
+      const newValue = payload[field];
+      const oldValue = invoice[attr];
+      if (String(oldValue ?? "") !== String(newValue ?? "")) {
+        changed[field] = { old: oldValue, new: newValue };
+        invoice[attr] = newValue;
+      }
+    }
+
+    if (payload.line_items !== undefined && payload.line_items !== null) {
+      changed.line_items = { count: payload.line_items.length };
+      await LineItem.destroy({ where: { invoiceId: invoice.id } });
+      await LineItem.bulkCreate(
+        payload.line_items.map((li, i) => ({
+          invoiceId: invoice.id,
+          position: i,
+          description: li.description,
+          quantity: li.quantity ?? null,
+          unitPrice: li.unit_price ?? null,
+          amount: li.amount ?? null,
+          confidence: 1.0, // human-entered
+        }))
+      );
+    }
+
+    if (Object.keys(changed).length) {
+      await invoice.save();
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        invoiceId: invoice.id,
+        action: "human_correction",
+        actor: req.currentUser.email,
+        details: changed,
+      });
+    }
+
+    const fresh = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    res.json(serializeInvoiceDetail(fresh));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/invoices/:id/approve", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (!["extracted", "needs_review"].includes(invoice.status)) {
+      return res.status(409).json({ detail: `Cannot approve invoice in status ${invoice.status}` });
+    }
+    invoice.status = "approved";
+    await invoice.save();
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "approved",
+      actor: req.currentUser.email,
+      details: {},
+    });
+    res.json(serializeInvoiceDetail(invoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/invoices/:id/reject", requireAuth, async (req, res, next) => {
+  try {
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    invoice.status = "rejected";
+    await invoice.save();
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "rejected",
+      actor: req.currentUser.email,
+      details: {},
+    });
+    res.json(serializeInvoiceDetail(invoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;
