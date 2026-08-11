@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { settings } from "./config.js";
-import { User } from "./models/index.js";
+import { Organization, User } from "./models/index.js";
 
 export async function hashPassword(password) {
   return bcrypt.hash(password, 12);
@@ -38,7 +38,7 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ detail: "Invalid or expired token" });
   }
 
-  const user = await User.findByPk(payload.sub);
+  const user = await User.findByPk(payload.sub, { include: [{ model: Organization, as: "organization" }] });
   if (!user) {
     return res.status(401).json({ detail: "User no longer exists" });
   }

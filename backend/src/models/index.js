@@ -8,8 +8,8 @@ import { MatchSource } from "./MatchSource.js";
 import { MatchEntry } from "./MatchEntry.js";
 import { MatchResult } from "./MatchResult.js";
 
-Organization.hasMany(User, { foreignKey: "orgId" });
-User.belongsTo(Organization, { foreignKey: "orgId" });
+Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
+User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
 
 Invoice.hasMany(LineItem, {
   foreignKey: "invoiceId",

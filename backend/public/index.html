@@ -37,6 +37,17 @@
     </div>
   </div>
 
+  <div id="trial-expired" class="auth-gate" style="display: none;">
+    <div class="auth-card">
+      <div class="brand" style="margin-bottom: 1.5rem;">Rekono</div>
+      <h1 style="margin-bottom: 0.75rem;">Your 14-day trial has ended</h1>
+      <p class="hint">Your account and data are still here — get in touch to keep using Rekono.</p>
+      <div class="actions" style="margin-top: 1rem;">
+        <button id="trial-expired-logout-btn" class="btn-logout">Sign out</button>
+      </div>
+    </div>
+  </div>
+
   <div id="app-shell" style="display: none;">
     <header class="topbar">
       <div class="brand">Rekono</div>
@@ -47,6 +58,7 @@
         <button class="tab-btn" data-tab="export">Export</button>
       </nav>
       <div class="topbar-user">
+        <span id="trial-badge" class="trial-badge"></span>
         <span id="current-user-badge"></span>
         <button id="logout-btn" class="btn-logout">Sign out</button>
       </div>

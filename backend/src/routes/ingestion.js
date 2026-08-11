@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import { Router } from "express";
 import { requireAuth } from "../auth.js";
+import { requireActiveTrial } from "../trial.js";
 import * as jobs from "../jobs.js";
 import { isSupported, upload } from "../storage.js";
 import { AuditLog, Invoice } from "../models/index.js";
@@ -8,7 +9,7 @@ import { serializeInvoiceDetail } from "../serializers.js";
 
 const router = Router();
 
-router.post("/api/invoices/upload", requireAuth, upload.single("file"), async (req, res, next) => {
+router.post("/api/invoices/upload", requireAuth, requireActiveTrial, upload.single("file"), async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(422).json({ detail: "A file upload is required." });

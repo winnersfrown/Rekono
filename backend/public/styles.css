@@ -251,3 +251,13 @@ tr:hover { background: var(--panel-2); cursor: pointer; }
 }
 
 .btn-logout:hover { color: var(--text); border-color: var(--accent); }
+
+.trial-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: rgba(154,162,177,0.15);
+  color: var(--muted);
+}
+
+.trial-badge.trial-badge-warn { background: rgba(245,193,68,0.15); color: var(--warn); }
