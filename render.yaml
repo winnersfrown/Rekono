@@ -7,15 +7,25 @@
 # file and provisions everything below under your own Render account --
 # nothing here requires credentials from anyone but you.
 #
-# Cost note: both resources default to Render's "starter" plan (paid, a few
-# dollars/month each) rather than "free", because the free Postgres plan
-# auto-expires after 30 days and free web services can't attach a
-# persistent disk -- meaning uploaded invoice files would silently vanish
-# on every restart. Downgrade to "free" yourself if you just want to kick
-# the tires and can accept that tradeoff.
+# Free tier, on purpose. Two tradeoffs that come with it:
+#   1. The database is Render's free Postgres, which auto-deletes after 30
+#      days of the *plan*, not of inactivity -- you'll need to recreate it
+#      (or upgrade to "starter") before then if you want to keep the data.
+#   2. Free web services can't attach a persistent disk, so uploaded
+#      invoice files live in the container's ephemeral filesystem and are
+#      lost on every restart/redeploy/spin-down. The database (extracted
+#      data, audit trail) is unaffected -- only the original source files
+#      (needed for the review UI's document preview) don't survive.
+#   3. Free web services spin down after 15 minutes of no requests and
+#      cold-start (10-30s) on the next one. In the unlikely case a request
+#      lands right as the service is spinning down mid-extraction, that
+#      job could be interrupted -- rare in practice since any request
+#      resets the idle timer, but worth knowing.
+# Bump both `plan:` values below to `starter` if these stop being
+# acceptable tradeoffs.
 databases:
   - name: rekono-db
-    plan: starter
+    plan: free
     databaseName: rekono
     user: rekono
 
@@ -25,7 +35,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
@@ -33,14 +43,10 @@ services:
           name: rekono-db
           property: connectionString
       - key: STORAGE_DIR
-        value: /data/storage
+        value: /tmp/storage # ephemeral on the free plan -- see note above
       - key: SECRET_KEY
         generateValue: true
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
       - key: ANTHROPIC_API_KEY
         sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
-    disk:
-      name: rekono-storage
-      mountPath: /data/storage
-      sizeGB: 5

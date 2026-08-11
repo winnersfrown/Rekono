@@ -117,16 +117,16 @@ fly deploy
 
 Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.fly.dev` by default). Sign up from there to create the first organization and account.
 
-#### Render
+#### Render (free tier)
 
-`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions the same shape (web service + managed Postgres + persistent disk) in one step from the Render dashboard instead of the CLI:
+`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions a web service + managed Postgres in one step, both on Render's **free** plan:
 
 1. Push/fork this repo to your own GitHub.
-2. In Render: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and provisions both resources.
+2. In Render: **New → Blueprint**, point it at the repo. (If you don't see "Blueprint" as an option, your account may only show the per-resource flow — create a **Postgres** instance first, then a **Web Service** pointed at this repo's `Dockerfile`, and set its env vars to match `render.yaml`: `DATABASE_URL` from the Postgres instance's internal connection string, `STORAGE_DIR=/tmp/storage`, a random `SECRET_KEY`, and optionally `ANTHROPIC_API_KEY`.)
 3. Once deployed, set `ANTHROPIC_API_KEY` in the web service's environment variables (Render dashboard) if you want LLM extraction instead of the heuristic fallback — everything else (`DATABASE_URL`, `SECRET_KEY`) is wired up automatically by the Blueprint.
 4. Your app is live at `https://<service-name>.onrender.com`.
 
-Both resources default to the **starter** (paid) plan rather than free: Render's free Postgres expires after 30 days, and free web services can't attach a persistent disk, which would silently lose uploaded invoice files on every restart. Edit `render.yaml` yourself if you'd rather accept that tradeoff for a quick test.
+Two tradeoffs that come with staying on free: Render's free Postgres plan auto-deletes after 30 days (recreate it, or upgrade to `starter` in `render.yaml`, before then if you want to keep data), and free web services can't attach a persistent disk, so uploaded invoice files live in the container's ephemeral storage and don't survive a restart/redeploy — the extracted data and audit trail in Postgres are unaffected, only the original source files (used for the review UI's document preview) aren't. Free web services also spin down after 15 minutes idle and cold-start on the next request.
 
 ### Tests
 
