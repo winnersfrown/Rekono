@@ -1,0 +1,46 @@
+# Render Blueprint for Rekono -- a one-click way to stand up a real,
+# publicly-reachable instance (backend + Postgres) instead of running it
+# only locally / via docker-compose.
+#
+# Deploy: push this repo to your own GitHub account (or fork it), then in
+# Render go to New -> Blueprint and point it at the repo. Render reads this
+# file and provisions everything below under your own Render account --
+# nothing here requires credentials from anyone but you.
+#
+# Cost note: both resources default to Render's "starter" plan (paid, a few
+# dollars/month each) rather than "free", because the free Postgres plan
+# auto-expires after 30 days and free web services can't attach a
+# persistent disk -- meaning uploaded invoice files would silently vanish
+# on every restart. Downgrade to "free" yourself if you just want to kick
+# the tires and can accept that tradeoff.
+databases:
+  - name: rekono-db
+    plan: starter
+    databaseName: rekono
+    user: rekono
+
+services:
+  - type: web
+    name: rekono-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rekono-db
+          property: connectionString
+      - key: STORAGE_DIR
+        value: /data/storage
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
+    disk:
+      name: rekono-storage
+      mountPath: /data/storage
+      sizeGB: 5

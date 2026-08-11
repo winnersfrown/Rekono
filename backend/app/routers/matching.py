@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import auth
 from .. import matching as matching_engine
 from ..database import get_db
 from ..models import (
@@ -16,6 +17,7 @@ from ..models import (
     MatchSource,
     MatchSourceType,
     MatchStatus,
+    User,
 )
 from ..schemas import MatchResultOut, MatchRunSummary, MatchSourceOut
 
@@ -46,7 +48,12 @@ def _resolve_columns(df: pd.DataFrame) -> dict[str, str]:
 
 
 @router.post("/sources", response_model=MatchSourceOut, status_code=201)
-def upload_match_source(source_type: str, file: UploadFile, db: Session = Depends(get_db)):
+def upload_match_source(
+    source_type: str,
+    file: UploadFile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
     if source_type not in (MatchSourceType.PO.value, MatchSourceType.BANK.value):
         raise HTTPException(status_code=422, detail="source_type must be 'po' or 'bank'")
 
@@ -58,7 +65,11 @@ def upload_match_source(source_type: str, file: UploadFile, db: Session = Depend
 
     cols = _resolve_columns(df)
 
-    source = MatchSource(name=file.filename or "upload.csv", source_type=MatchSourceType(source_type))
+    source = MatchSource(
+        org_id=current_user.org_id,
+        name=file.filename or "upload.csv",
+        source_type=MatchSourceType(source_type),
+    )
     db.add(source)
     db.flush()
 
@@ -86,7 +97,15 @@ def upload_match_source(source_type: str, file: UploadFile, db: Session = Depend
             )
         )
 
-    db.add(AuditLog(action="match_source_uploaded", actor="user", details={"source_type": source_type, "rows": len(df)}))
+    db.add(
+        AuditLog(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            action="match_source_uploaded",
+            actor=current_user.email,
+            details={"source_type": source_type, "rows": len(df)},
+        )
+    )
     db.commit()
     db.refresh(source)
 
@@ -96,8 +115,12 @@ def upload_match_source(source_type: str, file: UploadFile, db: Session = Depend
 
 
 @router.get("/sources", response_model=list[MatchSourceOut])
-def list_match_sources(db: Session = Depends(get_db)):
-    sources = db.scalars(select(MatchSource)).all()
+def list_match_sources(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    stmt = select(MatchSource).where(MatchSource.org_id == current_user.org_id)
+    sources = db.scalars(stmt).all()
     out = []
     for s in sources:
         item = MatchSourceOut.model_validate(s)
@@ -107,8 +130,13 @@ def list_match_sources(db: Session = Depends(get_db)):
 
 
 @router.post("/run", response_model=MatchRunSummary)
-def run_matching(db: Session = Depends(get_db)):
-    entries = db.scalars(select(MatchEntry)).all()
+def run_matching(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    entries = db.scalars(
+        select(MatchEntry).join(MatchSource).where(MatchSource.org_id == current_user.org_id)
+    ).all()
     candidates = [
         matching_engine.MatchCandidateEntry(
             id=e.id, vendor=e.vendor, amount=e.amount, entry_date=e.entry_date, reference=e.reference
@@ -118,9 +146,10 @@ def run_matching(db: Session = Depends(get_db)):
 
     invoices = db.scalars(
         select(Invoice).where(
+            Invoice.org_id == current_user.org_id,
             Invoice.status.in_(
                 [InvoiceStatus.EXTRACTED, InvoiceStatus.NEEDS_REVIEW, InvoiceStatus.APPROVED]
-            )
+            ),
         )
     ).all()
 
@@ -140,9 +169,11 @@ def run_matching(db: Session = Depends(get_db)):
         )
         db.add(
             AuditLog(
+                org_id=current_user.org_id,
+                user_id=current_user.id,
                 invoice_id=invoice.id,
                 action="match_evaluated",
-                actor="system",
+                actor=current_user.email,
                 details={"status": outcome.status, "score": outcome.score, "reasoning": outcome.reasoning},
             )
         )
@@ -159,6 +190,14 @@ def run_matching(db: Session = Depends(get_db)):
 
 
 @router.get("/results", response_model=list[MatchResultOut])
-def list_match_results(db: Session = Depends(get_db)):
-    stmt = select(MatchResult).order_by(MatchResult.created_at.desc())
+def list_match_results(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    stmt = (
+        select(MatchResult)
+        .join(Invoice, MatchResult.invoice_id == Invoice.id)
+        .where(Invoice.org_id == current_user.org_id)
+        .order_by(MatchResult.created_at.desc())
+    )
     return db.scalars(stmt).all()

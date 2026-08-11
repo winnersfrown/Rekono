@@ -3,49 +3,71 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import auth
 from ..database import get_db
-from ..models import AuditLog, Invoice, InvoiceStatus, LineItem
+from ..models import AuditLog, Invoice, InvoiceStatus, LineItem, User
 from ..schemas import AuditLogOut, InvoiceCorrection, InvoiceListItem, InvoiceOut
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 
-def _get_or_404(db: Session, invoice_id: str) -> Invoice:
+def _get_or_404(db: Session, invoice_id: str, org_id: str) -> Invoice:
     invoice = db.get(Invoice, invoice_id)
-    if invoice is None:
+    if invoice is None or invoice.org_id != org_id:
         raise HTTPException(status_code=404, detail="Invoice not found")
     return invoice
 
 
 @router.get("", response_model=list[InvoiceListItem])
-def list_invoices(status: str | None = None, db: Session = Depends(get_db)):
-    stmt = select(Invoice).order_by(Invoice.created_at.desc())
+def list_invoices(
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    stmt = select(Invoice).where(Invoice.org_id == current_user.org_id).order_by(Invoice.created_at.desc())
     if status:
         stmt = stmt.where(Invoice.status == status)
     return db.scalars(stmt).all()
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)
-def get_invoice(invoice_id: str, db: Session = Depends(get_db)):
-    return _get_or_404(db, invoice_id)
+def get_invoice(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    return _get_or_404(db, invoice_id, current_user.org_id)
 
 
 @router.get("/{invoice_id}/file")
-def get_invoice_file(invoice_id: str, db: Session = Depends(get_db)):
-    invoice = _get_or_404(db, invoice_id)
+def get_invoice_file(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    invoice = _get_or_404(db, invoice_id, current_user.org_id)
     return FileResponse(invoice.storage_path, media_type=invoice.content_type or None)
 
 
 @router.get("/{invoice_id}/audit-log", response_model=list[AuditLogOut])
-def get_audit_log(invoice_id: str, db: Session = Depends(get_db)):
-    _get_or_404(db, invoice_id)
+def get_audit_log(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    _get_or_404(db, invoice_id, current_user.org_id)
     stmt = select(AuditLog).where(AuditLog.invoice_id == invoice_id).order_by(AuditLog.created_at)
     return db.scalars(stmt).all()
 
 
 @router.patch("/{invoice_id}", response_model=InvoiceOut)
-def correct_invoice(invoice_id: str, correction: InvoiceCorrection, db: Session = Depends(get_db)):
-    invoice = _get_or_404(db, invoice_id)
+def correct_invoice(
+    invoice_id: str,
+    correction: InvoiceCorrection,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    invoice = _get_or_404(db, invoice_id, current_user.org_id)
 
     changed: dict = {}
     simple_fields = [
@@ -87,7 +109,16 @@ def correct_invoice(invoice_id: str, correction: InvoiceCorrection, db: Session 
             )
 
     if changed:
-        db.add(AuditLog(invoice_id=invoice.id, action="human_correction", actor="user", details=changed))
+        db.add(
+            AuditLog(
+                org_id=current_user.org_id,
+                user_id=current_user.id,
+                invoice_id=invoice.id,
+                action="human_correction",
+                actor=current_user.email,
+                details=changed,
+            )
+        )
         db.commit()
         db.refresh(invoice)
 
@@ -95,22 +126,48 @@ def correct_invoice(invoice_id: str, correction: InvoiceCorrection, db: Session 
 
 
 @router.post("/{invoice_id}/approve", response_model=InvoiceOut)
-def approve_invoice(invoice_id: str, db: Session = Depends(get_db)):
-    invoice = _get_or_404(db, invoice_id)
+def approve_invoice(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    invoice = _get_or_404(db, invoice_id, current_user.org_id)
     if invoice.status not in (InvoiceStatus.EXTRACTED, InvoiceStatus.NEEDS_REVIEW):
         raise HTTPException(status_code=409, detail=f"Cannot approve invoice in status {invoice.status}")
     invoice.status = InvoiceStatus.APPROVED
-    db.add(AuditLog(invoice_id=invoice.id, action="approved", actor="user", details={}))
+    db.add(
+        AuditLog(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            invoice_id=invoice.id,
+            action="approved",
+            actor=current_user.email,
+            details={},
+        )
+    )
     db.commit()
     db.refresh(invoice)
     return invoice
 
 
 @router.post("/{invoice_id}/reject", response_model=InvoiceOut)
-def reject_invoice(invoice_id: str, db: Session = Depends(get_db)):
-    invoice = _get_or_404(db, invoice_id)
+def reject_invoice(
+    invoice_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(auth.get_current_user),
+):
+    invoice = _get_or_404(db, invoice_id, current_user.org_id)
     invoice.status = InvoiceStatus.REJECTED
-    db.add(AuditLog(invoice_id=invoice.id, action="rejected", actor="user", details={}))
+    db.add(
+        AuditLog(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            invoice_id=invoice.id,
+            action="rejected",
+            actor=current_user.email,
+            details={},
+        )
+    )
     db.commit()
     db.refresh(invoice)
     return invoice

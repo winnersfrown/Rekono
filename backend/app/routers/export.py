@@ -6,17 +6,26 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import auth
 from ..database import get_db
-from ..models import Invoice, MatchResult
+from ..models import Invoice, MatchResult, User
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
 
-def _build_dataframe(db: Session) -> pd.DataFrame:
-    invoices = db.scalars(select(Invoice).order_by(Invoice.created_at.desc())).all()
+def _build_dataframe(db: Session, org_id: str) -> pd.DataFrame:
+    invoices = db.scalars(
+        select(Invoice).where(Invoice.org_id == org_id).order_by(Invoice.created_at.desc())
+    ).all()
 
     latest_match_by_invoice: dict[str, MatchResult] = {}
-    for mr in db.scalars(select(MatchResult).order_by(MatchResult.created_at)).all():
+    match_stmt = (
+        select(MatchResult)
+        .join(Invoice, MatchResult.invoice_id == Invoice.id)
+        .where(Invoice.org_id == org_id)
+        .order_by(MatchResult.created_at)
+    )
+    for mr in db.scalars(match_stmt).all():
         latest_match_by_invoice[mr.invoice_id] = mr  # last write wins -> most recent run
 
     rows = []
@@ -49,8 +58,8 @@ def _build_dataframe(db: Session) -> pd.DataFrame:
 
 
 @router.get("/csv")
-def export_csv(db: Session = Depends(get_db)):
-    df = _build_dataframe(db)
+def export_csv(db: Session = Depends(get_db), current_user: User = Depends(auth.get_current_user)):
+    df = _build_dataframe(db, current_user.org_id)
     buf = io.StringIO()
     df.to_csv(buf, index=False)
     buf.seek(0)
@@ -62,8 +71,8 @@ def export_csv(db: Session = Depends(get_db)):
 
 
 @router.get("/xlsx")
-def export_xlsx(db: Session = Depends(get_db)):
-    df = _build_dataframe(db)
+def export_xlsx(db: Session = Depends(get_db), current_user: User = Depends(auth.get_current_user)):
+    df = _build_dataframe(db, current_user.org_id)
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Invoices")

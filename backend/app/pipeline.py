@@ -78,6 +78,7 @@ def process_invoice(invoice_id: str) -> None:
 
         db.add(
             AuditLog(
+                org_id=invoice.org_id,
                 invoice_id=invoice.id,
                 action="extraction_completed",
                 actor="system",
@@ -103,7 +104,15 @@ def process_invoice(invoice_id: str) -> None:
 def _fail(db, invoice: Invoice, message: str) -> None:
     invoice.status = InvoiceStatus.FAILED
     invoice.error_message = message
-    db.add(AuditLog(invoice_id=invoice.id, action="extraction_failed", actor="system", details={"error": message}))
+    db.add(
+        AuditLog(
+            org_id=invoice.org_id,
+            invoice_id=invoice.id,
+            action="extraction_failed",
+            actor="system",
+            details={"error": message},
+        )
+    )
     db.commit()
 
 
