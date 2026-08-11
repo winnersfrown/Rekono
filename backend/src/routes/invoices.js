@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
+import { requireActiveTrial } from "../trial.js";
 import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
 
@@ -16,7 +17,7 @@ async function getOwnedInvoice(invoiceId, orgId, options = {}) {
   return invoice;
 }
 
-router.get("/api/invoices", requireAuth, async (req, res, next) => {
+router.get("/api/invoices", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const where = { orgId: req.currentUser.orgId };
     if (req.query.status) where.status = req.query.status;
@@ -27,7 +28,7 @@ router.get("/api/invoices", requireAuth, async (req, res, next) => {
   }
 });
 
-router.get("/api/invoices/:id", requireAuth, async (req, res, next) => {
+router.get("/api/invoices/:id", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
@@ -37,7 +38,7 @@ router.get("/api/invoices/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-router.get("/api/invoices/:id/file", requireAuth, async (req, res, next) => {
+router.get("/api/invoices/:id/file", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
@@ -47,7 +48,7 @@ router.get("/api/invoices/:id/file", requireAuth, async (req, res, next) => {
   }
 });
 
-router.get("/api/invoices/:id/audit-log", requireAuth, async (req, res, next) => {
+router.get("/api/invoices/:id/audit-log", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
@@ -90,7 +91,7 @@ const FIELD_TO_ATTR = {
   total: "total",
 };
 
-router.patch("/api/invoices/:id", requireAuth, async (req, res, next) => {
+router.patch("/api/invoices/:id", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const parsed = correctionSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
@@ -145,7 +146,7 @@ router.patch("/api/invoices/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-router.post("/api/invoices/:id/approve", requireAuth, async (req, res, next) => {
+router.post("/api/invoices/:id/approve", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
@@ -168,7 +169,7 @@ router.post("/api/invoices/:id/approve", requireAuth, async (req, res, next) => 
   }
 });
 
-router.post("/api/invoices/:id/reject", requireAuth, async (req, res, next) => {
+router.post("/api/invoices/:id/reject", requireAuth, requireActiveTrial, async (req, res, next) => {
   try {
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });

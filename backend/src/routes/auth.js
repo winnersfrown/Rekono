@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import * as auth from "../auth.js";
+import { trialInfo } from "../trial.js";
 import { Organization, User, AuditLog } from "../models/index.js";
 import { serializeUser } from "../serializers.js";
 
@@ -74,7 +75,13 @@ router.post("/api/auth/login", async (req, res, next) => {
 });
 
 router.get("/api/auth/me", auth.requireAuth, (req, res) => {
-  res.json(serializeUser(req.currentUser));
+  const { trialEndsAt, trialExpired, trialDaysRemaining } = trialInfo(req.currentUser.organization);
+  res.json({
+    ...serializeUser(req.currentUser),
+    trial_ends_at: trialEndsAt,
+    trial_expired: trialExpired,
+    trial_days_remaining: trialDaysRemaining,
+  });
 });
 
 export default router;

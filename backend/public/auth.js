@@ -15,8 +15,9 @@ function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-// Drop-in replacement for fetch() that attaches the bearer token and
-// bounces back to the login screen on a 401 (expired/invalid token).
+// Drop-in replacement for fetch() that attaches the bearer token, bounces
+// back to the login screen on a 401 (expired/invalid token), and shows the
+// trial-expired screen on a 402 (trial ran out mid-session).
 async function apiFetch(url, options = {}) {
   const token = getToken();
   const headers = new Headers(options.headers || {});
@@ -28,19 +29,38 @@ async function apiFetch(url, options = {}) {
     showAuthGate();
     throw new Error("Session expired. Please sign in again.");
   }
+  if (res.status === 402) {
+    showTrialExpired();
+    throw new Error("Trial expired.");
+  }
   return res;
 }
 
 function showAuthGate() {
   document.getElementById("auth-gate").style.display = "flex";
+  document.getElementById("trial-expired").style.display = "none";
+  document.getElementById("app-shell").style.display = "none";
+}
+
+function showTrialExpired() {
+  document.getElementById("auth-gate").style.display = "none";
+  document.getElementById("trial-expired").style.display = "flex";
   document.getElementById("app-shell").style.display = "none";
 }
 
 function showApp(user) {
   document.getElementById("auth-gate").style.display = "none";
+  document.getElementById("trial-expired").style.display = "none";
   document.getElementById("app-shell").style.display = "block";
   const badge = document.getElementById("current-user-badge");
   if (badge) badge.textContent = user.full_name || user.email;
+
+  const trialBadge = document.getElementById("trial-badge");
+  if (trialBadge) {
+    const days = user.trial_days_remaining;
+    trialBadge.textContent = days === 1 ? "1 day left in trial" : `${days} days left in trial`;
+    trialBadge.classList.toggle("trial-badge-warn", days <= 3);
+  }
 }
 
 function authError(message) {
@@ -114,6 +134,11 @@ document.getElementById("logout-btn").addEventListener("click", () => {
   showAuthGate();
 });
 
+document.getElementById("trial-expired-logout-btn").addEventListener("click", () => {
+  clearToken();
+  showAuthGate();
+});
+
 // Verifies any stored token against the API and shows the right screen.
 // Exposed globally so app.js can call it once (init) rather than duplicating
 // the same "am I logged in" check.
@@ -131,6 +156,10 @@ async function bootstrapApp() {
       return;
     }
     const user = await res.json();
+    if (user.trial_expired) {
+      showTrialExpired();
+      return;
+    }
     showApp(user);
     if (typeof onAuthenticated === "function") onAuthenticated();
   } catch {

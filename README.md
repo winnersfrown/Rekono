@@ -11,6 +11,7 @@ This repo is the MVP described below: upload → extract → review → export �
 3. Export approved (or all) invoices to CSV/Excel.
 4. One matching rule: fuzzy vendor name + amount tolerance + date window against an uploaded PO or bank statement CSV.
 5. Accounts: email/password signup creates an organization; every invoice, match source, and audit log entry is scoped to it, so separate customers/teams never see each other's data.
+6. A 14-day trial, enforced server-side: every data-touching endpoint returns `402` once an org's trial has run out (see `trial.js`). No billing/upgrade path exists yet -- it's currently a hard stop.
 
 ## Architecture
 
@@ -139,13 +140,13 @@ Covers the confidence cross-check logic, the fuzzy matching engine, the heuristi
 
 ## API surface
 
-Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization.
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except the three auth routes above also returns `402` once that org's 14-day trial has ended.
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/auth/signup` | Create an organization + first user, returns a bearer token |
 | `POST /api/auth/login` | Email + password → bearer token |
-| `GET /api/auth/me` | Current user, for verifying a stored token |
+| `GET /api/auth/me` | Current user + trial status (`trial_ends_at`, `trial_expired`, `trial_days_remaining`), for verifying a stored token |
 | `POST /api/invoices/upload` | Upload a PDF/image; queues extraction |
 | `GET /api/invoices` | List invoices, optional `?status=` filter |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
