@@ -94,14 +94,39 @@ docker compose up --build
 
 Runs the app against Postgres instead of SQLite. Set `ANTHROPIC_API_KEY` in your shell environment before `docker compose up` to enable LLM extraction.
 
-### Deploying a live instance (Render)
+### Deploying a live instance
 
-Everything above runs locally or in your own Docker Compose — nothing is publicly reachable until you deploy it somewhere. `render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions a web service (built from the repo's `Dockerfile`) plus a managed Postgres database and a persistent disk for uploaded files, under **your own** Render account:
+Everything above runs locally or in your own Docker Compose — nothing is publicly reachable until you deploy it somewhere. Two prepared options, both under **your own** account (neither requires giving anyone else credentials):
+
+#### Fly.io (has a free allowance)
+
+`fly.toml` targets [Fly.io](https://fly.io), whose free allowance includes persistent volumes — the piece most "free" PaaS tiers drop, which matters here since uploaded invoices need to survive restarts. Requires the [`flyctl` CLI](https://fly.io/docs/flyctl/install/) and `fly auth login` first.
+
+```bash
+fly apps create <your-unique-app-name>   # "rekono-api" is likely taken globally -- pick your own,
+                                          # then update the `app = "..."` line in fly.toml to match
+fly postgres create --name rekono-db     # a separate Postgres app, on the same free allowance
+fly postgres attach rekono-db            # wires DATABASE_URL into this app automatically
+fly volumes create rekono_storage --size 3
+fly secrets set SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+fly secrets set ANTHROPIC_API_KEY=<your key>   # optional -- omit to run in heuristic/demo mode
+fly deploy
+```
+
+`fly.toml` pins `min_machines_running = 1` rather than letting Fly scale the app to zero: invoice processing runs on an in-process background worker thread, not tied to any single HTTP request, so a machine that stopped right after an upload would strand that job mid-pipeline. That does mean it's not fully $0 depending on Fly's current pricing, but should stay inexpensive at this scale.
+
+Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.fly.dev` by default). Sign up from there to create the first organization and account.
+
+#### Render
+
+`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions the same shape (web service + managed Postgres + persistent disk) in one step from the Render dashboard instead of the CLI:
 
 1. Push/fork this repo to your own GitHub.
 2. In Render: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and provisions both resources.
 3. Once deployed, set `ANTHROPIC_API_KEY` in the web service's environment variables (Render dashboard) if you want LLM extraction instead of the heuristic fallback — everything else (`DATABASE_URL`, `SECRET_KEY`) is wired up automatically by the Blueprint.
-4. Your app is live at `https://<service-name>.onrender.com`. Sign up from there — that creates the first organization and account.
+4. Your app is live at `https://<service-name>.onrender.com`.
+
+Both resources default to Render's **starter** (paid) plan rather than free, for the same reason as above: free Postgres there expires after 30 days, and free web services can't attach a persistent disk.
 
 Both resources default to the **starter** (paid) plan rather than free: Render's free Postgres expires after 30 days, and free web services can't attach a persistent disk, which would silently lose uploaded invoice files on every restart. Edit `render.yaml` yourself if you'd rather accept that tradeoff for a quick test.
 
