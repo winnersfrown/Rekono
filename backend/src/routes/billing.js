@@ -46,8 +46,19 @@ export async function cancelReplacedSubscription(stripe, org, newSubscriptionId)
 // Stripe dashboard-configured Price objects, so standing this up only ever
 // needs a Stripe account + API keys, never a matching manual product/price
 // setup step to keep in sync with plans.js by hand.
-export async function createCheckoutSession({ org, email, planId, billingPeriod, baseUrl }) {
-  const stripe = getStripe();
+//
+// trialDays is only ever passed by onboarding.js, for a brand new org's
+// first paid plan choice -- Stripe's own trial_period_days handles the
+// whole trial lifecycle (starts "trialing", auto-charges the card already
+// on file when it ends, flips to "active" or "past_due" accordingly) via
+// events this file already listens for, so no custom day-counting is
+// needed. Plan changes made later through the Upgrade modal don't get a
+// trial; a returning/upgrading org isn't a "new" signup.
+//
+// stripe is injectable (defaults to the real client) so tests can assert on
+// the exact params sent without hitting the network -- same pattern as
+// cancelReplacedSubscription above.
+export async function createCheckoutSession({ org, email, planId, billingPeriod, baseUrl, trialDays, stripe = getStripe() }) {
   const plan = PLANS[planId];
   const amountCents = Math.round(billingCycleAmountUsd(planId, billingPeriod) * 100);
   const periodLabel = billingPeriod === "annual" ? "annual" : "monthly";
@@ -73,6 +84,7 @@ export async function createCheckoutSession({ org, email, planId, billingPeriod,
         quantity: 1,
       },
     ],
+    ...(trialDays ? { subscription_data: { trial_period_days: trialDays } } : {}),
     success_url: `${baseUrl}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/?checkout=cancelled`,
     // Read back on the success redirect (/api/billing/confirm) and by the
@@ -151,6 +163,7 @@ router.get("/api/billing/confirm", requireAuth, requireStripeConfigured, async (
     org.stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id || org.stripeCustomerId;
     org.stripeSubscriptionId = newSubscriptionId || org.stripeSubscriptionId;
     org.subscriptionStatus = session.subscription?.status || "active";
+    org.trialEndsAt = session.subscription?.trial_end ? new Date(session.subscription.trial_end * 1000) : null;
     org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
     await org.save();
 
@@ -201,14 +214,22 @@ webhookRouter.post("/api/billing/webhook", async (req, res) => {
       const session = event.data.object;
       const org = session.metadata?.org_id ? await Organization.findByPk(session.metadata.org_id) : null;
       if (org) {
+        const stripe = getStripe();
         const newSubscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-        await cancelReplacedSubscription(getStripe(), org, newSubscriptionId);
+        await cancelReplacedSubscription(stripe, org, newSubscriptionId);
+
+        // Webhook payloads don't come pre-expanded the way a direct API call
+        // can request -- session.subscription here is just an ID string, so
+        // a real subscription.status (which is "trialing", not "active", for
+        // a new trial) needs its own fetch rather than being assumed.
+        const subscription = newSubscriptionId ? await stripe.subscriptions.retrieve(newSubscriptionId) : null;
 
         org.plan = session.metadata.plan;
         org.billingPeriod = session.metadata.billing_period;
         org.stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id || org.stripeCustomerId;
         org.stripeSubscriptionId = newSubscriptionId || org.stripeSubscriptionId;
-        org.subscriptionStatus = "active";
+        org.subscriptionStatus = subscription?.status || "active";
+        org.trialEndsAt = subscription?.trial_end ? new Date(subscription.trial_end * 1000) : null;
         org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
         await org.save();
       }
@@ -217,6 +238,7 @@ webhookRouter.post("/api/billing/webhook", async (req, res) => {
       const org = await Organization.findOne({ where: { stripeSubscriptionId: subscription.id } });
       if (org) {
         org.subscriptionStatus = event.type === "customer.subscription.deleted" ? "canceled" : subscription.status;
+        org.trialEndsAt = subscription.trial_end ? new Date(subscription.trial_end * 1000) : null;
         await org.save();
       }
     }

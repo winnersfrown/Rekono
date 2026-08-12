@@ -1,7 +1,7 @@
 import request from "supertest";
 import { jest } from "@jest/globals";
 import { app } from "../src/app.js";
-import { cancelReplacedSubscription } from "../src/routes/billing.js";
+import { cancelReplacedSubscription, createCheckoutSession } from "../src/routes/billing.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 // STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are never set in the test
@@ -99,5 +99,45 @@ describe("cancelReplacedSubscription", () => {
     const stripe = { subscriptions: { cancel } };
     const org = { stripeSubscriptionId: "sub_old" };
     await expect(cancelReplacedSubscription(stripe, org, "sub_new")).resolves.toBeUndefined();
+  });
+});
+
+// createCheckoutSession is what onboarding.js (a brand new org's first paid
+// plan) and /api/billing/checkout (a later plan change) both build their
+// Stripe session from -- trialDays is the one param only onboarding.js ever
+// passes, and getting this wrong either bills a new signup immediately (no
+// trial) or silently gives every plan change a trial it shouldn't have.
+describe("createCheckoutSession", () => {
+  function fakeStripe() {
+    const create = jest.fn().mockResolvedValue({ url: "https://checkout.stripe.com/fake" });
+    return { stripe: { checkout: { sessions: { create } } }, create };
+  }
+
+  test("includes subscription_data.trial_period_days when trialDays is passed", async () => {
+    const { stripe, create } = fakeStripe();
+    await createCheckoutSession({
+      org: { id: "org_1" },
+      email: "a@b.co",
+      planId: "starter",
+      billingPeriod: "monthly",
+      baseUrl: "https://app.example.com",
+      trialDays: 14,
+      stripe,
+    });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ subscription_data: { trial_period_days: 14 } }));
+  });
+
+  test("omits subscription_data entirely when trialDays isn't passed", async () => {
+    const { stripe, create } = fakeStripe();
+    await createCheckoutSession({
+      org: { id: "org_1" },
+      email: "a@b.co",
+      planId: "starter",
+      billingPeriod: "monthly",
+      baseUrl: "https://app.example.com",
+      stripe,
+    });
+    const paramsSent = create.mock.calls[0][0];
+    expect(paramsSent.subscription_data).toBeUndefined();
   });
 });

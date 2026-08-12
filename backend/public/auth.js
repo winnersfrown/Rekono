@@ -81,11 +81,16 @@ function showApp(user) {
   const planBadge = document.getElementById("plan-badge");
   if (planBadge) {
     const planName = PLAN_NAMES[user.plan] || user.plan;
-    planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
+    if (user.subscription_status === "trialing" && user.trial_ends_at) {
+      const daysLeft = Math.max(0, Math.ceil((new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
+      planBadge.textContent = `${planName} plan — trial, ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+    } else {
+      planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
+    }
   }
 
-  // Nothing to upgrade to once you're on the top self-serve tier -- Business
-  // upsells to Enterprise via the "Talk to us" link inside the modal itself.
+  // Nothing to upgrade to once you're on the top self-serve tier -- Scale is
+  // the ceiling, fully self-serve, no "talk to us" contact-sales path above it.
   const upgradeBtn = document.getElementById("upgrade-btn");
   if (upgradeBtn) {
     const rank = PLAN_ORDER.indexOf(user.plan);
@@ -437,7 +442,7 @@ async function bootstrapApp() {
       showOnboarding();
       return;
     }
-    if (user.plan !== "free" && user.subscription_status !== "active") {
+    if (user.plan !== "free" && user.subscription_status !== "active" && user.subscription_status !== "trialing") {
       showBillingRequired();
       return;
     }

@@ -25,6 +25,12 @@ export const Organization = sequelize.define(
     stripeCustomerId: { type: DataTypes.STRING(128), allowNull: true },
     stripeSubscriptionId: { type: DataTypes.STRING(128), allowNull: true },
     subscriptionStatus: { type: DataTypes.STRING(32), allowNull: true },
+    // Set from Stripe's subscription.trial_end when a paid plan is chosen
+    // during onboarding (see onboarding.js) -- null for plans with no trial
+    // (the Free plan, or a plan bought later via the Upgrade modal, which
+    // bills immediately). Purely informational for the UI; requireActivePlan
+    // gates on subscriptionStatus, not this.
+    trialEndsAt: { type: DataTypes.DATE, allowNull: true },
 
     // Personalization, collected once during onboarding. Free-text categories
     // rather than an enum for the same reason plan/subscriptionStatus are
