@@ -142,7 +142,7 @@ cd backend
 npm test
 ```
 
-Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, onboarding + plan gating (`onboarding_required`/`billing_required`), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 76 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe key, or a real Postgres database, so they run in plain CI.
+Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, onboarding + plan gating (`onboarding_required`/`billing_required`, including a "trialing" subscription counting as active), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path, plus unit coverage of the checkout-session/trial-period and subscription-replacement logic against a fake Stripe client), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 87 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe key, or a real Postgres database, so they run in plain CI.
 
 ## API surface
 
@@ -196,6 +196,7 @@ Paid-plan checkout, the billing-management portal, and the onboarding wizard's p
 3. For the webhook (keeps plan status in sync with renewals/cancellations after the initial checkout): in Stripe, **Developers → Webhooks → Add endpoint**, pointed at `https://<your-deployed-url>/api/billing/webhook`, listening for `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`. Copy the endpoint's **Signing secret** into `STRIPE_WEBHOOK_SECRET`.
 4. Switch to live mode keys (both the secret key and a live-mode webhook endpoint/secret) once you're ready to accept real payments -- test and live are entirely separate in Stripe, including their webhooks.
 5. Plan prices/caps live in `backend/src/plans.js`, matching the marketing site's pricing section -- change both together if either changes.
+6. A brand new org's first paid plan choice (during onboarding) gets a 14-day Stripe trial (`TRIAL_DAYS` in `plans.js`) -- a card is collected at checkout but not charged until the trial ends, handled entirely by Stripe's `subscription_data.trial_period_days`, no custom day-counting. A later plan change through the in-app Upgrade button bills immediately, no trial (see `createCheckoutSession` in `routes/billing.js`).
 
 ## Roadmap (beyond this MVP)
 

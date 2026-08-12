@@ -193,6 +193,7 @@ router.get("/api/auth/me", auth.requireAuth, (req, res) => {
     plan: org.plan,
     billing_period: org.billingPeriod,
     subscription_status: org.subscriptionStatus,
+    trial_ends_at: org.trialEndsAt,
     onboarding_completed: Boolean(org.plan),
   });
 });

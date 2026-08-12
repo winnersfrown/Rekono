@@ -63,6 +63,19 @@ test("allows access on a paid plan with an active subscription", async () => {
   expect(res.status).toBe(200);
 });
 
+test("allows access on a paid plan that's still in its Stripe trial", async () => {
+  const token = await signup(app, request, { email: "trialing@planco.co", skipOnboarding: true });
+  const { Organization } = await import("../src/models/index.js");
+  const org = await Organization.findOne();
+  org.plan = "starter";
+  org.billingPeriod = "monthly";
+  org.subscriptionStatus = "trialing";
+  await org.save();
+
+  const res = await request(app).get("/api/invoices").set(authHeader(token));
+  expect(res.status).toBe(200);
+});
+
 test("auth routes stay exempt from plan gating", async () => {
   const token = await signup(app, request, { skipOnboarding: true });
   const res = await request(app).get("/api/auth/me").set(authHeader(token));

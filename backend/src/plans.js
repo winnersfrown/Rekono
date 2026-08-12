@@ -45,6 +45,13 @@ export const PLANS = {
 
 export const PAID_PLAN_IDS = ["starter", "growth", "business", "scale"];
 
+// Length of the Stripe trial given to a brand new org's first paid plan
+// choice (onboarding.js only -- see createCheckoutSession in billing.js for
+// why a later plan change/upgrade doesn't get one). Also the number quoted
+// in onboarding's UI copy and the marketing site -- keep those in sync by
+// hand if this ever changes, since only the backend can import it.
+export const TRIAL_DAYS = 14;
+
 export function isValidPlanId(planId) {
   return Object.prototype.hasOwnProperty.call(PLANS, planId);
 }

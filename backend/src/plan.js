@@ -20,6 +20,8 @@ export function requireActivePlan(req, res, next) {
     return res.status(402).json({ detail: "Finish setting up your account to continue.", onboarding_required: true });
   }
   if (org.plan === "free") return next();
-  if (org.subscriptionStatus === "active") return next();
+  // "trialing" is a new paid signup within its 14-day Stripe trial (see
+  // onboarding.js) -- full access, nothing charged yet.
+  if (org.subscriptionStatus === "active" || org.subscriptionStatus === "trialing") return next();
   return res.status(402).json({ detail: "Your subscription isn't active. Update your billing to continue.", billing_required: true });
 }

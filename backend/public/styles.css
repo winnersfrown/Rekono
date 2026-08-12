@@ -560,6 +560,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 }
 .onboarding-plan-card .price .per { font-size: 0.72rem; color: var(--muted); font-family: var(--font-body); }
 .onboarding-plan-card .cap { font-size: 0.78rem; color: var(--paper-dim); }
+.onboarding-plan-card .trial-note { font-size: 0.78rem; color: var(--green); margin-top: 0.25rem; }
 
 .onboarding-plan-card .price-annual { display: none; }
 .onboarding-plan-grid.is-annual .onboarding-plan-card .price-monthly { display: none; }

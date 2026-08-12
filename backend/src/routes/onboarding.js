@@ -7,7 +7,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { settings } from "../config.js";
-import { PAID_PLAN_IDS, isValidPlanId } from "../plans.js";
+import { PAID_PLAN_IDS, TRIAL_DAYS, isValidPlanId } from "../plans.js";
 import { createCheckoutSession } from "./billing.js";
 
 const router = Router();
@@ -68,6 +68,10 @@ router.post("/api/onboarding", requireAuth, async (req, res, next) => {
       planId: plan,
       billingPeriod: billing_period,
       baseUrl,
+      // A brand new org's first paid plan choice gets a trial before Stripe
+      // charges the card entered at checkout -- see createCheckoutSession
+      // for why this isn't also applied to a later plan change/upgrade.
+      trialDays: TRIAL_DAYS,
     });
     res.json({ checkout_required: true, checkout_url: session.url });
   } catch (err) {
