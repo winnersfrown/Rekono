@@ -525,6 +525,54 @@
   }
   .price-card .btn { justify-content: center; width: 100%; }
 
+  .billing-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: var(--ink-900);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px;
+    margin-bottom: 32px;
+  }
+  .billing-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 8px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .billing-toggle-btn.active { background: var(--blue); color: #04081a; }
+  .billing-toggle-btn .save-tag {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.03em;
+    background: rgba(62,203,132,0.16);
+    color: var(--green);
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+  .billing-toggle-btn.active .save-tag { background: rgba(4,8,26,0.14); color: #04081a; }
+
+  /* specificity note: the base ".price-card .price" rule above sets
+     display:flex at (0,2,0); a plain ".price-annual{display:none}" is only
+     (0,1,0) and loses regardless of source order, so this has to match or
+     beat two classes to actually hide the annual price by default. */
+  .price-card .price-annual { display: none; }
+  .price-annual-detail { display: none; font-size: 0.78rem; color: var(--muted); margin: -2px 0 20px; }
+  .price-annual-detail .save { color: var(--green); }
+  .pricing-grid.is-annual .price-card .price-monthly { display: none; }
+  .pricing-grid.is-annual .price-card .price-annual { display: flex; }
+  .pricing-grid.is-annual .price-annual-detail { display: block; }
+
   @media (max-width: 980px) {
     .pricing-grid { grid-template-columns: 1fr 1fr; }
   }
@@ -921,11 +969,18 @@
         <p class="sub">No per-document metering to watch nervously. Every plan runs the same extraction, review, and matching engine — you're paying for volume and support.</p>
       </div>
 
+      <div class="billing-toggle reveal" role="group" aria-label="Billing period">
+        <button type="button" class="billing-toggle-btn active" data-period="monthly">Monthly</button>
+        <button type="button" class="billing-toggle-btn" data-period="annual">Annual <span class="save-tag">Save 20%</span></button>
+      </div>
+
       <div class="pricing-grid">
         <div class="price-card reveal">
           <div class="plan-tag">Starter</div>
           <h3>For a single AP owner</h3>
-          <div class="price">$99<span class="per">/mo</span></div>
+          <div class="price price-monthly">$99<span class="per">/mo</span></div>
+          <div class="price price-annual">$79<span class="per">/mo, billed annually</span></div>
+          <div class="price-annual-detail">$948/yr <span class="save">— save $240 (20%, ~2 months free)</span></div>
           <div class="cap">Up to 150 documents/mo</div>
           <ul>
             <li>1 seat</li>
@@ -939,7 +994,9 @@
         <div class="price-card featured reveal">
           <div class="plan-tag">Growth <span class="plan-badge">Most teams start here</span></div>
           <h3>For a small AP team</h3>
-          <div class="price">$249<span class="per">/mo</span></div>
+          <div class="price price-monthly">$249<span class="per">/mo</span></div>
+          <div class="price price-annual">$199<span class="per">/mo, billed annually</span></div>
+          <div class="price-annual-detail">$2,388/yr <span class="save">— save $600 (20%, ~2 months free)</span></div>
           <div class="cap">Up to 750 documents/mo</div>
           <ul>
             <li>5 seats</li>
@@ -953,7 +1010,9 @@
         <div class="price-card reveal">
           <div class="plan-tag">Business</div>
           <h3>For growing volume</h3>
-          <div class="price">$499<span class="per">/mo</span></div>
+          <div class="price price-monthly">$499<span class="per">/mo</span></div>
+          <div class="price price-annual">$399<span class="per">/mo, billed annually</span></div>
+          <div class="price-annual-detail">$4,788/yr <span class="save">— save $1,200 (20%, ~2 months free)</span></div>
           <div class="cap">Up to 2,500 documents/mo</div>
           <ul>
             <li>Unlimited seats</li>
@@ -979,7 +1038,7 @@
         </div>
       </div>
 
-      <p class="pricing-foot">Every plan starts with a 14-day free trial, no card required. Overage beyond your cap is billed at $0.15/document — no surprise plan changes mid-month. Annual billing gets you two months free. All plans can self-host on Postgres or SQLite.</p>
+      <p class="pricing-foot">Every plan starts with a 14-day free trial, no card required. Overage beyond your cap is billed at $0.15/document — no surprise plan changes mid-month. All plans can self-host on Postgres or SQLite.</p>
     </div>
   </section>
 
@@ -1098,6 +1157,22 @@
   }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
 
   items.forEach(function (el) { observer.observe(el); });
+})();
+</script>
+
+<script>
+(function () {
+  var toggleBtns = document.querySelectorAll('.billing-toggle-btn');
+  var grid = document.querySelector('.pricing-grid');
+  if (!toggleBtns.length || !grid) return;
+
+  toggleBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      toggleBtns.forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      grid.classList.toggle('is-annual', btn.dataset.period === 'annual');
+    });
+  });
 })();
 </script>
 
