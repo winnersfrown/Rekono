@@ -40,18 +40,24 @@ MatchEntry.belongsTo(MatchSource, { foreignKey: "sourceId", as: "source" });
 
 MatchResult.belongsTo(MatchEntry, { foreignKey: "matchEntryId", as: "matchEntry" });
 
+// Postgres codes that mean "another process already created this" rather
+// than a real schema problem: 42P07 duplicate_table (a table or index by
+// that name already exists), 42710 duplicate_object, 23505 unique_violation
+// (concurrent `CREATE TABLE IF NOT EXISTS` racing on Postgres's own internal
+// pg_type catalog -- reproduced locally by running sync() from two processes
+// against the same fresh database at once). Render's rolling deploys start
+// the new container and run its own sequelize.sync() while the previous
+// container is still up, so two instances legitimately race to sync the
+// same persistent database on every deploy -- this isn't a hypothetical.
+const BENIGN_SYNC_RACE_CODES = new Set(["42P07", "42710", "23505"]);
+
 export async function initDb() {
   try {
     await sequelize.sync();
   } catch (err) {
-    // Postgres 42P07 = relation (table/index) already exists. sequelize.sync()
-    // re-checks and (re)creates any index it doesn't recognize by name on every
-    // boot; against a persistent database that already has the schema, that
-    // recheck can still race into "already exists" instead of a clean skip.
-    // That's a no-op, not a real failure -- crashing the whole process over it
-    // would take down the app on every subsequent restart against this DB.
-    if (err?.parent?.code === "42P07" || err?.original?.code === "42P07") {
-      console.warn(`sequelize.sync(): schema already present, continuing (${err.parent?.message || err.message})`);
+    const code = err?.parent?.code || err?.original?.code;
+    if (BENIGN_SYNC_RACE_CODES.has(code)) {
+      console.warn(`sequelize.sync(): schema already present (racing another instance?), continuing (${err.parent?.message || err.message})`);
       return;
     }
     throw err;
