@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
-import { requireActiveTrial } from "../trial.js";
+import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import { Invoice, MatchResult } from "../models/index.js";
 
@@ -21,7 +21,7 @@ const MAX_INVOICES_IN_CONTEXT = 300;
 
 const SYSTEM_PROMPT = `You are Rekono's in-app assistant, helping an accounts-payable user understand their invoice data. Answer only using the JSON data provided in the user message -- never invent vendors, amounts, dates, or statuses that aren't in it. If the data doesn't contain what's needed to answer, say so plainly rather than guessing. Be concise: a few sentences, or a short list. You can summarize, count, filter, and total the data, but you cannot take any action (approve, reject, export, upload, run matching, etc.) -- if asked to do something rather than answer a question, say which tab/button does that instead of attempting it.`;
 
-router.post("/api/assistant/ask", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const parsed = askSchema.safeParse(req.body);
     if (!parsed.success) {

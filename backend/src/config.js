@@ -46,4 +46,13 @@ export const settings = {
   resendApiKey: process.env.RESEND_API_KEY || "",
   contactToEmail: process.env.CONTACT_TO_EMAIL || "aiden.lai@yahoo.com",
   contactFromEmail: process.env.CONTACT_FROM_EMAIL || "onboarding@resend.dev",
+
+  // Billing (Stripe Checkout + webhooks for paid-plan onboarding). Unset
+  // STRIPE_SECRET_KEY -> billing routes respond 503 rather than crashing,
+  // same graceful-degradation pattern as Resend/Anthropic above. Prices are
+  // built inline at checkout time from plans.js (see routes/billing.js), so
+  // no Stripe Product/Price objects need to be pre-created in the dashboard
+  // -- only an account and its API/webhook keys.
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
 };

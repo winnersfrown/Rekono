@@ -60,13 +60,114 @@
     </div>
   </div>
 
-  <div id="trial-expired" class="auth-gate" style="display: none;">
+  <div id="billing-required" class="auth-gate" style="display: none;">
     <div class="auth-card">
       <div class="brand" style="margin-bottom: 1.5rem;"><span class="logomark"></span>Rekono</div>
-      <h1 style="margin-bottom: 0.75rem;">Your 14-day trial has ended</h1>
-      <p class="hint">Your account and data are still here — get in touch to keep using Rekono.</p>
+      <h1 style="margin-bottom: 0.75rem;">Your subscription isn't active</h1>
+      <p class="hint">Your account and data are still here — update your billing to keep using Rekono.</p>
+      <div id="billing-required-error" class="auth-error" style="display: none;"></div>
       <div class="actions" style="margin-top: 1rem;">
-        <button id="trial-expired-logout-btn" class="btn-logout">Sign out</button>
+        <button id="billing-required-manage-btn">Update billing</button>
+        <button id="billing-required-logout-btn" class="btn-logout">Sign out</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="onboarding-gate" class="auth-gate" style="display: none;">
+    <div class="auth-card onboarding-card">
+      <div class="brand" style="margin-bottom: 1.5rem;"><span class="logomark"></span>Rekono</div>
+      <div id="onboarding-error" class="auth-error" style="display: none;"></div>
+
+      <div id="onboarding-step-personalize" class="onboarding-step active">
+        <p class="onboarding-step-label">Step 1 of 2</p>
+        <h1>Tell us a bit about you</h1>
+        <p class="hint">This helps us tailor Rekono to how you work. Takes 30 seconds.</p>
+        <form id="onboarding-personalize-form">
+          <fieldset class="onboarding-question">
+            <legend>What's your role?</legend>
+            <div class="onboarding-options">
+              <label class="onboarding-option"><input type="radio" name="role" value="finance_accounting" required /><span>Finance / Accounting</span></label>
+              <label class="onboarding-option"><input type="radio" name="role" value="operations" /><span>Operations</span></label>
+              <label class="onboarding-option"><input type="radio" name="role" value="founder_owner" /><span>Founder / Owner</span></label>
+              <label class="onboarding-option"><input type="radio" name="role" value="other" /><span>Other</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="onboarding-question">
+            <legend>How many people will use Rekono?</legend>
+            <div class="onboarding-options">
+              <label class="onboarding-option"><input type="radio" name="company_size" value="just_me" required /><span>Just me</span></label>
+              <label class="onboarding-option"><input type="radio" name="company_size" value="2_5" /><span>2–5</span></label>
+              <label class="onboarding-option"><input type="radio" name="company_size" value="6_20" /><span>6–20</span></label>
+              <label class="onboarding-option"><input type="radio" name="company_size" value="20_plus" /><span>20+</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="onboarding-question">
+            <legend>What will you mainly use Rekono for?</legend>
+            <div class="onboarding-options">
+              <label class="onboarding-option"><input type="radio" name="primary_use_case" value="data_entry" required /><span>Invoice data entry</span></label>
+              <label class="onboarding-option"><input type="radio" name="primary_use_case" value="approval_workflow" /><span>Approval workflow</span></label>
+              <label class="onboarding-option"><input type="radio" name="primary_use_case" value="reconciliation" /><span>Reconciliation / matching</span></label>
+              <label class="onboarding-option"><input type="radio" name="primary_use_case" value="reporting_export" /><span>Reporting / export</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="onboarding-question">
+            <legend>About how many invoices do you process per month?</legend>
+            <div class="onboarding-options">
+              <label class="onboarding-option"><input type="radio" name="monthly_invoice_volume" value="under_25" required /><span>Under 25</span></label>
+              <label class="onboarding-option"><input type="radio" name="monthly_invoice_volume" value="25_150" /><span>25–150</span></label>
+              <label class="onboarding-option"><input type="radio" name="monthly_invoice_volume" value="150_750" /><span>150–750</span></label>
+              <label class="onboarding-option"><input type="radio" name="monthly_invoice_volume" value="750_plus" /><span>750+</span></label>
+            </div>
+          </fieldset>
+
+          <button type="submit">Continue</button>
+        </form>
+      </div>
+
+      <div id="onboarding-step-plan" class="onboarding-step">
+        <p class="onboarding-step-label">Step 2 of 2</p>
+        <h1>Choose your plan</h1>
+        <p class="hint">Start free, or pick a paid plan — you'll enter payment details next if you do.</p>
+
+        <div class="billing-toggle" role="group" aria-label="Billing period">
+          <button type="button" class="billing-toggle-btn active" data-period="monthly">Monthly</button>
+          <button type="button" class="billing-toggle-btn" data-period="annual">Annual <span class="save-tag">Save 20%</span></button>
+        </div>
+
+        <div class="onboarding-plan-grid" id="onboarding-plan-grid">
+          <button type="button" class="onboarding-plan-card" data-plan="free">
+            <div class="plan-tag">Free</div>
+            <div class="price price-monthly price-annual">$0<span class="per">/mo</span></div>
+            <div class="cap">25 documents/mo · 1 seat</div>
+          </button>
+          <button type="button" class="onboarding-plan-card" data-plan="starter">
+            <div class="plan-tag">Starter</div>
+            <div class="price price-monthly">$99<span class="per">/mo</span></div>
+            <div class="price price-annual">$79<span class="per">/mo</span></div>
+            <div class="cap">150 documents/mo · 1 seat</div>
+          </button>
+          <button type="button" class="onboarding-plan-card featured" data-plan="growth">
+            <div class="plan-tag">Growth <span class="plan-badge-mini">Most teams start here</span></div>
+            <div class="price price-monthly">$249<span class="per">/mo</span></div>
+            <div class="price price-annual">$199<span class="per">/mo</span></div>
+            <div class="cap">750 documents/mo · 5 seats</div>
+          </button>
+          <button type="button" class="onboarding-plan-card" data-plan="business">
+            <div class="plan-tag">Business</div>
+            <div class="price price-monthly">$499<span class="per">/mo</span></div>
+            <div class="price price-annual">$399<span class="per">/mo</span></div>
+            <div class="cap">2,500 documents/mo · unlimited seats</div>
+          </button>
+        </div>
+
+        <p class="auth-side-link">Need more? <a href="mailto:aiden.lai@yahoo.com?subject=Rekono%20Enterprise%20inquiry">Talk to us about Enterprise</a></p>
+
+        <div class="onboarding-step-actions">
+          <button type="button" id="onboarding-back-btn" class="btn-logout">Back</button>
+        </div>
       </div>
     </div>
   </div>
@@ -106,7 +207,7 @@
         </div>
 
         <div class="sidebar-footer">
-          <span id="trial-badge" class="trial-badge"></span>
+          <span id="plan-badge" class="plan-badge"></span>
           <div class="sidebar-user-row">
             <span id="current-user-badge"></span>
             <button id="logout-btn" class="btn-logout">Sign out</button>

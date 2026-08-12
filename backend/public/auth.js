@@ -1,7 +1,9 @@
 // Auth gate: token storage, authenticated fetch wrapper, and the
-// login/signup screen that guards the rest of the app.
+// login/signup/onboarding screens that guard the rest of the app.
 
 const TOKEN_KEY = "rekono_token";
+
+const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business" };
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -16,8 +18,10 @@ function clearToken() {
 }
 
 // Drop-in replacement for fetch() that attaches the bearer token, bounces
-// back to the login screen on a 401 (expired/invalid token), and shows the
-// trial-expired screen on a 402 (trial ran out mid-session).
+// back to the login screen on a 401 (expired/invalid token), and on a 402
+// routes to whichever screen actually applies -- onboarding was never
+// finished (onboarding_required) vs. a paid plan with no active
+// subscription behind it (billing_required). See plan.js on the backend.
 async function apiFetch(url, options = {}) {
   const token = getToken();
   const headers = new Headers(options.headers || {});
@@ -30,36 +34,53 @@ async function apiFetch(url, options = {}) {
     throw new Error("Session expired. Please sign in again.");
   }
   if (res.status === 402) {
-    showTrialExpired();
-    throw new Error("Trial expired.");
+    const body = await res
+      .clone()
+      .json()
+      .catch(() => ({}));
+    if (body.onboarding_required) {
+      showOnboarding();
+    } else {
+      showBillingRequired();
+    }
+    throw new Error(body.detail || "Access blocked.");
   }
   return res;
 }
 
 function showAuthGate() {
   document.getElementById("auth-gate").style.display = "flex";
-  document.getElementById("trial-expired").style.display = "none";
+  document.getElementById("onboarding-gate").style.display = "none";
+  document.getElementById("billing-required").style.display = "none";
   document.getElementById("app-shell").style.display = "none";
 }
 
-function showTrialExpired() {
+function showOnboarding() {
   document.getElementById("auth-gate").style.display = "none";
-  document.getElementById("trial-expired").style.display = "flex";
+  document.getElementById("onboarding-gate").style.display = "flex";
+  document.getElementById("billing-required").style.display = "none";
+  document.getElementById("app-shell").style.display = "none";
+}
+
+function showBillingRequired() {
+  document.getElementById("auth-gate").style.display = "none";
+  document.getElementById("onboarding-gate").style.display = "none";
+  document.getElementById("billing-required").style.display = "flex";
   document.getElementById("app-shell").style.display = "none";
 }
 
 function showApp(user) {
   document.getElementById("auth-gate").style.display = "none";
-  document.getElementById("trial-expired").style.display = "none";
+  document.getElementById("onboarding-gate").style.display = "none";
+  document.getElementById("billing-required").style.display = "none";
   document.getElementById("app-shell").style.display = "block";
   const badge = document.getElementById("current-user-badge");
   if (badge) badge.textContent = user.full_name || user.email;
 
-  const trialBadge = document.getElementById("trial-badge");
-  if (trialBadge) {
-    const days = user.trial_days_remaining;
-    trialBadge.textContent = days === 1 ? "1 day left in trial" : `${days} days left in trial`;
-    trialBadge.classList.toggle("trial-badge-warn", days <= 3);
+  const planBadge = document.getElementById("plan-badge");
+  if (planBadge) {
+    const planName = PLAN_NAMES[user.plan] || user.plan;
+    planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
   }
 }
 
@@ -144,6 +165,85 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
   }
 });
 
+// ---- Onboarding wizard (personalization -> plan choice) ----
+// Personalization answers live in memory only until the plan step submits
+// them together with the plan choice in one call -- there's no draft-saving
+// endpoint, since the whole point is this is a single short wizard, not a
+// multi-session form.
+let onboardingAnswers = null;
+
+function showOnboardingStep(stepId) {
+  document.querySelectorAll(".onboarding-step").forEach((s) => s.classList.remove("active"));
+  document.getElementById(stepId).classList.add("active");
+  document.getElementById("onboarding-error").style.display = "none";
+}
+
+document.getElementById("onboarding-personalize-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  onboardingAnswers = {
+    role: formData.get("role"),
+    company_size: formData.get("company_size"),
+    primary_use_case: formData.get("primary_use_case"),
+    monthly_invoice_volume: formData.get("monthly_invoice_volume"),
+  };
+  showOnboardingStep("onboarding-step-plan");
+});
+
+document.getElementById("onboarding-back-btn").addEventListener("click", () => {
+  showOnboardingStep("onboarding-step-personalize");
+});
+
+document.querySelectorAll("#onboarding-step-plan .billing-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#onboarding-step-plan .billing-toggle-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("onboarding-plan-grid").classList.toggle("is-annual", btn.dataset.period === "annual");
+  });
+});
+
+document.querySelectorAll(".onboarding-plan-card").forEach((card) => {
+  card.addEventListener("click", async () => {
+    const errorEl = document.getElementById("onboarding-error");
+    errorEl.style.display = "none";
+
+    // Nothing to submit if step 1 was somehow skipped (shouldn't be
+    // reachable through the UI, but the plan step has no other guard against
+    // it) -- send back to fill it in rather than posting blank answers.
+    if (!onboardingAnswers) {
+      showOnboardingStep("onboarding-step-personalize");
+      return;
+    }
+
+    const plan = card.dataset.plan;
+    const billingPeriod = document.querySelector("#onboarding-step-plan .billing-toggle-btn.active").dataset.period;
+    document.querySelectorAll(".onboarding-plan-card").forEach((c) => (c.disabled = true));
+    try {
+      const res = await apiFetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...onboardingAnswers, plan, billing_period: billingPeriod }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        errorEl.textContent = body.detail || "Something went wrong.";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (body.checkout_required) {
+        window.location.href = body.checkout_url; // leaving the page for Stripe Checkout
+        return;
+      }
+      await bootstrapApp();
+    } catch (err) {
+      errorEl.textContent = String(err.message || err);
+      errorEl.style.display = "block";
+    } finally {
+      document.querySelectorAll(".onboarding-plan-card").forEach((c) => (c.disabled = false));
+    }
+  });
+});
+
 document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => showAuthPanel(`auth-${btn.dataset.authTab}`, { tabBtn: btn }));
 });
@@ -220,9 +320,23 @@ document.getElementById("logout-btn").addEventListener("click", () => {
   showAuthGate();
 });
 
-document.getElementById("trial-expired-logout-btn").addEventListener("click", () => {
+document.getElementById("billing-required-logout-btn").addEventListener("click", () => {
   clearToken();
   showAuthGate();
+});
+
+document.getElementById("billing-required-manage-btn").addEventListener("click", async () => {
+  const el = document.getElementById("billing-required-error");
+  el.style.display = "none";
+  try {
+    const res = await apiFetch("/api/billing/portal");
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not open billing management.");
+    window.location.href = body.url;
+  } catch (err) {
+    el.textContent = String(err.message || err);
+    el.style.display = "block";
+  }
 });
 
 // Verifies any stored token against the API and shows the right screen.
@@ -242,8 +356,12 @@ async function bootstrapApp() {
       return;
     }
     const user = await res.json();
-    if (user.trial_expired) {
-      showTrialExpired();
+    if (!user.onboarding_completed) {
+      showOnboarding();
+      return;
+    }
+    if (user.plan !== "free" && user.subscription_status !== "active") {
+      showBillingRequired();
       return;
     }
     showApp(user);
@@ -253,16 +371,53 @@ async function bootstrapApp() {
   }
 }
 
+// Stripe redirects back here after Checkout. "success" needs the backend to
+// actually confirm the session -- the URL alone isn't proof of payment --
+// before treating the plan as active; "cancelled" just returns to the plan
+// step, since personalization was already saved server-side before the
+// redirect to Stripe happened, so there's nothing to re-ask.
+function handleCheckoutReturn(checkoutParam) {
+  const params = new URLSearchParams(location.search);
+  history.replaceState(null, "", location.pathname);
+  showOnboarding();
+  showOnboardingStep("onboarding-step-plan");
+  const errorEl = document.getElementById("onboarding-error");
+
+  if (checkoutParam === "cancelled") {
+    errorEl.textContent = "Payment was cancelled. Choose a plan to continue, or pick Free for now.";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  const sessionId = params.get("session_id");
+  document.querySelectorAll(".onboarding-plan-card").forEach((c) => (c.disabled = true));
+  errorEl.textContent = "Confirming your payment…";
+  errorEl.style.display = "block";
+  apiFetch(`/api/billing/confirm?session_id=${encodeURIComponent(sessionId || "")}`)
+    .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+    .then(({ ok, body }) => {
+      if (!ok) throw new Error(body.detail || "Could not confirm payment.");
+      return bootstrapApp();
+    })
+    .catch((err) => {
+      errorEl.textContent = String(err.message || err);
+      document.querySelectorAll(".onboarding-plan-card").forEach((c) => (c.disabled = false));
+    });
+}
+
 // A reset link takes priority over any existing session -- someone who
 // clicked it clearly wants to set a new password, not silently land back in
 // an already-logged-in app. Strip the token from the visible URL/history
 // right away so it doesn't linger in the address bar or browser history.
 const resetTokenFromUrl = new URLSearchParams(location.search).get("reset_token");
+const checkoutParam = new URLSearchParams(location.search).get("checkout");
 if (resetTokenFromUrl) {
   pendingResetToken = resetTokenFromUrl;
   history.replaceState(null, "", location.pathname);
   showAuthGate();
   showAuthPanel("auth-reset-panel");
+} else if (checkoutParam === "success" || checkoutParam === "cancelled") {
+  handleCheckoutReturn(checkoutParam);
 } else {
   bootstrapApp();
 }
