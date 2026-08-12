@@ -41,7 +41,21 @@ MatchEntry.belongsTo(MatchSource, { foreignKey: "sourceId", as: "source" });
 MatchResult.belongsTo(MatchEntry, { foreignKey: "matchEntryId", as: "matchEntry" });
 
 export async function initDb() {
-  await sequelize.sync();
+  try {
+    await sequelize.sync();
+  } catch (err) {
+    // Postgres 42P07 = relation (table/index) already exists. sequelize.sync()
+    // re-checks and (re)creates any index it doesn't recognize by name on every
+    // boot; against a persistent database that already has the schema, that
+    // recheck can still race into "already exists" instead of a clean skip.
+    // That's a no-op, not a real failure -- crashing the whole process over it
+    // would take down the app on every subsequent restart against this DB.
+    if (err?.parent?.code === "42P07" || err?.original?.code === "42P07") {
+      console.warn(`sequelize.sync(): schema already present, continuing (${err.parent?.message || err.message})`);
+      return;
+    }
+    throw err;
+  }
 }
 
 export { Organization, User, Invoice, LineItem, AuditLog, MatchSource, MatchEntry, MatchResult };
