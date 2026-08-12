@@ -52,6 +52,28 @@ MatchResult.belongsTo(MatchEntry, { foreignKey: "matchEntryId", as: "matchEntry"
 const BENIGN_SYNC_RACE_CODES = new Set(["42P07", "42710", "23505"]);
 
 export async function initDb() {
+  // Operator-triggered escape hatch for schema drift that additive-only
+  // sync can't fix by itself -- e.g. a required column that can't be added
+  // because legacy rows predate it (see the 23502 branch below), which is
+  // exactly what happened to this app's own live database once. There's no
+  // way to safely guess the right values for those legacy rows from inside
+  // the app, so instead of trying, this drops and recreates the schema from
+  // scratch, then falls through to the normal sync below to rebuild every
+  // table from the current models with a guaranteed-correct shape.
+  //
+  // Deliberately gated behind an explicitly-named env var rather than any
+  // kind of admin API route: setting DANGEROUSLY_RESET_DB=true on the
+  // deployed service and redeploying is something an operator does through
+  // Render's own dashboard (which already requires their login), with
+  // nothing new to install or authenticate against. ALL DATA IS LOST.
+  // Remove the env var again right after confirming it worked -- it stays
+  // set across restarts otherwise, and every future boot would wipe the
+  // database again.
+  if (process.env.DANGEROUSLY_RESET_DB === "true" && sequelize.getDialect() === "postgres") {
+    console.warn("DANGEROUSLY_RESET_DB is set -- dropping and recreating the public schema now. ALL DATA WILL BE LOST.");
+    await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
+  }
+
   try {
     // { drop: false } is the safe half of Sequelize's "alter" mode: it adds
     // any column a model declares that an existing table is missing (e.g.
