@@ -55,4 +55,10 @@ export const settings = {
   // -- only an account and its API/webhook keys.
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+
+  // "Sign in with Google" (routes/auth.js). Unset GOOGLE_CLIENT_ID ->
+  // GET /api/auth/google redirects straight back with an error instead of
+  // crashing, same graceful-degradation pattern as Resend/Stripe above.
+  googleClientId: process.env.GOOGLE_CLIENT_ID || "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
 };

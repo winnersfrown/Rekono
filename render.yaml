@@ -56,3 +56,7 @@ services:
         sync: false # optional -- enables paid plans (Free plan and everything else work without it)
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # optional, pairs with STRIPE_SECRET_KEY -- see README's "Plans & billing (Stripe)" section
+      - key: GOOGLE_CLIENT_ID
+        sync: false # optional -- enables "Sign in with Google" (email/password works without it)
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false # optional, pairs with GOOGLE_CLIENT_ID -- see README's "Sign in with Google" section

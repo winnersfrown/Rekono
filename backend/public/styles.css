@@ -328,6 +328,39 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 .auth-panel { display: none; }
 .auth-panel.active { display: block; animation: fade-in 0.2s ease; }
 
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #ffffff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  border-radius: 7px;
+  padding: 0.65rem 0.8rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.87rem;
+  width: 100%;
+  text-decoration: none;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn-google:hover { background: #f8f9fa; box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.4); transform: none; }
+.btn-google svg { flex: none; }
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.1rem 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
 .auth-panel form { flex-direction: column; align-items: stretch; gap: 0.95rem; margin-bottom: 0; }
 
 .auth-panel label {

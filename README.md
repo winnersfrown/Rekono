@@ -142,16 +142,19 @@ cd backend
 npm test
 ```
 
-Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, onboarding + plan gating (`onboarding_required`/`billing_required`, including a "trialing" subscription counting as active), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path, plus unit coverage of the checkout-session/trial-period and subscription-replacement logic against a fake Stripe client), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 87 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe key, or a real Postgres database, so they run in plain CI.
+Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, Google sign-in's find-or-create-by-verified-email logic and single-use handoff codes, onboarding + plan gating (`onboarding_required`/`billing_required`, including a "trialing" subscription counting as active), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path, plus unit coverage of the checkout-session/trial-period and subscription-replacement logic against a fake Stripe client), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 98 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe/Google key, or a real Postgres database, so they run in plain CI.
 
 ## API surface
 
-Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth routes also returns `402` once that org's onboarding/billing state isn't active (`onboarding_required` or `billing_required` -- see `plan.js`).
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/google*`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth routes also returns `402` once that org's onboarding/billing state isn't active (`onboarding_required` or `billing_required` -- see `plan.js`).
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/auth/signup` | Create an organization + first user, returns a bearer token |
 | `POST /api/auth/login` | Email + password → bearer token |
+| `GET /api/auth/google` | Redirects to Google's OAuth consent screen (requires `GOOGLE_CLIENT_ID`) |
+| `GET /api/auth/google/callback` | Google redirects back here; finds or creates the account by verified email and redirects to `/` with a single-use handoff code |
+| `GET /api/auth/google/exchange` | `{code}` from that redirect → bearer token (the actual token is never put in a URL) |
 | `POST /api/auth/forgot-password` | Email a password reset link (requires `RESEND_API_KEY`; always responds the same way regardless of whether the email matches an account, to avoid leaking which emails are registered) |
 | `POST /api/auth/reset-password` | `{token, password}` from the emailed link → new password, returns a bearer token (signs the user in) |
 | `GET /api/auth/me` | Current user + plan status (`plan`, `billing_period`, `subscription_status`, `onboarding_completed`), for verifying a stored token |
@@ -197,6 +200,16 @@ Paid-plan checkout, the billing-management portal, and the onboarding wizard's p
 4. Switch to live mode keys (both the secret key and a live-mode webhook endpoint/secret) once you're ready to accept real payments -- test and live are entirely separate in Stripe, including their webhooks.
 5. Plan prices/caps live in `backend/src/plans.js`, matching the marketing site's pricing section -- change both together if either changes.
 6. A brand new org's first paid plan choice (during onboarding) gets a 14-day Stripe trial (`TRIAL_DAYS` in `plans.js`) -- a card is collected at checkout but not charged until the trial ends, handled entirely by Stripe's `subscription_data.trial_period_days`, no custom day-counting. A later plan change through the in-app Upgrade button bills immediately, no trial (see `createCheckoutSession` in `routes/billing.js`).
+
+### Sign in with Google
+
+The "Sign in with Google" button needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` set, or `GET /api/auth/google` redirects straight back with an error instead of crashing (email/password sign-in and everything else work regardless).
+
+1. In the [Google Cloud Console](https://console.cloud.google.com), create a project (or reuse one) and go to **APIs & Services → OAuth consent screen**. Fill in the required fields (app name, support email); external + testing mode is fine to start.
+2. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**, application type **Web application**.
+3. Under **Authorized redirect URIs**, add `https://<your-deployed-url>/api/auth/google/callback` (and `http://localhost:8000/api/auth/google/callback` too, for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/auth/google/callback`.
+4. Copy the generated **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Render/Fly dashboard, or `.env` locally).
+5. No new database columns or account-linking table: a Google sign-in is matched to an existing account purely by verified email, and creates a new org + user (same as a normal signup, sent through the same onboarding wizard) if there's no match yet. See `completeGoogleLogin` in `routes/auth.js`.
 
 ## Roadmap (beyond this MVP)
 
