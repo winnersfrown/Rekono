@@ -55,6 +55,13 @@ export async function createCheckoutSession({ org, email, planId, billingPeriod,
   return stripe.checkout.sessions.create({
     mode: "subscription",
     customer_email: email,
+    // Newer Stripe accounts have Managed Payments (Stripe as merchant of
+    // record: automatic tax compliance, fraud/dispute handling) on by
+    // default, which requires a tax_code on every line item's product_data
+    // or Checkout Session creation fails outright. Rekono doesn't do tax
+    // calculation at all, so opt this session out rather than picking tax
+    // codes for a feature set we're not actually using.
+    managed_payments: { enabled: false },
     line_items: [
       {
         price_data: {
