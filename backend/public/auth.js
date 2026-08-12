@@ -3,8 +3,8 @@
 
 const TOKEN_KEY = "rekono_token";
 
-const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business" };
-const PLAN_ORDER = ["free", "starter", "growth", "business"];
+const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business", scale: "Scale" };
+const PLAN_ORDER = ["free", "starter", "growth", "business", "scale"];
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);

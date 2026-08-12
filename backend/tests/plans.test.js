@@ -16,7 +16,7 @@ test("billingCycleAmountUsd charges the plain monthly rate every month", () => {
 });
 
 test("billingCycleAmountUsd charges 12x the monthly-equivalent rate once a year", () => {
-  for (const planId of ["starter", "growth", "business"]) {
+  for (const planId of ["starter", "growth", "business", "scale"]) {
     expect(billingCycleAmountUsd(planId, "annual")).toBe(PLANS[planId].annualPriceUsd * 12);
   }
 });
@@ -25,4 +25,5 @@ test("matches the marketing site's advertised annual totals", () => {
   expect(billingCycleAmountUsd("starter", "annual")).toBe(948);
   expect(billingCycleAmountUsd("growth", "annual")).toBe(2388);
   expect(billingCycleAmountUsd("business", "annual")).toBe(4788);
+  expect(billingCycleAmountUsd("scale", "annual")).toBe(14388);
 });
