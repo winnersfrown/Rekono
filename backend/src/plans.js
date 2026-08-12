@@ -2,8 +2,7 @@
 // onboarding (doc caps, Stripe checkout amounts) and by requirePlanCap
 // (upload-time enforcement). Prices match the marketing site's pricing
 // section exactly (annual = ~20% off, the same rounded price points).
-// Enterprise is intentionally not here: it's "talk to us," not self-serve,
-// and has no fixed price or cap to encode.
+// Scale is the ceiling: fully self-serve, no "talk to us" custom tier above it.
 
 export const PLANS = {
   free: {
