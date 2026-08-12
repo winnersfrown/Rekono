@@ -510,7 +510,19 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 .app-main { flex: 1; min-width: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; }
 
 /* ---------- ask hero + thread ---------- */
-.ask-hero { max-width: 640px; margin: 3.8rem auto 2.2rem; text-align: center; }
+/* Centered vertically in the panel, not pinned near the top -- this tab is
+   the app's landing view, so it should read like one (ChatGPT/Claude-style
+   empty state), not leave a wall of empty space below a top-anchored block.
+   Only #tab-ask gets this: every other tab holds variable-height, top-
+   anchored content (tables, forms) that centering would look wrong for. */
+#tab-ask.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: calc(100vh - 3.6rem); /* viewport minus .app-main's own top+bottom padding */
+}
+
+.ask-hero { max-width: 640px; margin: 0 auto 2.2rem; text-align: center; }
 
 .ask-hero h1 { font-size: 1.75rem; margin-bottom: 1.4rem; }
 
@@ -584,4 +596,11 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line-soft); }
   .sidebar-recents { max-height: 160px; }
   .app-main { padding: 1.4rem 1.2rem; }
+
+  /* The sidebar stacks above the content here instead of beside it, so a
+     100vh-based min-height would overshoot and force extra scrolling below
+     the fold for no reason. Screen space is tight on mobile anyway, so just
+     let the hero sit at its natural top-anchored height instead. */
+  #tab-ask.tab-panel.active { display: block; min-height: 0; }
+  .ask-hero { margin-top: 1.5rem; }
 }
