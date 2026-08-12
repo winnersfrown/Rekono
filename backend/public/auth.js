@@ -69,6 +69,26 @@ function authError(message) {
   el.style.display = message ? "block" : "none";
 }
 
+function authSuccess(message) {
+  const el = document.getElementById("auth-success");
+  el.textContent = message;
+  el.style.display = message ? "block" : "none";
+}
+
+// Forgot/reset live outside the Sign in / Create account tab pair -- reached
+// via a link (forgot) or a one-off emailed URL (reset), not the tab bar --
+// so switching to them also hides the tab bar rather than trying to make it
+// track a third/fourth "active" state.
+function showAuthPanel(panelId, { tabBtn } = {}) {
+  document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".auth-panel").forEach((p) => p.classList.remove("active"));
+  document.getElementById(panelId).classList.add("active");
+  if (tabBtn) tabBtn.classList.add("active");
+  document.querySelector(".auth-tabs").style.display = tabBtn ? "flex" : "none";
+  authError("");
+  authSuccess("");
+}
+
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   authError("");
@@ -120,13 +140,74 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
 });
 
 document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".auth-panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(`auth-${btn.dataset.authTab}`).classList.add("active");
-    authError("");
-  });
+  btn.addEventListener("click", () => showAuthPanel(`auth-${btn.dataset.authTab}`, { tabBtn: btn }));
+});
+
+document.getElementById("forgot-password-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  showAuthPanel("auth-forgot-panel");
+});
+
+document.getElementById("forgot-back-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  showAuthPanel("auth-login-panel", { tabBtn: document.querySelector('[data-auth-tab="login-panel"]') });
+});
+
+document.getElementById("forgot-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError("");
+  authSuccess("");
+  const email = document.getElementById("forgot-email").value.trim();
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch("/api/auth/forgot-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      authSuccess(body.detail || "If an account exists for that email, we've sent password reset instructions.");
+      e.target.reset();
+    } else {
+      authError(body.detail || "Something went wrong.");
+    }
+  } catch (err) {
+    authError(String(err));
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+// Populated from ?reset_token=... on page load, below -- present only when
+// the user arrived via the link from a reset-password email.
+let pendingResetToken = null;
+
+document.getElementById("reset-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError("");
+  const password = document.getElementById("reset-password").value;
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: pendingResetToken, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      authError(body.detail || "Could not reset your password.");
+      return;
+    }
+    setToken(body.access_token);
+    await bootstrapApp();
+  } catch (err) {
+    authError(String(err));
+  } finally {
+    submitBtn.disabled = false;
+  }
 });
 
 document.getElementById("logout-btn").addEventListener("click", () => {
@@ -167,4 +248,16 @@ async function bootstrapApp() {
   }
 }
 
-bootstrapApp();
+// A reset link takes priority over any existing session -- someone who
+// clicked it clearly wants to set a new password, not silently land back in
+// an already-logged-in app. Strip the token from the visible URL/history
+// right away so it doesn't linger in the address bar or browser history.
+const resetTokenFromUrl = new URLSearchParams(location.search).get("reset_token");
+if (resetTokenFromUrl) {
+  pendingResetToken = resetTokenFromUrl;
+  history.replaceState(null, "", location.pathname);
+  showAuthGate();
+  showAuthPanel("auth-reset-panel");
+} else {
+  bootstrapApp();
+}

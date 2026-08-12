@@ -366,6 +366,24 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   margin-bottom: 1rem;
 }
 
+.auth-success {
+  background: rgba(62, 203, 132, 0.1);
+  color: var(--green);
+  border: 1px solid rgba(62, 203, 132, 0.3);
+  padding: 0.65rem 0.75rem;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.auth-side-link {
+  margin: 0.9rem 0 0;
+  text-align: center;
+  font-size: 0.82rem;
+}
+.auth-side-link a { color: var(--blue-bright); text-decoration: none; }
+.auth-side-link a:hover { text-decoration: underline; }
+
 .btn-logout {
   background: transparent;
   border: 1px solid var(--line);
