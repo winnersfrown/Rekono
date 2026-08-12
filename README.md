@@ -142,7 +142,7 @@ cd backend
 npm test
 ```
 
-Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, Google sign-in's find-or-create-by-verified-email logic and single-use handoff codes, onboarding + plan gating (`onboarding_required`/`billing_required`, including a "trialing" subscription counting as active), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path, plus unit coverage of the checkout-session/trial-period and subscription-replacement logic against a fake Stripe client), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 98 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe/Google key, or a real Postgres database, so they run in plain CI.
+Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, Google sign-in's find-or-create-by-verified-email logic and single-use handoff codes, onboarding + plan gating (`onboarding_required`/`billing_required`, including a "trialing" subscription counting as active), per-plan document cap enforcement and the "documents used this month" figure `GET /api/auth/me` reports, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path, plus unit coverage of the checkout-session/trial-period and subscription-replacement logic against a fake Stripe client), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 102 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe/Google key, or a real Postgres database, so they run in plain CI.
 
 ## API surface
 
@@ -157,7 +157,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/auth/google/exchange` | `{code}` from that redirect → bearer token (the actual token is never put in a URL) |
 | `POST /api/auth/forgot-password` | Email a password reset link (requires `RESEND_API_KEY`; always responds the same way regardless of whether the email matches an account, to avoid leaking which emails are registered) |
 | `POST /api/auth/reset-password` | `{token, password}` from the emailed link → new password, returns a bearer token (signs the user in) |
-| `GET /api/auth/me` | Current user + plan status (`plan`, `billing_period`, `subscription_status`, `onboarding_completed`), for verifying a stored token |
+| `GET /api/auth/me` | Current user + plan status (`plan`, `billing_period`, `subscription_status`, `trial_ends_at`, `onboarding_completed`, `documents_used_this_month`, `document_cap`), for verifying a stored token |
 | `POST /api/onboarding` | Personalization answers + plan choice. Free activates immediately; a paid plan returns a Stripe Checkout URL to redirect to |
 | `POST /api/billing/checkout` | Start a Stripe Checkout session for a plan change (same mechanism onboarding uses for its first plan choice) |
 | `GET /api/billing/confirm?session_id=` | Called on the redirect back from Stripe Checkout; verifies the session belongs to the caller's org and activates the plan |

@@ -49,8 +49,11 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     const invoice = await res.json();
     statusEl.textContent = `Uploaded "${invoice.original_filename}" — queued for extraction (id ${invoice.id}).`;
     fileInput.value = "";
-    loadRecentUploads();
-    bootstrapApp(); // refreshes the sidebar's "documents used this month" count
+    // bootstrapApp() already re-runs loadRecentUploads() via onAuthenticated()
+    // once it re-confirms the session, alongside refreshing the sidebar's
+    // "documents used this month" count -- calling loadRecentUploads() here
+    // too would just fire the same GET /api/invoices twice per upload.
+    bootstrapApp();
   } catch (err) {
     // err is a real Error here (thrown by apiFetch on 401/402, or a network
     // failure) -- its own message already reads naturally on its own
