@@ -18,6 +18,7 @@
         <button class="auth-tab-btn" data-auth-tab="signup-panel">Create account</button>
       </div>
       <div id="auth-error" class="auth-error" style="display: none;"></div>
+      <div id="auth-success" class="auth-success" style="display: none;"></div>
 
       <div id="auth-login-panel" class="auth-panel active">
         <form id="login-form">
@@ -25,6 +26,7 @@
           <label>Password<input type="password" id="login-password" required /></label>
           <button type="submit">Sign in</button>
         </form>
+        <p class="auth-side-link"><a href="#" id="forgot-password-link">Forgot your password?</a></p>
       </div>
 
       <div id="auth-signup-panel" class="auth-panel">
@@ -35,6 +37,23 @@
           <label>Password<input type="password" id="signup-password" minlength="8" required /></label>
           <p class="hint">At least 8 characters. This creates a new organization — teammates can be invited later.</p>
           <button type="submit">Create account</button>
+        </form>
+      </div>
+
+      <div id="auth-forgot-panel" class="auth-panel">
+        <p class="hint">Enter your account email and, if it matches an account, we'll send a link to reset your password.</p>
+        <form id="forgot-form">
+          <label>Email<input type="email" id="forgot-email" required /></label>
+          <button type="submit">Send reset link</button>
+        </form>
+        <p class="auth-side-link"><a href="#" id="forgot-back-link">Back to sign in</a></p>
+      </div>
+
+      <div id="auth-reset-panel" class="auth-panel">
+        <p class="hint">Choose a new password for your account.</p>
+        <form id="reset-form">
+          <label>New password<input type="password" id="reset-password" minlength="8" required /></label>
+          <button type="submit">Set new password</button>
         </form>
       </div>
     </div>

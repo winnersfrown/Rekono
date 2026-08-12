@@ -142,12 +142,14 @@ Covers the confidence cross-check logic, the fuzzy matching engine, the heuristi
 
 ## API surface
 
-Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except the three auth routes above also returns `402` once that org's 14-day trial has ended.
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth routes also returns `402` once that org's 14-day trial has ended.
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/auth/signup` | Create an organization + first user, returns a bearer token |
 | `POST /api/auth/login` | Email + password → bearer token |
+| `POST /api/auth/forgot-password` | Email a password reset link (requires `RESEND_API_KEY`; always responds the same way regardless of whether the email matches an account, to avoid leaking which emails are registered) |
+| `POST /api/auth/reset-password` | `{token, password}` from the emailed link → new password, returns a bearer token (signs the user in) |
 | `GET /api/auth/me` | Current user + trial status (`trial_ends_at`, `trial_expired`, `trial_days_remaining`), for verifying a stored token |
 | `POST /api/invoices/upload` | Upload a PDF/image; queues extraction |
 | `GET /api/invoices` | List invoices, optional `?status=` filter |
