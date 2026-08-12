@@ -1,15 +1,22 @@
 const state = { statusFilter: "", selectedInvoiceId: null };
 
 // ---- Tabs ----
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "review") loadInvoices();
-    if (btn.dataset.tab === "matching") { loadSources(); loadMatchResults(); }
-  });
+// Sidebar nav items and the ask-hero's quick-action shortcuts both switch
+// tabs via [data-tab], but only the sidebar nav (.tab-btn) gets the
+// persistent "active" highlight -- a quick-action button is a one-off
+// jump, not a place you "are".
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+  const navBtn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
+  if (navBtn) navBtn.classList.add("active");
+  document.getElementById(`tab-${name}`).classList.add("active");
+  if (name === "review") loadInvoices();
+  if (name === "matching") { loadSources(); loadMatchResults(); }
+}
+
+document.querySelectorAll("[data-tab]").forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
 function fmtMoney(v) {
@@ -50,10 +57,20 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 async function loadRecentUploads() {
   const res = await apiFetch("/api/invoices");
   const invoices = await res.json();
-  const el = document.getElementById("recent-uploads");
-  el.innerHTML = "<h3>Recent uploads</h3>" + invoices.slice(0, 8).map((inv) => (
-    `<div>${inv.original_filename} — <span class="badge status-${inv.status}">${inv.status}</span></div>`
-  )).join("");
+  const el = document.getElementById("sidebar-recent-uploads");
+  el.innerHTML = invoices.slice(0, 8).map((inv) => (
+    `<button type="button" class="sidebar-recent-item" data-id="${inv.id}">
+      <span class="sidebar-recent-name">${escapeAttr(inv.original_filename)}</span>
+      <span class="badge status-${inv.status}">${inv.status}</span>
+    </button>`
+  )).join("") || `<p class="hint sidebar-recent-empty">Nothing uploaded yet.</p>`;
+
+  el.querySelectorAll(".sidebar-recent-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTab("review");
+      selectInvoice(btn.dataset.id);
+    });
+  });
 }
 
 // ---- Review Queue ----
@@ -284,6 +301,57 @@ async function loadMatchResults() {
     `;
   }).join("") || "<tr><td colspan='6'>No matching results yet.</td></tr>";
 }
+
+// ---- Ask Rekono ----
+// Builds the thread via DOM methods (textContent), not innerHTML --
+// unlike the rest of this file, this handles raw user input (the
+// question) and an LLM response, neither of which should ever be
+// interpreted as HTML.
+document.getElementById("ask-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("ask-input");
+  const question = input.value.trim();
+  if (!question) return;
+
+  const entry = document.createElement("div");
+  entry.className = "ask-entry";
+
+  const questionEl = document.createElement("div");
+  questionEl.className = "ask-question";
+  questionEl.textContent = question;
+
+  const answerEl = document.createElement("div");
+  answerEl.className = "ask-answer ask-answer-loading";
+  answerEl.textContent = "Thinking…";
+
+  entry.append(questionEl, answerEl);
+  document.getElementById("ask-thread").prepend(entry);
+  input.value = "";
+  input.disabled = true;
+
+  try {
+    const res = await apiFetch("/api/assistant/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const body = await res.json();
+    answerEl.classList.remove("ask-answer-loading");
+    if (res.ok) {
+      answerEl.textContent = body.answer;
+    } else {
+      answerEl.classList.add("ask-answer-error");
+      answerEl.textContent = body.detail || "Something went wrong.";
+    }
+  } catch (err) {
+    answerEl.classList.remove("ask-answer-loading");
+    answerEl.classList.add("ask-answer-error");
+    answerEl.textContent = String(err);
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+});
 
 // ---- Init ----
 // Called by auth.js once a valid session is confirmed (not on script load,

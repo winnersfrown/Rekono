@@ -49,85 +49,114 @@
   </div>
 
   <div id="app-shell" style="display: none;">
-    <header class="topbar">
-      <div class="brand">Rekono</div>
-      <nav class="tabs">
-        <button class="tab-btn active" data-tab="upload">Upload</button>
-        <button class="tab-btn" data-tab="review">Review Queue</button>
-        <button class="tab-btn" data-tab="matching">Matching</button>
-        <button class="tab-btn" data-tab="export">Export</button>
-      </nav>
-      <div class="topbar-user">
-        <span id="trial-badge" class="trial-badge"></span>
-        <span id="current-user-badge"></span>
-        <button id="logout-btn" class="btn-logout">Sign out</button>
-      </div>
-    </header>
+    <div class="app-layout">
+      <aside class="sidebar">
+        <div class="sidebar-brand">Rekono</div>
 
-    <main>
-      <section id="tab-upload" class="tab-panel active">
-        <h1>Upload an invoice</h1>
-        <p class="hint">PDF or image (png/jpg/tiff/bmp/webp). It's queued and processed asynchronously — check the Review Queue shortly after.</p>
-        <form id="upload-form">
-          <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" required />
-          <button type="submit">Upload</button>
-        </form>
-        <div id="upload-status"></div>
-        <div id="recent-uploads"></div>
-      </section>
+        <button class="tab-btn sidebar-ask-btn active" data-tab="ask">+ Ask Rekono</button>
 
-      <section id="tab-review" class="tab-panel">
-        <h1>Review Queue</h1>
-        <div class="queue-layout">
-          <div class="queue-list">
-            <div class="queue-filters">
-              <button class="filter-btn active" data-status="">All</button>
-              <button class="filter-btn" data-status="needs_review">Needs Review</button>
-              <button class="filter-btn" data-status="extracted">Extracted</button>
-              <button class="filter-btn" data-status="approved">Approved</button>
-              <button class="filter-btn" data-status="queued">Queued</button>
-              <button class="filter-btn" data-status="failed">Failed</button>
-            </div>
-            <table id="invoice-table">
-              <thead>
-                <tr><th>Vendor</th><th>Total</th><th>Status</th><th>Conf.</th></tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div class="queue-detail" id="queue-detail">
-            <p class="hint">Select an invoice from the list to review it.</p>
+        <nav class="sidebar-nav">
+          <button class="tab-btn" data-tab="upload">Upload</button>
+          <button class="tab-btn" data-tab="review">Review Queue</button>
+          <button class="tab-btn" data-tab="matching">Matching</button>
+          <button class="tab-btn" data-tab="export">Export</button>
+        </nav>
+
+        <div class="sidebar-recents">
+          <div class="sidebar-section-label">Recent uploads</div>
+          <div id="sidebar-recent-uploads" class="sidebar-recent-list"></div>
+        </div>
+
+        <div class="sidebar-footer">
+          <span id="trial-badge" class="trial-badge"></span>
+          <div class="sidebar-user-row">
+            <span id="current-user-badge"></span>
+            <button id="logout-btn" class="btn-logout">Sign out</button>
           </div>
         </div>
-      </section>
+      </aside>
 
-      <section id="tab-matching" class="tab-panel">
-        <h1>Matching / Reconciliation</h1>
-        <p class="hint">Upload a PO list or bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices.</p>
-        <form id="source-form">
-          <select id="source-type">
-            <option value="po">Purchase Orders</option>
-            <option value="bank">Bank Statement</option>
-          </select>
-          <input type="file" id="source-file" accept=".csv" required />
-          <button type="submit">Upload CSV</button>
-        </form>
-        <div id="sources-list"></div>
-        <button id="run-matching-btn">Run Matching</button>
-        <div id="matching-summary"></div>
-        <table id="matching-table">
-          <thead><tr><th>Invoice</th><th>Vendor</th><th>Total</th><th>Match Status</th><th>Score</th><th>Reasoning</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </section>
+      <main class="app-main">
+        <section id="tab-ask" class="tab-panel active">
+          <div class="ask-hero">
+            <h1>What's on your desk today?</h1>
+            <form id="ask-form" class="ask-form">
+              <input type="text" id="ask-input" placeholder="Ask about your invoices…" required maxlength="1000" />
+              <button type="submit">Ask</button>
+            </form>
+            <div class="ask-quick-actions">
+              <button type="button" class="quick-action" data-tab="upload">Upload an invoice</button>
+              <button type="button" class="quick-action" data-tab="review">Review flagged items</button>
+              <button type="button" class="quick-action" data-tab="matching">Run matching</button>
+              <button type="button" class="quick-action" data-tab="export">Export data</button>
+            </div>
+          </div>
+          <div id="ask-thread" class="ask-thread"></div>
+        </section>
 
-      <section id="tab-export" class="tab-panel">
-        <h1>Export</h1>
-        <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
-        <a href="/api/export/csv"><button>Download CSV</button></a>
-        <a href="/api/export/xlsx"><button>Download Excel</button></a>
-      </section>
-    </main>
+        <section id="tab-upload" class="tab-panel">
+          <h1>Upload an invoice</h1>
+          <p class="hint">PDF or image (png/jpg/tiff/bmp/webp). It's queued and processed asynchronously — check the Review Queue shortly after.</p>
+          <form id="upload-form">
+            <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" required />
+            <button type="submit">Upload</button>
+          </form>
+          <div id="upload-status"></div>
+        </section>
+
+        <section id="tab-review" class="tab-panel">
+          <h1>Review Queue</h1>
+          <div class="queue-layout">
+            <div class="queue-list">
+              <div class="queue-filters">
+                <button class="filter-btn active" data-status="">All</button>
+                <button class="filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn" data-status="approved">Approved</button>
+                <button class="filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn" data-status="failed">Failed</button>
+              </div>
+              <table id="invoice-table">
+                <thead>
+                  <tr><th>Vendor</th><th>Total</th><th>Status</th><th>Conf.</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="queue-detail" id="queue-detail">
+              <p class="hint">Select an invoice from the list to review it.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-matching" class="tab-panel">
+          <h1>Matching / Reconciliation</h1>
+          <p class="hint">Upload a PO list or bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices.</p>
+          <form id="source-form">
+            <select id="source-type">
+              <option value="po">Purchase Orders</option>
+              <option value="bank">Bank Statement</option>
+            </select>
+            <input type="file" id="source-file" accept=".csv" required />
+            <button type="submit">Upload CSV</button>
+          </form>
+          <div id="sources-list"></div>
+          <button id="run-matching-btn">Run Matching</button>
+          <div id="matching-summary"></div>
+          <table id="matching-table">
+            <thead><tr><th>Invoice</th><th>Vendor</th><th>Total</th><th>Match Status</th><th>Score</th><th>Reasoning</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </section>
+
+        <section id="tab-export" class="tab-panel">
+          <h1>Export</h1>
+          <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
+          <a href="/api/export/csv"><button>Download CSV</button></a>
+          <a href="/api/export/xlsx"><button>Download Excel</button></a>
+        </section>
+      </main>
+    </div>
   </div>
 
   <script src="/auth.js"></script>
