@@ -32,8 +32,12 @@ function clearToken() {
 // Drop-in replacement for fetch() that attaches the bearer token, bounces
 // back to the login screen on a 401 (expired/invalid token), and on a 402
 // routes to whichever screen actually applies -- onboarding was never
-// finished (onboarding_required) vs. a paid plan with no active
-// subscription behind it (billing_required). See plan.js on the backend.
+// finished (onboarding_required), a paid plan with no active subscription
+// behind it (billing_required), or an upload that hit the plan's monthly
+// document cap (plan_cap_reached -- billing is fine, just needs a bigger
+// plan or to wait for next month, so this opens the Upgrade modal rather
+// than the full-page billing-required gate the other two use).
+// See plan.js/ingestion.js on the backend.
 async function apiFetch(url, options = {}) {
   const token = getToken();
   const headers = new Headers(options.headers || {});
@@ -52,6 +56,8 @@ async function apiFetch(url, options = {}) {
       .catch(() => ({}));
     if (body.onboarding_required) {
       showOnboarding();
+    } else if (body.plan_cap_reached) {
+      showUpgradePromptForCapReached(body.detail);
     } else {
       showBillingRequired();
     }
@@ -311,6 +317,23 @@ function openUpgradeModal() {
 
 function closeUpgradeModal() {
   document.getElementById("upgrade-modal").style.display = "none";
+}
+
+// Called by apiFetch when an upload 402s with plan_cap_reached -- opens the
+// same modal the sidebar's Upgrade button does, with the cap-reached message
+// surfaced in it, so hitting the limit leads straight to picking a bigger
+// plan instead of just an error message. If there's nowhere left to upgrade
+// to (already on the top tier), there's nothing useful to show here -- the
+// caller's own error text is all there is to say in that case.
+function showUpgradePromptForCapReached(detail) {
+  const upgradeBtn = document.getElementById("upgrade-btn");
+  const rank = PLAN_ORDER.indexOf(upgradeBtn?.dataset.currentPlan);
+  if (rank < 0 || rank >= PLAN_ORDER.length - 1) return;
+
+  openUpgradeModal();
+  const errorEl = document.getElementById("upgrade-error");
+  errorEl.textContent = detail || "You've reached your plan's document limit for this month.";
+  errorEl.style.display = "block";
 }
 
 document.getElementById("upgrade-btn").addEventListener("click", openUpgradeModal);
