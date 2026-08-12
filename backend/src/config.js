@@ -5,7 +5,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const storageDir = process.env.STORAGE_DIR || "./storage";
+// Resolved to an absolute path: multer writes uploads under this directory
+// and stores that path verbatim as each invoice's storagePath, and
+// Express's res.sendFile() (used to serve the file back) requires an
+// absolute path -- a relative STORAGE_DIR (the default) made every file
+// request throw "path must be absolute or specify root to res.sendFile".
+const storageDir = path.resolve(process.env.STORAGE_DIR || "./storage");
 fs.mkdirSync(storageDir, { recursive: true });
 
 function loadOrCreateSecretKey() {
