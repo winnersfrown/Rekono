@@ -120,6 +120,11 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
   const full_name = document.getElementById("signup-name").value.trim();
   const email = document.getElementById("signup-email").value.trim();
   const password = document.getElementById("signup-password").value;
+  const passwordConfirm = document.getElementById("signup-password-confirm").value;
+  if (password !== passwordConfirm) {
+    authError("Passwords do not match.");
+    return;
+  }
   try {
     const res = await fetch("/api/auth/signup", {
       method: "POST",
