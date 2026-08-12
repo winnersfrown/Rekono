@@ -1,4 +1,5 @@
 const state = { statusFilter: "", selectedInvoiceId: null };
+let docPreviewObjectUrl = null;
 
 // ---- Tabs ----
 // Sidebar nav items and the ask-hero's quick-action shortcuts both switch
@@ -127,9 +128,7 @@ function renderDetail(inv) {
   `).join("");
 
   const isPdf = (inv.content_type || "").includes("pdf");
-  const preview = isPdf
-    ? `<iframe src="/api/invoices/${inv.id}/file"></iframe>`
-    : `<img src="/api/invoices/${inv.id}/file" />`;
+  const preview = isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`;
 
   const matchHtml = (inv.match_results && inv.match_results.length)
     ? inv.match_results.map((m) => `<div><span class="badge match-${m.status}">${m.status}</span> score ${m.score.toFixed(0)} — ${m.reasoning}</div>`).join("")
@@ -176,6 +175,30 @@ function renderDetail(inv) {
   document.getElementById("btn-save").addEventListener("click", () => saveCorrections(inv.id));
   document.getElementById("btn-approve").addEventListener("click", () => approveInvoice(inv.id));
   document.getElementById("btn-reject").addEventListener("click", () => rejectInvoice(inv.id));
+
+  loadDocPreview(inv);
+}
+
+// <iframe src="..."> / <img src="..."> can't carry the bearer token, so a
+// plain src pointing at the authenticated file endpoint just renders the
+// API's 401 JSON body instead of the document. Fetch it through apiFetch
+// (which does attach the token) and hand the element a blob: URL instead.
+async function loadDocPreview(inv) {
+  const media = document.getElementById("doc-preview-media");
+  if (!media) return;
+  if (docPreviewObjectUrl) {
+    URL.revokeObjectURL(docPreviewObjectUrl);
+    docPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/invoices/${inv.id}/file`);
+    if (!res.ok) throw new Error("Could not load the source document.");
+    const blob = await res.blob();
+    docPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = docPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) }));
+  }
 }
 
 function escapeAttr(s) {
