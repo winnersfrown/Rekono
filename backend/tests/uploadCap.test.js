@@ -79,3 +79,41 @@ test("a paid plan's higher cap is enforced instead of free's", async () => {
   const res = await attachFakePdf(request(app).post("/api/invoices/upload").set(authHeader(token)));
   expect(res.status).toBe(201);
 });
+
+// GET /api/auth/me's documents_used_this_month/document_cap fields are what
+// the dashboard sidebar's usage bar reads -- backed by the same
+// documentUsage.js helper ingestion.js enforces against, so these can never
+// disagree with what actually blocks an upload.
+describe("GET /api/auth/me document usage", () => {
+  test("is null before onboarding -- no plan means no cap to measure against", async () => {
+    const token = await signup(app, request, { email: "noplan@uploadco.co", skipOnboarding: true });
+    const res = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(res.body.documents_used_this_month).toBeNull();
+    expect(res.body.document_cap).toBeNull();
+  });
+
+  test("reflects the free plan's cap and a zero count for a fresh org", async () => {
+    const token = await signup(app, request, { email: "freshfree@uploadco.co" }); // defaults to free
+    const res = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(res.body.documents_used_this_month).toBe(0);
+    expect(res.body.document_cap).toBe(25);
+  });
+
+  test("counts existing invoices from this calendar month", async () => {
+    const token = await signup(app, request, { email: "someused@uploadco.co" });
+    const org = await orgId(token);
+    await seedInvoices(org, 10);
+
+    const res = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(res.body.documents_used_this_month).toBe(10);
+    expect(res.body.document_cap).toBe(25);
+  });
+
+  test("increments after a real upload", async () => {
+    const token = await signup(app, request, { email: "liveupload@uploadco.co" });
+    await attachFakePdf(request(app).post("/api/invoices/upload").set(authHeader(token)));
+
+    const res = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(res.body.documents_used_this_month).toBe(1);
+  });
+});
