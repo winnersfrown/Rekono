@@ -84,3 +84,64 @@ test("resolves normally when sync succeeds", async () => {
     }
   );
 });
+
+describe("DANGEROUSLY_RESET_DB", () => {
+  const originalEnv = process.env.DANGEROUSLY_RESET_DB;
+  const originalGetDialect = sequelize.getDialect;
+  const originalQuery = sequelize.query;
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.DANGEROUSLY_RESET_DB;
+    else process.env.DANGEROUSLY_RESET_DB = originalEnv;
+    sequelize.getDialect = originalGetDialect;
+    sequelize.query = originalQuery;
+  });
+
+  test("does nothing when unset", async () => {
+    delete process.env.DANGEROUSLY_RESET_DB;
+    const queryCalls = [];
+    sequelize.query = (...args) => queryCalls.push(args);
+    await withMockedSync(
+      async () => {},
+      async () => {
+        await initDb();
+      }
+    );
+    expect(queryCalls).toHaveLength(0);
+  });
+
+  // The suite's real dialect is sqlite (see jest.setup.js), so this also
+  // covers the actual test environment directly, not just a simulated one:
+  // even with the flag on, a non-Postgres database is never touched.
+  test("does nothing on a non-Postgres database even if the flag is set", async () => {
+    process.env.DANGEROUSLY_RESET_DB = "true";
+    expect(sequelize.getDialect()).toBe("sqlite");
+    const queryCalls = [];
+    sequelize.query = (...args) => queryCalls.push(args);
+    await withMockedSync(
+      async () => {},
+      async () => {
+        await initDb();
+      }
+    );
+    expect(queryCalls).toHaveLength(0);
+  });
+
+  test("drops and recreates the public schema when set on a Postgres database", async () => {
+    process.env.DANGEROUSLY_RESET_DB = "true";
+    sequelize.getDialect = () => "postgres";
+    const queryCalls = [];
+    sequelize.query = (...args) => {
+      queryCalls.push(args);
+      return Promise.resolve();
+    };
+    await withMockedSync(
+      async () => {},
+      async () => {
+        await initDb();
+      }
+    );
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0][0]).toMatch(/DROP SCHEMA public CASCADE/);
+  });
+});

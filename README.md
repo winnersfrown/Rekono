@@ -131,6 +131,8 @@ Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.f
 
 Two tradeoffs that come with staying on free: Render's free Postgres plan auto-deletes after 30 days (recreate it, or upgrade to `starter` in `render.yaml`, before then if you want to keep data), and free web services can't attach a persistent disk, so uploaded invoice files live in the container's ephemeral storage and don't survive a restart/redeploy — the extracted data and audit trail in Postgres are unaffected, only the original source files (used for the review UI's document preview) aren't. Free web services also spin down after 15 minutes idle and cold-start on the next request.
 
+**If the deployed database ever gets into a broken schema state** that `initDb()`'s normal additive-only sync can't recover from on its own (its console logs will say so explicitly if this happens), there's a deliberately scary, explicitly-gated escape hatch: set `DANGEROUSLY_RESET_DB=true` in the web service's environment variables and redeploy. On boot, the app drops and recreates the entire `public` schema, then rebuilds every table fresh from the current models — **this permanently deletes all data**. Remove the env var again immediately after confirming it worked; it stays set across restarts otherwise, and every future boot would wipe the database again. This is meant for the "app is broken and there's nothing worth recovering" case (e.g. still in development), not a substitute for real backups or a real migration once there's data worth keeping.
+
 ### Tests
 
 ```bash
