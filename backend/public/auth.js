@@ -6,6 +6,17 @@ const TOKEN_KEY = "rekono_token";
 const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business", scale: "Scale" };
 const PLAN_ORDER = ["free", "starter", "growth", "business", "scale"];
 
+// Mirrors the feature bullets shown on the marketing site / onboarding plan
+// cards for each tier, so hovering the plan badge tells you what you
+// actually picked without having to remember or go dig up the pricing page.
+const PLAN_BENEFITS = {
+  free: ["25 documents/mo", "1 seat", "Extraction + review queue", "CSV / Excel export"],
+  starter: ["150 documents/mo", "1 seat", "Extraction + review queue", "CSV / Excel export", "Email support"],
+  growth: ["750 documents/mo", "5 seats", "Everything in Starter", "Matching engine + full audit trail", "Priority support"],
+  business: ["2,500 documents/mo", "Unlimited seats", "Everything in Growth", "Custom confidence thresholds", "Dedicated onboarding"],
+  scale: ["10,000 documents/mo", "Unlimited seats", "Everything in Business", "Dedicated support channel", "Priority feature requests"],
+};
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -87,6 +98,15 @@ function showApp(user) {
     } else {
       planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
     }
+  }
+
+  const tooltip = document.getElementById("plan-benefits-tooltip");
+  if (tooltip) {
+    const planName = PLAN_NAMES[user.plan] || user.plan;
+    const benefits = PLAN_BENEFITS[user.plan] || [];
+    tooltip.innerHTML = `<div class="plan-tooltip-title">${planName} plan includes</div><ul>${benefits
+      .map((b) => `<li>${b}</li>`)
+      .join("")}</ul>`;
   }
 
   // Nothing to upgrade to once you're on the top self-serve tier -- Scale is
