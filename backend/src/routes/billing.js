@@ -27,6 +27,19 @@ function requireStripeConfigured(req, res, next) {
   next();
 }
 
+// Checkout always creates a brand new subscription (see createCheckoutSession
+// below) -- fine for a free org's first paid plan, but an already-paying org
+// upgrading to a higher tier would otherwise end up with two active Stripe
+// subscriptions (and two charges) unless the old one is cancelled here first.
+export async function cancelReplacedSubscription(stripe, org, newSubscriptionId) {
+  if (!org.stripeSubscriptionId || org.stripeSubscriptionId === newSubscriptionId) return;
+  try {
+    await stripe.subscriptions.cancel(org.stripeSubscriptionId);
+  } catch (err) {
+    console.error("Failed to cancel replaced subscription:", err.message);
+  }
+}
+
 // Shared by /api/onboarding (a brand new org's first plan choice) and
 // /api/billing/checkout (changing plans later) -- both need an identical
 // Checkout Session. Built from plans.js's price_data inline rather than
@@ -123,11 +136,13 @@ router.get("/api/billing/confirm", requireAuth, requireStripeConfigured, async (
     }
 
     const org = req.currentUser.organization;
+    const newSubscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+    await cancelReplacedSubscription(stripe, org, newSubscriptionId);
+
     org.plan = session.metadata.plan;
     org.billingPeriod = session.metadata.billing_period;
     org.stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id || org.stripeCustomerId;
-    org.stripeSubscriptionId =
-      typeof session.subscription === "string" ? session.subscription : session.subscription?.id || org.stripeSubscriptionId;
+    org.stripeSubscriptionId = newSubscriptionId || org.stripeSubscriptionId;
     org.subscriptionStatus = session.subscription?.status || "active";
     org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
     await org.save();
@@ -179,11 +194,13 @@ webhookRouter.post("/api/billing/webhook", async (req, res) => {
       const session = event.data.object;
       const org = session.metadata?.org_id ? await Organization.findByPk(session.metadata.org_id) : null;
       if (org) {
+        const newSubscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+        await cancelReplacedSubscription(getStripe(), org, newSubscriptionId);
+
         org.plan = session.metadata.plan;
         org.billingPeriod = session.metadata.billing_period;
         org.stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id || org.stripeCustomerId;
-        org.stripeSubscriptionId =
-          typeof session.subscription === "string" ? session.subscription : session.subscription?.id || org.stripeSubscriptionId;
+        org.stripeSubscriptionId = newSubscriptionId || org.stripeSubscriptionId;
         org.subscriptionStatus = "active";
         org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
         await org.save();

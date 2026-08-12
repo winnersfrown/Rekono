@@ -4,6 +4,7 @@
 const TOKEN_KEY = "rekono_token";
 
 const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business" };
+const PLAN_ORDER = ["free", "starter", "growth", "business"];
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -81,6 +82,15 @@ function showApp(user) {
   if (planBadge) {
     const planName = PLAN_NAMES[user.plan] || user.plan;
     planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
+  }
+
+  // Nothing to upgrade to once you're on the top self-serve tier -- Business
+  // upsells to Enterprise via the "Talk to us" link inside the modal itself.
+  const upgradeBtn = document.getElementById("upgrade-btn");
+  if (upgradeBtn) {
+    const rank = PLAN_ORDER.indexOf(user.plan);
+    upgradeBtn.dataset.currentPlan = user.plan;
+    upgradeBtn.style.display = rank >= 0 && rank < PLAN_ORDER.length - 1 ? "block" : "none";
   }
 }
 
@@ -244,6 +254,73 @@ document.querySelectorAll(".onboarding-plan-card").forEach((card) => {
   });
 });
 
+// ---- Upgrade modal (buying a higher tier after onboarding) ----
+// Shares the onboarding wizard's plan-picker markup/styling but posts to
+// /api/billing/checkout instead of /api/onboarding, since personalization
+// answers were already collected and the org already has a plan -- only
+// tiers above the org's current one are shown, since this is strictly an
+// upgrade path, not a plan-change picker.
+function openUpgradeModal() {
+  const currentPlan = document.getElementById("upgrade-btn").dataset.currentPlan;
+  const currentRank = PLAN_ORDER.indexOf(currentPlan);
+  document.querySelectorAll("#upgrade-plan-grid .onboarding-plan-card").forEach((card) => {
+    card.style.display = PLAN_ORDER.indexOf(card.dataset.plan) > currentRank ? "" : "none";
+  });
+  document.getElementById("upgrade-error").style.display = "none";
+  document.getElementById("upgrade-modal").style.display = "flex";
+}
+
+function closeUpgradeModal() {
+  document.getElementById("upgrade-modal").style.display = "none";
+}
+
+document.getElementById("upgrade-btn").addEventListener("click", openUpgradeModal);
+document.getElementById("upgrade-modal-close").addEventListener("click", closeUpgradeModal);
+document.getElementById("upgrade-modal").addEventListener("click", (e) => {
+  if (e.target.id === "upgrade-modal") closeUpgradeModal();
+});
+
+document.querySelectorAll("#upgrade-modal .billing-toggle-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#upgrade-modal .billing-toggle-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("upgrade-plan-grid").classList.toggle("is-annual", btn.dataset.period === "annual");
+  });
+});
+
+document.querySelectorAll("#upgrade-plan-grid .onboarding-plan-card").forEach((card) => {
+  card.addEventListener("click", async () => {
+    const errorEl = document.getElementById("upgrade-error");
+    errorEl.style.display = "none";
+    const plan = card.dataset.plan;
+    const billingPeriod = document.querySelector("#upgrade-modal .billing-toggle-btn.active").dataset.period;
+    document.querySelectorAll("#upgrade-plan-grid .onboarding-plan-card").forEach((c) => (c.disabled = true));
+    try {
+      const res = await apiFetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan, billing_period: billingPeriod }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        errorEl.textContent = body.detail || "Something went wrong.";
+        errorEl.style.display = "block";
+        return;
+      }
+      // Tells handleCheckoutReturn (below) that this checkout came from an
+      // already-onboarded user upgrading, not from the onboarding wizard --
+      // it should land back on the dashboard, not re-show onboarding.
+      sessionStorage.setItem("rekono_checkout_context", "upgrade");
+      window.location.href = body.checkout_url; // leaving the page for Stripe Checkout
+    } catch (err) {
+      errorEl.textContent = String(err.message || err);
+      errorEl.style.display = "block";
+    } finally {
+      document.querySelectorAll("#upgrade-plan-grid .onboarding-plan-card").forEach((c) => (c.disabled = false));
+    }
+  });
+});
+
 document.querySelectorAll(".auth-tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => showAuthPanel(`auth-${btn.dataset.authTab}`, { tabBtn: btn }));
 });
@@ -379,6 +456,33 @@ async function bootstrapApp() {
 function handleCheckoutReturn(checkoutParam) {
   const params = new URLSearchParams(location.search);
   history.replaceState(null, "", location.pathname);
+
+  const isUpgrade = sessionStorage.getItem("rekono_checkout_context") === "upgrade";
+  sessionStorage.removeItem("rekono_checkout_context");
+
+  // An already-onboarded user upgrading via the sidebar modal should land
+  // back on their dashboard, not re-see the onboarding wizard -- retries on
+  // failure go through the upgrade modal's own error banner too, since its
+  // plan cards post to /api/billing/checkout (this path), not /api/onboarding.
+  if (isUpgrade) {
+    bootstrapApp();
+    if (checkoutParam === "cancelled") return;
+    const sessionId = params.get("session_id");
+    apiFetch(`/api/billing/confirm?session_id=${encodeURIComponent(sessionId || "")}`)
+      .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+      .then(({ ok, body }) => {
+        if (!ok) throw new Error(body.detail || "Could not confirm payment.");
+        return bootstrapApp();
+      })
+      .catch((err) => {
+        openUpgradeModal();
+        const errorEl = document.getElementById("upgrade-error");
+        errorEl.textContent = String(err.message || err);
+        errorEl.style.display = "block";
+      });
+    return;
+  }
+
   showOnboarding();
   showOnboardingStep("onboarding-step-plan");
   const errorEl = document.getElementById("onboarding-error");

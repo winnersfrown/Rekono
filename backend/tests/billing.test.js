@@ -1,5 +1,7 @@
 import request from "supertest";
+import { jest } from "@jest/globals";
 import { app } from "../src/app.js";
+import { cancelReplacedSubscription } from "../src/routes/billing.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 // STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are never set in the test
@@ -61,4 +63,41 @@ test("webhook returns 503 without Stripe configured, not a crash", async () => {
     .set("Content-Type", "application/json")
     .send(JSON.stringify({ type: "checkout.session.completed" }));
   expect(res.status).toBe(503);
+});
+
+// cancelReplacedSubscription is what stops an org upgrading plans from
+// ending up with two simultaneous (and simultaneously billed) Stripe
+// subscriptions -- exercised directly against a fake Stripe client since the
+// rest of this suite never has a real Stripe key to hit the real API with.
+describe("cancelReplacedSubscription", () => {
+  test("cancels the org's existing subscription when it differs from the new one", async () => {
+    const cancel = jest.fn().mockResolvedValue({});
+    const stripe = { subscriptions: { cancel } };
+    const org = { stripeSubscriptionId: "sub_old" };
+    await cancelReplacedSubscription(stripe, org, "sub_new");
+    expect(cancel).toHaveBeenCalledWith("sub_old");
+  });
+
+  test("does nothing when the org has no prior subscription", async () => {
+    const cancel = jest.fn();
+    const stripe = { subscriptions: { cancel } };
+    const org = { stripeSubscriptionId: null };
+    await cancelReplacedSubscription(stripe, org, "sub_new");
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("does nothing when the new subscription is the same as the existing one", async () => {
+    const cancel = jest.fn();
+    const stripe = { subscriptions: { cancel } };
+    const org = { stripeSubscriptionId: "sub_same" };
+    await cancelReplacedSubscription(stripe, org, "sub_same");
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test("swallows errors from Stripe instead of throwing", async () => {
+    const cancel = jest.fn().mockRejectedValue(new Error("already canceled"));
+    const stripe = { subscriptions: { cancel } };
+    const org = { stripeSubscriptionId: "sub_old" };
+    await expect(cancelReplacedSubscription(stripe, org, "sub_new")).resolves.toBeUndefined();
+  });
 });
