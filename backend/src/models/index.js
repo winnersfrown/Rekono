@@ -53,11 +53,33 @@ const BENIGN_SYNC_RACE_CODES = new Set(["42P07", "42710", "23505"]);
 
 export async function initDb() {
   try {
-    await sequelize.sync();
+    // { drop: false } is the safe half of Sequelize's "alter" mode: it adds
+    // any column a model declares that an existing table is missing (e.g.
+    // this database predates a column that got added to a model later --
+    // plain sync() never backfills that, and any query touching it then
+    // fails with Postgres 42703 "column does not exist" forever). It never
+    // removes a column absent from the model or changes an existing one, so
+    // it can't destroy real data the way full `alter: true` could.
+    await sequelize.sync({ alter: { drop: false } });
   } catch (err) {
     const code = err?.parent?.code || err?.original?.code;
     if (BENIGN_SYNC_RACE_CODES.has(code)) {
       console.warn(`sequelize.sync(): schema already present (racing another instance?), continuing (${err.parent?.message || err.message})`);
+      return;
+    }
+    // 23502 = the column we just tried to add is NOT NULL and this table
+    // already has rows predating it (e.g. Invoice.orgId, added after this
+    // table's very first deploy). We can't safely invent a value for
+    // legacy rows -- assigning the wrong org would leak that row across
+    // tenants -- so this needs a human decision, not a guess. Log loudly
+    // and keep booting: the rest of the app (auth, other tables) still
+    // works, and this is strictly better than crash-looping the whole
+    // process over one table's backfill.
+    if (code === "23502") {
+      console.error(
+        `sequelize.sync(): could not add a NOT NULL column -- some existing rows predate it and need manual cleanup or a backfill. ` +
+          `The app will keep booting, but queries touching that column/table will keep failing until this is resolved. (${err.parent?.message || err.message})`
+      );
       return;
     }
     throw err;
