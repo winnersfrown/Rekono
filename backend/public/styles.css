@@ -490,6 +490,31 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   .plan-tooltip { left: 0; right: 0; width: auto; bottom: 100%; margin-left: 0; margin-bottom: 10px; }
 }
 
+.doc-usage { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.doc-usage-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--ink-800);
+  overflow: hidden;
+}
+.doc-usage-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--blue);
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.doc-usage.is-warning .doc-usage-fill { background: #e3a935; }
+.doc-usage.is-full .doc-usage-fill { background: var(--red); }
+
+.doc-usage-text {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.doc-usage.is-warning .doc-usage-text { color: #e3a935; }
+.doc-usage.is-full .doc-usage-text { color: var(--red); }
+
 .btn-upgrade {
   background: rgba(75, 134, 247, 0.14);
   border: 1px solid var(--blue);

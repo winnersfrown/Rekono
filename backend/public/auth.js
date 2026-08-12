@@ -117,6 +117,20 @@ function showApp(user) {
     upgradeBtn.dataset.currentPlan = user.plan;
     upgradeBtn.style.display = rank >= 0 && rank < PLAN_ORDER.length - 1 ? "block" : "none";
   }
+
+  const docUsage = document.getElementById("doc-usage");
+  if (docUsage && user.document_cap != null && user.documents_used_this_month != null) {
+    const used = user.documents_used_this_month;
+    const cap = user.document_cap;
+    const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 100;
+    document.getElementById("doc-usage-fill").style.width = `${pct}%`;
+    document.getElementById("doc-usage-text").textContent = `${used} / ${cap} documents this month`;
+    docUsage.classList.toggle("is-full", used >= cap);
+    docUsage.classList.toggle("is-warning", used < cap && pct >= 90);
+    docUsage.style.display = "flex";
+  } else if (docUsage) {
+    docUsage.style.display = "none";
+  }
 }
 
 function authError(message) {

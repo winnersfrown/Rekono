@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import { Router } from "express";
-import { Op } from "sequelize";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
@@ -8,13 +7,9 @@ import * as jobs from "../jobs.js";
 import { isSupported, upload } from "../storage.js";
 import { AuditLog, Invoice } from "../models/index.js";
 import { serializeInvoiceDetail } from "../serializers.js";
+import { documentsUsedThisMonth } from "../documentUsage.js";
 
 const router = Router();
-
-function startOfCurrentMonthUtc() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-}
 
 router.post("/api/invoices/upload", requireAuth, requireActivePlan, upload.single("file"), async (req, res, next) => {
   try {
@@ -30,9 +25,7 @@ router.post("/api/invoices/upload", requireAuth, requireActivePlan, upload.singl
     // fix, not something an uploading user should be blocked by.
     const plan = PLANS[req.currentUser.organization.plan];
     if (plan) {
-      const uploadedThisMonth = await Invoice.count({
-        where: { orgId: req.currentUser.orgId, createdAt: { [Op.gte]: startOfCurrentMonthUtc() } },
-      });
+      const uploadedThisMonth = await documentsUsedThisMonth(req.currentUser.orgId);
       if (uploadedThisMonth >= plan.docCapPerMonth) {
         await fs.rm(req.file.path, { force: true });
         return res.status(402).json({

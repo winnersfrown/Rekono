@@ -6,6 +6,8 @@ import * as auth from "../auth.js";
 import { settings } from "../config.js";
 import { Organization, User, AuditLog } from "../models/index.js";
 import { serializeUser } from "../serializers.js";
+import { PLANS } from "../plans.js";
+import { documentsUsedThisMonth } from "../documentUsage.js";
 
 const router = Router();
 
@@ -370,16 +372,26 @@ router.get("/api/auth/google/exchange", (req, res) => {
   res.json({ access_token: auth.createAccessToken(entry.userId), token_type: "bearer" });
 });
 
-router.get("/api/auth/me", auth.requireAuth, (req, res) => {
-  const org = req.currentUser.organization;
-  res.json({
-    ...serializeUser(req.currentUser),
-    plan: org.plan,
-    billing_period: org.billingPeriod,
-    subscription_status: org.subscriptionStatus,
-    trial_ends_at: org.trialEndsAt,
-    onboarding_completed: Boolean(org.plan),
-  });
+router.get("/api/auth/me", auth.requireAuth, async (req, res, next) => {
+  try {
+    const org = req.currentUser.organization;
+    const plan = PLANS[org.plan];
+    res.json({
+      ...serializeUser(req.currentUser),
+      plan: org.plan,
+      billing_period: org.billingPeriod,
+      subscription_status: org.subscriptionStatus,
+      trial_ends_at: org.trialEndsAt,
+      onboarding_completed: Boolean(org.plan),
+      // Same cap ingestion.js enforces at upload time (documentUsage.js is
+      // the one shared definition of "this month" both agree on) -- null
+      // before onboarding, since there's no plan/cap to measure against yet.
+      documents_used_this_month: plan ? await documentsUsedThisMonth(org.id) : null,
+      document_cap: plan ? plan.docCapPerMonth : null,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

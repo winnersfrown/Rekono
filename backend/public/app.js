@@ -50,6 +50,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     statusEl.textContent = `Uploaded "${invoice.original_filename}" — queued for extraction (id ${invoice.id}).`;
     fileInput.value = "";
     loadRecentUploads();
+    bootstrapApp(); // refreshes the sidebar's "documents used this month" count
   } catch (err) {
     statusEl.textContent = `Error: ${err}`;
   }
