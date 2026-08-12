@@ -11,6 +11,8 @@
 #   fly secrets set RESEND_API_KEY=<your key>    # optional -- enables the marketing site's contact form
 #   fly secrets set STRIPE_SECRET_KEY=<your key>        # optional -- enables paid plans
 #   fly secrets set STRIPE_WEBHOOK_SECRET=<your secret> # pairs with STRIPE_SECRET_KEY -- see README's "Plans & billing (Stripe)" section
+#   fly secrets set GOOGLE_CLIENT_ID=<your client id>         # optional -- enables "Sign in with Google"
+#   fly secrets set GOOGLE_CLIENT_SECRET=<your client secret> # pairs with GOOGLE_CLIENT_ID -- see README's "Sign in with Google" section
 #   fly deploy
 #
 # See README.md "Deploying a live instance (Fly.io)" for the full walkthrough.

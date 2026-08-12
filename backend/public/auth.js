@@ -534,12 +534,47 @@ function handleCheckoutReturn(checkoutParam) {
     });
 }
 
+// Google redirects back here after /api/auth/google/callback -- either
+// ?google_auth=success&code=<handoff> (exchange it for a real access token,
+// never put directly in the URL by the backend -- see routes/auth.js) or
+// ?google_auth=error&reason=<code> (show why and fall back to the normal
+// sign-in form).
+const GOOGLE_AUTH_ERROR_MESSAGES = {
+  not_configured: "Google sign-in isn't set up yet. Please use email/password.",
+  denied: "Google sign-in was cancelled.",
+  state_mismatch: "Google sign-in failed (session expired). Please try again.",
+  oauth_failed: "Google sign-in failed. Please try again.",
+  email_unverified: "That Google account's email isn't verified. Please use email/password.",
+};
+
+function handleGoogleAuthReturn(status, code, reason) {
+  history.replaceState(null, "", location.pathname);
+  showAuthGate();
+
+  if (status === "error") {
+    authError(GOOGLE_AUTH_ERROR_MESSAGES[reason] || "Google sign-in failed. Please try again.");
+    return;
+  }
+
+  fetch(`/api/auth/google/exchange?code=${encodeURIComponent(code || "")}`)
+    .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+    .then(({ ok, body }) => {
+      if (!ok) throw new Error(body.detail || "Could not complete Google sign-in.");
+      setToken(body.access_token);
+      return bootstrapApp();
+    })
+    .catch((err) => {
+      authError(String(err.message || err));
+    });
+}
+
 // A reset link takes priority over any existing session -- someone who
 // clicked it clearly wants to set a new password, not silently land back in
 // an already-logged-in app. Strip the token from the visible URL/history
 // right away so it doesn't linger in the address bar or browser history.
 const resetTokenFromUrl = new URLSearchParams(location.search).get("reset_token");
 const checkoutParam = new URLSearchParams(location.search).get("checkout");
+const googleAuthParam = new URLSearchParams(location.search).get("google_auth");
 if (resetTokenFromUrl) {
   pendingResetToken = resetTokenFromUrl;
   history.replaceState(null, "", location.pathname);
@@ -547,6 +582,9 @@ if (resetTokenFromUrl) {
   showAuthPanel("auth-reset-panel");
 } else if (checkoutParam === "success" || checkoutParam === "cancelled") {
   handleCheckoutReturn(checkoutParam);
+} else if (googleAuthParam === "success" || googleAuthParam === "error") {
+  const params = new URLSearchParams(location.search);
+  handleGoogleAuthReturn(googleAuthParam, params.get("code"), params.get("reason"));
 } else {
   bootstrapApp();
 }

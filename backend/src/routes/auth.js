@@ -186,6 +186,190 @@ router.post("/api/auth/reset-password", async (req, res, next) => {
   }
 });
 
+// ---- Sign in with Google ----
+// Standard server-side OAuth2 authorization-code flow: /google redirects to
+// Google's consent screen, Google redirects back to /google/callback with a
+// code, we exchange it server-side for an access token and call Google's
+// userinfo endpoint with it (simpler than verifying an ID token's JWT
+// signature ourselves, and just as trustworthy -- the access token itself
+// only exists because Google already authenticated the user).
+//
+// No account-linking table: a Google login is matched to an existing User
+// purely by verified email, and creates a new Organization + User (same
+// shape as a normal signup) if there's no match yet. That keeps this
+// feature's schema footprint at zero -- no new columns on User or
+// Organization, so no migration risk at all, which matters given how many
+// of this app's past incidents have come from schema-alter edge cases.
+//
+// The callback never puts the real bearer token in a URL (server logs,
+// browser history, and any Referer header would all see it) -- it redirects
+// with a short-lived, single-use handoff code instead, which the frontend
+// immediately exchanges for the real token via /google/exchange.
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
+const GOOGLE_STATE_COOKIE = "google_oauth_state";
+const GOOGLE_HANDOFF_TTL_MS = 60 * 1000;
+
+const pendingGoogleLogins = new Map(); // handoff code -> { userId, expiresAt }
+
+// Given a userinfo profile from Google, finds or creates the matching User
+// (same shape as a normal signup) and returns it -- or an error reason if
+// the email isn't verified. Pulled out of the route handler so it's testable
+// against the real (test) database without needing to mock Google's actual
+// OAuth endpoints, mirroring how billing.js's cancelReplacedSubscription/
+// createCheckoutSession are unit-tested independently of a real Stripe call.
+export async function completeGoogleLogin(profile) {
+  if (!profile.email || !profile.email_verified) {
+    return { error: "email_unverified" };
+  }
+  const normalizedEmail = profile.email.toLowerCase();
+
+  let user = await User.findOne({ where: { email: normalizedEmail } });
+  if (!user) {
+    const fullName = profile.name || normalizedEmail.split("@")[0];
+    const org = await Organization.create({ name: `${fullName}'s Organization` });
+    // Never given to the user or usable to log in with a password -- Google
+    // is (so far) the only way into this account. hashedPassword stays
+    // NOT NULL with zero schema changes because of it.
+    user = await User.create({
+      orgId: org.id,
+      email: normalizedEmail,
+      hashedPassword: await auth.hashPassword(crypto.randomBytes(32).toString("hex")),
+      fullName,
+    });
+    await AuditLog.create({
+      orgId: org.id,
+      userId: user.id,
+      action: "account_created",
+      actor: user.email,
+      details: { org_name: org.name, via: "google" },
+    });
+  }
+  return { user };
+}
+
+// Sweeps expired entries opportunistically (called on every new handoff
+// code) rather than running a background timer -- this map only ever holds
+// a few unredeemed codes at once, each single-use and expiring in a minute.
+export function createGoogleHandoffCode(userId) {
+  const now = Date.now();
+  for (const [code, entry] of pendingGoogleLogins) {
+    if (entry.expiresAt < now) pendingGoogleLogins.delete(code);
+  }
+  const code = crypto.randomBytes(24).toString("hex");
+  pendingGoogleLogins.set(code, { userId, expiresAt: now + GOOGLE_HANDOFF_TTL_MS });
+  return code;
+}
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || "";
+  const match = header
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+function googleRedirectUri(req) {
+  return `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+}
+
+router.get("/api/auth/google", (req, res) => {
+  if (!settings.googleClientId) {
+    return res.redirect("/?google_auth=error&reason=not_configured");
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie(GOOGLE_STATE_COOKIE, state, {
+    httpOnly: true,
+    maxAge: 10 * 60 * 1000,
+    sameSite: "lax",
+    secure: req.protocol === "https",
+    path: "/",
+  });
+
+  const params = new URLSearchParams({
+    client_id: settings.googleClientId,
+    redirect_uri: googleRedirectUri(req),
+    response_type: "code",
+    scope: "openid email profile",
+    state,
+    prompt: "select_account",
+  });
+  res.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`);
+});
+
+router.get("/api/auth/google/callback", async (req, res, next) => {
+  try {
+    const cookieState = readCookie(req, GOOGLE_STATE_COOKIE);
+    res.clearCookie(GOOGLE_STATE_COOKIE, { path: "/" });
+
+    if (!settings.googleClientId || !settings.googleClientSecret) {
+      return res.redirect("/?google_auth=error&reason=not_configured");
+    }
+    if (req.query.error) {
+      // e.g. the user clicked "Cancel" on Google's consent screen.
+      return res.redirect("/?google_auth=error&reason=denied");
+    }
+    if (
+      typeof req.query.code !== "string" ||
+      typeof req.query.state !== "string" ||
+      !cookieState ||
+      req.query.state !== cookieState
+    ) {
+      return res.redirect("/?google_auth=error&reason=state_mismatch");
+    }
+
+    const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: settings.googleClientId,
+        client_secret: settings.googleClientSecret,
+        code: req.query.code,
+        redirect_uri: googleRedirectUri(req),
+        grant_type: "authorization_code",
+      }),
+    });
+    if (!tokenRes.ok) {
+      console.error("Google token exchange failed:", await tokenRes.text());
+      return res.redirect("/?google_auth=error&reason=oauth_failed");
+    }
+    const { access_token: googleAccessToken } = await tokenRes.json();
+
+    const userinfoRes = await fetch(GOOGLE_USERINFO_URL, {
+      headers: { Authorization: `Bearer ${googleAccessToken}` },
+    });
+    if (!userinfoRes.ok) {
+      console.error("Google userinfo fetch failed:", await userinfoRes.text());
+      return res.redirect("/?google_auth=error&reason=oauth_failed");
+    }
+    const profile = await userinfoRes.json();
+
+    const result = await completeGoogleLogin(profile);
+    if (result.error) {
+      return res.redirect(`/?google_auth=error&reason=${result.error}`);
+    }
+
+    const handoffCode = createGoogleHandoffCode(result.user.id);
+    res.redirect(`/?google_auth=success&code=${handoffCode}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/auth/google/exchange", (req, res) => {
+  const code = typeof req.query.code === "string" ? req.query.code : null;
+  const entry = code ? pendingGoogleLogins.get(code) : null;
+  if (code) pendingGoogleLogins.delete(code); // single-use regardless of outcome
+
+  if (!entry || entry.expiresAt < Date.now()) {
+    return res.status(400).json({ detail: "This sign-in link has expired. Please try again." });
+  }
+  res.json({ access_token: auth.createAccessToken(entry.userId), token_type: "bearer" });
+});
+
 router.get("/api/auth/me", auth.requireAuth, (req, res) => {
   const org = req.currentUser.organization;
   res.json({
