@@ -64,7 +64,7 @@ body::before {
           mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, transparent 75%);
 }
 
-.app-layout, #auth-gate, #trial-expired { position: relative; z-index: 1; }
+.app-layout, #auth-gate, #billing-required, #onboarding-gate { position: relative; z-index: 1; }
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; color: var(--paper); }
 
@@ -395,7 +395,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 
 .btn-logout:hover { color: var(--paper); border-color: var(--blue); background: transparent; box-shadow: none; transform: none; }
 
-.trial-badge {
+.plan-badge {
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
   font-family: var(--font-mono);
@@ -405,7 +405,157 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   display: inline-block;
 }
 
-.trial-badge.trial-badge-warn { background: rgba(232, 169, 59, 0.14); color: var(--amber); }
+/* ---------- onboarding wizard ---------- */
+.onboarding-card { max-width: 560px; }
+
+/* The global `form { display: flex }` above is meant for simple one-row
+   forms (email + submit button) -- without overriding it here the same way
+   .auth-panel form already does, this multi-question form's fieldsets lay
+   out as flex columns side by side instead of stacking. */
+#onboarding-personalize-form { display: block; margin-bottom: 0; }
+
+.onboarding-step { display: none; }
+.onboarding-step.active { display: block; animation: fade-in 0.2s ease; }
+
+.onboarding-step-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue-bright);
+  margin: 0 0 0.4rem;
+}
+
+.onboarding-step h1 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+.onboarding-step .hint { margin-bottom: 1.5rem; }
+
+.onboarding-question { border: none; padding: 0; margin: 0 0 1.4rem; }
+.onboarding-question legend {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.55rem;
+  padding: 0;
+}
+
+.onboarding-options { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.onboarding-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--ink-850);
+  border: 1px solid var(--line);
+  color: var(--paper-dim);
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.onboarding-option:has(input:checked) { background: var(--ink-800); border-color: var(--blue); color: var(--paper); }
+.onboarding-option input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.onboarding-step-actions { display: flex; justify-content: flex-start; margin-top: 1.2rem; }
+
+/* plan picker -- shares the marketing site's billing-toggle visual language */
+.billing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--ink-850);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 1.2rem;
+}
+.billing-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.billing-toggle-btn.active { background: var(--blue); color: #04081a; box-shadow: none; transform: none; }
+.billing-toggle-btn .save-tag {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+  background: rgba(62, 203, 132, 0.16);
+  color: var(--green);
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+.billing-toggle-btn.active .save-tag { background: rgba(4, 8, 26, 0.14); color: #04081a; }
+
+.onboarding-plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; margin-bottom: 0.5rem; }
+
+.onboarding-plan-card {
+  display: block;
+  text-align: left;
+  background: var(--ink-850);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.onboarding-plan-card:hover { border-color: var(--blue); background: var(--ink-800); box-shadow: none; transform: none; }
+.onboarding-plan-card.featured { border-color: var(--blue); }
+.onboarding-plan-card:disabled { opacity: 0.55; cursor: default; transform: none; box-shadow: none; }
+
+.onboarding-plan-card .plan-tag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue-bright);
+  margin-bottom: 0.5rem;
+}
+.onboarding-plan-card .plan-tag .plan-badge-mini {
+  background: var(--blue);
+  color: #04081a;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 20px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.onboarding-plan-card .price {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 0.3rem;
+}
+.onboarding-plan-card .price .per { font-size: 0.72rem; color: var(--muted); font-family: var(--font-body); }
+.onboarding-plan-card .cap { font-size: 0.78rem; color: var(--paper-dim); }
+
+.onboarding-plan-card .price-annual { display: none; }
+.onboarding-plan-grid.is-annual .onboarding-plan-card .price-monthly { display: none; }
+.onboarding-plan-grid.is-annual .onboarding-plan-card .price-annual { display: flex; }
+
+@media (max-width: 560px) {
+  .onboarding-plan-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- app sidebar layout ---------- */
 .app-layout { display: flex; min-height: 100vh; align-items: stretch; }

@@ -7,7 +7,7 @@ import { authHeader, resetDb, signup } from "./testUtils.js";
 // than an actual Claude call -- there's no live key to test the grounded
 // answer against in CI. That path is still worth covering: it's what
 // every visitor sees until the key is configured, and it must never
-// crash or bypass auth/trial gating.
+// crash or bypass auth/plan gating.
 
 beforeEach(resetDb);
 
@@ -32,23 +32,12 @@ test("authenticated request without ANTHROPIC_API_KEY returns 503, not a crash",
   expect(res.body.detail).toMatch(/api key/i);
 });
 
-test("respects the trial gate like every other data route", async () => {
-  const token = await signup(app, request, { email: "expired@askco.co" });
-  const { Organization } = await import("../src/models/index.js");
-  const { sequelize } = await import("../src/db.js");
-  const org = await Organization.findOne();
-  const past = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
-  const pad = (n, len = 2) => String(n).padStart(len, "0");
-  const sqliteTimestamp =
-    `${past.getUTCFullYear()}-${pad(past.getUTCMonth() + 1)}-${pad(past.getUTCDate())} ` +
-    `${pad(past.getUTCHours())}:${pad(past.getUTCMinutes())}:${pad(past.getUTCSeconds())}.${pad(past.getUTCMilliseconds(), 3)} +00:00`;
-  await sequelize.query("UPDATE organizations SET createdAt = :past WHERE id = :id", {
-    replacements: { id: org.id, past: sqliteTimestamp },
-  });
-
+test("respects plan gating like every other data route", async () => {
+  const token = await signup(app, request, { email: "notonboarded@askco.co", skipOnboarding: true });
   const res = await request(app)
     .post("/api/assistant/ask")
     .set(authHeader(token))
     .send({ question: "How many invoices do I have?" });
   expect(res.status).toBe(402);
+  expect(res.body.onboarding_required).toBe(true);
 });

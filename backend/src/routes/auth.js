@@ -4,7 +4,6 @@ import { Resend } from "resend";
 import { z } from "zod";
 import * as auth from "../auth.js";
 import { settings } from "../config.js";
-import { trialInfo } from "../trial.js";
 import { Organization, User, AuditLog } from "../models/index.js";
 import { serializeUser } from "../serializers.js";
 
@@ -188,12 +187,13 @@ router.post("/api/auth/reset-password", async (req, res, next) => {
 });
 
 router.get("/api/auth/me", auth.requireAuth, (req, res) => {
-  const { trialEndsAt, trialExpired, trialDaysRemaining } = trialInfo(req.currentUser.organization);
+  const org = req.currentUser.organization;
   res.json({
     ...serializeUser(req.currentUser),
-    trial_ends_at: trialEndsAt,
-    trial_expired: trialExpired,
-    trial_days_remaining: trialDaysRemaining,
+    plan: org.plan,
+    billing_period: org.billingPeriod,
+    subscription_status: org.subscriptionStatus,
+    onboarding_completed: Boolean(org.plan),
   });
 });
 

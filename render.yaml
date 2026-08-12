@@ -50,3 +50,9 @@ services:
         value: claude-sonnet-5
       - key: ANTHROPIC_API_KEY
         sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
+      - key: RESEND_API_KEY
+        sync: false # optional -- enables the marketing site's contact form
+      - key: STRIPE_SECRET_KEY
+        sync: false # optional -- enables paid plans (Free plan and everything else work without it)
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false # optional, pairs with STRIPE_SECRET_KEY -- see README's "Plans & billing (Stripe)" section

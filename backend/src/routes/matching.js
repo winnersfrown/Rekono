@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { parse } from "csv-parse/sync";
 import { requireAuth } from "../auth.js";
-import { requireActiveTrial } from "../trial.js";
+import { requireActivePlan } from "../plan.js";
 import * as matchingEngine from "../matching.js";
 import { upload } from "../storage.js";
 import { AuditLog, Invoice, MatchEntry, MatchResult, MatchSource } from "../models/index.js";
@@ -55,7 +55,7 @@ function parseDateToISO(raw) {
   return null;
 }
 
-router.post("/api/matching/sources", requireAuth, requireActiveTrial, upload.single("file"), async (req, res, next) => {
+router.post("/api/matching/sources", requireAuth, requireActivePlan, upload.single("file"), async (req, res, next) => {
   try {
     const sourceType = req.query.source_type;
     if (!["po", "bank"].includes(sourceType)) {
@@ -111,7 +111,7 @@ router.post("/api/matching/sources", requireAuth, requireActiveTrial, upload.sin
   }
 });
 
-router.get("/api/matching/sources", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.get("/api/matching/sources", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const sources = await MatchSource.findAll({ where: { orgId: req.currentUser.orgId } });
     const out = await Promise.all(
@@ -123,7 +123,7 @@ router.get("/api/matching/sources", requireAuth, requireActiveTrial, async (req,
   }
 });
 
-router.post("/api/matching/run", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.post("/api/matching/run", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const sources = await MatchSource.findAll({ where: { orgId: req.currentUser.orgId }, attributes: ["id"] });
     const entries = await MatchEntry.findAll({ where: { sourceId: sources.map((s) => s.id) } });
@@ -177,7 +177,7 @@ router.post("/api/matching/run", requireAuth, requireActiveTrial, async (req, re
   }
 });
 
-router.get("/api/matching/results", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.get("/api/matching/results", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const results = await MatchResult.findAll({
       include: [{ model: Invoice, attributes: [], where: { orgId: req.currentUser.orgId }, required: true }],

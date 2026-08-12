@@ -1,7 +1,7 @@
 import { Router } from "express";
 import ExcelJS from "exceljs";
 import { requireAuth } from "../auth.js";
-import { requireActiveTrial } from "../trial.js";
+import { requireActivePlan } from "../plan.js";
 import { Invoice, LineItem, MatchResult } from "../models/index.js";
 
 const router = Router();
@@ -76,7 +76,7 @@ function toCsvValue(value) {
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
-router.get("/api/export/csv", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.get("/api/export/csv", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const rows = await buildRows(req.currentUser.orgId);
     const lines = [COLUMNS.join(",")];
@@ -91,7 +91,7 @@ router.get("/api/export/csv", requireAuth, requireActiveTrial, async (req, res, 
   }
 });
 
-router.get("/api/export/xlsx", requireAuth, requireActiveTrial, async (req, res, next) => {
+router.get("/api/export/xlsx", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const rows = await buildRows(req.currentUser.orgId);
     const workbook = new ExcelJS.Workbook();

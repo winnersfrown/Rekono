@@ -11,7 +11,7 @@ This repo is the MVP described below: upload → extract → review → export �
 3. Export approved (or all) invoices to CSV/Excel.
 4. One matching rule: fuzzy vendor name + amount tolerance + date window against an uploaded PO or bank statement CSV.
 5. Accounts: email/password signup creates an organization; every invoice, match source, and audit log entry is scoped to it, so separate customers/teams never see each other's data.
-6. A 14-day trial, enforced server-side: every data-touching endpoint returns `402` once an org's trial has run out (see `trial.js`). No billing/upgrade path exists yet -- it's currently a hard stop.
+6. Onboarding + plans: right after signup, a short wizard collects a few personalization questions and a plan choice (Free, or a paid tier via Stripe Checkout) before the dashboard loads. Every data-touching endpoint returns `402` until an org has completed this (see `plan.js`) -- `onboarding_required` if no plan was ever chosen, `billing_required` if a paid plan's subscription lapsed or was never completed. Each plan has a monthly document cap, enforced on upload (see `plans.js`, `routes/ingestion.js`).
 
 ## Architecture
 
@@ -59,9 +59,11 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Auth** (`auth.js`, `routes/auth.js`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User`; there's no cross-org signup/invite flow yet (see Roadmap). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint and the Fly.io instructions below both do this for you) for any deployment with more than one replica.
 
+**Onboarding & billing** (`plans.js`, `plan.js`, `routes/onboarding.js`, `routes/billing.js`): a new org's `plan` is `null` until the post-signup wizard completes -- `plan.js`'s `requireActivePlan` middleware (mounted the same way `requireActiveTrial` used to be) blocks every data route until it does. Picking Free activates instantly; picking a paid tier creates a Stripe Checkout session with the price built inline from `plans.js` (`price_data`, not a dashboard-configured Product/Price -- so standing up billing only ever needs a Stripe account + API keys, nothing to keep in sync by hand) and only activates the plan once Stripe confirms payment, both via the redirect back (`GET /api/billing/confirm`) and a webhook (`POST /api/billing/webhook`) that also keeps the plan in sync with renewals/cancellations afterward. `GET /api/billing/portal` hands off to Stripe's own hosted billing-management UI rather than a custom one. All of it degrades to a clear `503` instead of crashing when `STRIPE_SECRET_KEY` isn't set, same pattern as the Anthropic/Resend integrations.
+
 **Output/integration layer** (`routes/export.js`): CSV/Excel export today. QuickBooks/Xero/NetSuite push integrations are additive on top of the same Invoice/MatchResult data (see Roadmap).
 
-**Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) behind a login/signup gate, laid out as a sidebar (nav + recent uploads, clickable straight into the Review Queue) next to a main panel: Ask Rekono / Upload / Review Queue / Matching / Export. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail.
+**Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) behind a login/signup gate, laid out as a sidebar (nav + recent uploads, clickable straight into the Review Queue) next to a main panel: Ask Rekono / Upload / Review Queue / Matching / Export. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail. A fresh signup lands in a two-step onboarding wizard first (a few personalization questions, then a plan picker) rather than straight in the dashboard -- picking a paid plan hands off to Stripe Checkout before the dashboard ever loads.
 
 **Ask Rekono** (`assistant.js`, `routes/assistant.js`): a grounded Q&A assistant over the org's own invoice data, reachable from the dashboard's default view. Each question is answered independently (no conversation memory) by handing Claude the org's invoice data as JSON and the question in one prompt, instructed to answer only from that data. Deliberately read-only -- it can summarize, count, and total, but it cannot approve, reject, export, or otherwise act, so there's no risk of an LLM mistake touching anyone's books. Needs `ANTHROPIC_API_KEY`; without it the endpoint returns `503` with a clear message rather than crashing.
 
@@ -126,7 +128,7 @@ Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.f
 
 1. Push/fork this repo to your own GitHub.
 2. In Render: **New → Blueprint**, point it at the repo. (If you don't see "Blueprint" as an option, your account may only show the per-resource flow — create a **Postgres** instance first, then a **Web Service** pointed at this repo's `Dockerfile`, and set its env vars to match `render.yaml`: `DATABASE_URL` from the Postgres instance's internal connection string, `STORAGE_DIR=/tmp/storage`, a random `SECRET_KEY`, and optionally `ANTHROPIC_API_KEY`.)
-3. Once deployed, set `ANTHROPIC_API_KEY` in the web service's environment variables (Render dashboard) if you want LLM extraction instead of the heuristic fallback — everything else (`DATABASE_URL`, `SECRET_KEY`) is wired up automatically by the Blueprint.
+3. Once deployed, set `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, and/or `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in the web service's environment variables (Render dashboard) to enable LLM extraction, the contact form, and paid plans respectively — all optional, all degrade to a clear error instead of crashing when unset. `DATABASE_URL` and `SECRET_KEY` are wired up automatically by the Blueprint.
 4. Your app is live at `https://<service-name>.onrender.com`.
 
 Two tradeoffs that come with staying on free: Render's free Postgres plan auto-deletes after 30 days (recreate it, or upgrade to `starter` in `render.yaml`, before then if you want to keep data), and free web services can't attach a persistent disk, so uploaded invoice files live in the container's ephemeral storage and don't survive a restart/redeploy — the extracted data and audit trail in Postgres are unaffected, only the original source files (used for the review UI's document preview) aren't. Free web services also spin down after 15 minutes idle and cold-start on the next request.
@@ -140,11 +142,11 @@ cd backend
 npm test
 ```
 
-Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 24 tests total, all without requiring Tesseract, Poppler, or an Anthropic API key, so they run in plain CI.
+Covers the confidence cross-check logic, the fuzzy matching engine, the heuristic extraction fallback, signup/login + cross-org data isolation, onboarding + plan gating (`onboarding_required`/`billing_required`), per-plan document cap enforcement, Stripe-backed billing routes (structurally, via their `503`-when-unconfigured path), password reset, and the core API endpoints (upload validation, matching upload/run, corrections + audit log, approval, export) — 76 tests total, all without requiring Tesseract, Poppler, a live Anthropic/Resend/Stripe key, or a real Postgres database, so they run in plain CI.
 
 ## API surface
 
-Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth routes also returns `402` once that org's 14-day trial has ended.
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth routes also returns `402` once that org's onboarding/billing state isn't active (`onboarding_required` or `billing_required` -- see `plan.js`).
 
 | Endpoint | Purpose |
 |---|---|
@@ -152,8 +154,13 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/auth/login` | Email + password → bearer token |
 | `POST /api/auth/forgot-password` | Email a password reset link (requires `RESEND_API_KEY`; always responds the same way regardless of whether the email matches an account, to avoid leaking which emails are registered) |
 | `POST /api/auth/reset-password` | `{token, password}` from the emailed link → new password, returns a bearer token (signs the user in) |
-| `GET /api/auth/me` | Current user + trial status (`trial_ends_at`, `trial_expired`, `trial_days_remaining`), for verifying a stored token |
-| `POST /api/invoices/upload` | Upload a PDF/image; queues extraction |
+| `GET /api/auth/me` | Current user + plan status (`plan`, `billing_period`, `subscription_status`, `onboarding_completed`), for verifying a stored token |
+| `POST /api/onboarding` | Personalization answers + plan choice. Free activates immediately; a paid plan returns a Stripe Checkout URL to redirect to |
+| `POST /api/billing/checkout` | Start a Stripe Checkout session for a plan change (same mechanism onboarding uses for its first plan choice) |
+| `GET /api/billing/confirm?session_id=` | Called on the redirect back from Stripe Checkout; verifies the session belongs to the caller's org and activates the plan |
+| `GET /api/billing/portal` | Stripe's hosted billing-management session URL (update card, cancel, view invoices) |
+| `POST /api/billing/webhook` | Stripe webhook (signature-verified, not user-authenticated) -- keeps plan/subscription status in sync with renewals and cancellations |
+| `POST /api/invoices/upload` | Upload a PDF/image; queues extraction. Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | List invoices, optional `?status=` filter |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
 | `GET /api/invoices/:id/file` | Serve the original document (for preview) |
@@ -179,6 +186,16 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 2. Get an API key from the dashboard (**API Keys → Create API Key**).
 3. Set `RESEND_API_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally).
 4. By default, `CONTACT_FROM_EMAIL` is `onboarding@resend.dev` -- Resend's shared sandbox sender, which works without any domain setup as long as `CONTACT_TO_EMAIL` (defaults to `aiden.lai@yahoo.com`) is the same address you signed up to Resend with. To send from your own domain instead, verify it in Resend (**Domains** tab) and set `CONTACT_FROM_EMAIL` to an address at that domain.
+
+### Plans & billing (Stripe)
+
+Paid-plan checkout, the billing-management portal, and the onboarding wizard's paid-plan path all need `STRIPE_SECRET_KEY` set, or they respond `503` (Free-plan onboarding and every other route work regardless -- billing is the one thing this gates).
+
+1. Sign up at [stripe.com](https://stripe.com) and grab your **test mode** secret key first (**Developers → API keys**) to try the flow safely -- it's a normal Checkout page, just backed by [Stripe's test card numbers](https://stripe.com/docs/testing) instead of real money.
+2. Set `STRIPE_SECRET_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally). That alone is enough for checkout and the billing portal to work -- no Products/Prices need to be created in the Stripe dashboard, since `routes/billing.js` builds the price inline from `plans.js` at checkout time.
+3. For the webhook (keeps plan status in sync with renewals/cancellations after the initial checkout): in Stripe, **Developers → Webhooks → Add endpoint**, pointed at `https://<your-deployed-url>/api/billing/webhook`, listening for `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`. Copy the endpoint's **Signing secret** into `STRIPE_WEBHOOK_SECRET`.
+4. Switch to live mode keys (both the secret key and a live-mode webhook endpoint/secret) once you're ready to accept real payments -- test and live are entirely separate in Stripe, including their webhooks.
+5. Plan prices/caps live in `backend/src/plans.js`, matching the marketing site's pricing section -- change both together if either changes.
 
 ## Roadmap (beyond this MVP)
 
