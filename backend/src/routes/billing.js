@@ -10,7 +10,7 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { settings } from "../config.js";
-import { PAID_PLAN_IDS, PLANS, priceUsd } from "../plans.js";
+import { PAID_PLAN_IDS, PLANS, billingCycleAmountUsd } from "../plans.js";
 import { Organization } from "../models/index.js";
 
 const router = Router();
@@ -49,7 +49,7 @@ export async function cancelReplacedSubscription(stripe, org, newSubscriptionId)
 export async function createCheckoutSession({ org, email, planId, billingPeriod, baseUrl }) {
   const stripe = getStripe();
   const plan = PLANS[planId];
-  const amountCents = Math.round(priceUsd(planId, billingPeriod) * 100);
+  const amountCents = Math.round(billingCycleAmountUsd(planId, billingPeriod) * 100);
   const periodLabel = billingPeriod === "annual" ? "annual" : "monthly";
 
   return stripe.checkout.sessions.create({

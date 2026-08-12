@@ -42,7 +42,20 @@ export function isValidPlanId(planId) {
   return Object.prototype.hasOwnProperty.call(PLANS, planId);
 }
 
+// The monthly-equivalent rate shown on pricing UI ("$X/mo, billed
+// annually" for the annual option) -- NOT what a single Stripe invoice
+// charges. For that, see billingCycleAmountUsd below.
 export function priceUsd(planId, billingPeriod) {
   const plan = PLANS[planId];
   return billingPeriod === "annual" ? plan.annualPriceUsd : plan.monthlyPriceUsd;
+}
+
+// What Stripe actually charges per billing cycle: the monthly rate every
+// month, or 12x the monthly-equivalent annual rate once a year --
+// annualPriceUsd is a per-month figure (matching the marketing site's "$X/mo,
+// billed annually" copy), and an annual subscription bills the full year
+// up front, not that bare per-month number.
+export function billingCycleAmountUsd(planId, billingPeriod) {
+  const monthlyEquivalent = priceUsd(planId, billingPeriod);
+  return billingPeriod === "annual" ? monthlyEquivalent * 12 : monthlyEquivalent;
 }
