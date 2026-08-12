@@ -34,9 +34,16 @@ export const PLANS = {
     monthlyPriceUsd: 499,
     annualPriceUsd: 399,
   },
+  scale: {
+    name: "Scale",
+    docCapPerMonth: 10000,
+    seats: null, // unlimited
+    monthlyPriceUsd: 1499,
+    annualPriceUsd: 1199,
+  },
 };
 
-export const PAID_PLAN_IDS = ["starter", "growth", "business"];
+export const PAID_PLAN_IDS = ["starter", "growth", "business", "scale"];
 
 export function isValidPlanId(planId) {
   return Object.prototype.hasOwnProperty.call(PLANS, planId);
