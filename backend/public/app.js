@@ -52,7 +52,11 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     loadRecentUploads();
     bootstrapApp(); // refreshes the sidebar's "documents used this month" count
   } catch (err) {
-    statusEl.textContent = `Error: ${err}`;
+    // err is a real Error here (thrown by apiFetch on 401/402, or a network
+    // failure) -- its own message already reads naturally on its own
+    // ("You've reached your Free plan's limit..."), so this avoids
+    // interpolating the whole Error object and doubling up "Error: Error: ".
+    statusEl.textContent = err.message || String(err);
   }
 });
 
