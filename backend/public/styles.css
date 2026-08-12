@@ -405,6 +405,18 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   display: inline-block;
 }
 
+.btn-upgrade {
+  background: rgba(75, 134, 247, 0.14);
+  border: 1px solid var(--blue);
+  color: var(--blue-bright);
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  width: 100%;
+  justify-content: center;
+}
+.btn-upgrade:hover { background: var(--blue); color: #04081a; }
+
 /* ---------- onboarding wizard ---------- */
 .onboarding-card { max-width: 560px; }
 
@@ -556,6 +568,37 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 @media (max-width: 560px) {
   .onboarding-plan-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- upgrade modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(6, 11, 24, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card { position: relative; width: 100%; }
+
+.modal-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 999px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.modal-close:hover { color: var(--paper); border-color: var(--blue); background: transparent; box-shadow: none; transform: none; }
 
 /* ---------- app sidebar layout ---------- */
 .app-layout { display: flex; min-height: 100vh; align-items: stretch; }
