@@ -61,7 +61,9 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Output/integration layer** (`routes/export.js`): CSV/Excel export today. QuickBooks/Xero/NetSuite push integrations are additive on top of the same Invoice/MatchResult data (see Roadmap).
 
-**Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) — Upload / Review Queue / Matching / Export tabs, in front of a login/signup gate. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail.
+**Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) behind a login/signup gate, laid out as a sidebar (nav + recent uploads, clickable straight into the Review Queue) next to a main panel: Ask Rekono / Upload / Review Queue / Matching / Export. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail.
+
+**Ask Rekono** (`assistant.js`, `routes/assistant.js`): a grounded Q&A assistant over the org's own invoice data, reachable from the dashboard's default view. Each question is answered independently (no conversation memory) by handing Claude the org's invoice data as JSON and the question in one prompt, instructed to answer only from that data. Deliberately read-only -- it can summarize, count, and total, but it cannot approve, reject, export, or otherwise act, so there's no risk of an LLM mistake touching anyone's books. Needs `ANTHROPIC_API_KEY`; without it the endpoint returns `503` with a clear message rather than crashing.
 
 **Stack**: Node.js 22 + Express + Sequelize (SQLite/Postgres), plain JavaScript (ESM, no build step/TypeScript compile) so `docker run`/`node src/server.js` is all it takes to run it, matching the no-build-step philosophy of the frontend it's paired with.
 
@@ -158,6 +160,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, and `/api/hea
 | `POST /api/matching/run` | Run the matching engine over all extracted invoices |
 | `GET /api/matching/results` | All match results (newest first) |
 | `GET /api/export/csv` \| `/api/export/xlsx` | Export all invoices with status + latest match result |
+| `POST /api/assistant/ask` | Ask a question about this org's invoices; answered by Claude grounded in that data only |
 | `POST /api/contact` | Public (no auth) -- the marketing site's "Talk to us" form. Rate-limited, honeypot-protected. |
 
 ## Configuration
