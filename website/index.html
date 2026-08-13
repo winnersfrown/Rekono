@@ -447,6 +447,41 @@
     .feature-grid { grid-template-columns: 1fr; }
   }
 
+  /* ---------- compare ---------- */
+  .compare-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line-soft);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line-soft);
+  }
+  .compare-col { background: var(--ink-900); padding: 26px 30px; }
+  .compare-label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .compare-elsewhere .compare-label { color: var(--muted); }
+  .compare-rekono .compare-label { color: var(--green); }
+  .compare-col p { font-size: 0.94rem; line-height: 1.55; }
+  .compare-elsewhere p { color: var(--muted); }
+  .compare-rekono p { color: var(--paper-dim); }
+  .compare-rekono p strong { color: var(--paper); font-weight: 600; }
+  @media (max-width: 700px) {
+    .compare-row { grid-template-columns: 1fr; }
+  }
+
   /* ---------- pricing ---------- */
   .pricing-grid {
     display: grid;
@@ -683,6 +718,10 @@
   .pricing-grid .price-card:nth-child(2) { --reveal-delay: 0.07s; }
   .pricing-grid .price-card:nth-child(3) { --reveal-delay: 0.14s; }
   .pricing-grid .price-card:nth-child(4) { --reveal-delay: 0.21s; }
+  .compare-list .compare-row:nth-child(1) { --reveal-delay: 0s; }
+  .compare-list .compare-row:nth-child(2) { --reveal-delay: 0.07s; }
+  .compare-list .compare-row:nth-child(3) { --reveal-delay: 0.14s; }
+  .compare-list .compare-row:nth-child(4) { --reveal-delay: 0.21s; }
   @media (prefers-reduced-motion: reduce) {
     .reveal { transition-delay: 0s !important; }
   }
@@ -777,6 +816,7 @@
       <nav class="primary-nav">
         <a href="#how-it-works">How It Works</a>
         <a href="#features">Features</a>
+        <a href="#compare">Why Rekono</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
       </nav>
@@ -960,6 +1000,60 @@
     </div>
   </section>
 
+  <!-- COMPARE -->
+  <section class="block" id="compare">
+    <div class="wrap">
+      <div class="block-head reveal">
+        <span class="eyebrow">Why Rekono</span>
+        <h2>What's actually different, not just the pitch.</h2>
+        <p class="sub">Most tools in this category say "AI-powered invoice processing." Here's what that phrase usually hides — and what Rekono does instead.</p>
+      </div>
+
+      <div class="compare-list">
+        <div class="compare-row reveal">
+          <div class="compare-col compare-elsewhere">
+            <span class="compare-label">Elsewhere</span>
+            <p>One blended confidence score for the whole document — you re-check everything, or nothing.</p>
+          </div>
+          <div class="compare-col compare-rekono">
+            <span class="compare-label">Rekono</span>
+            <p>A confidence score on <strong>every field</strong>, self-reported by the model. Only the fields that are actually shaky get flagged.</p>
+          </div>
+        </div>
+        <div class="compare-row reveal">
+          <div class="compare-col compare-elsewhere">
+            <span class="compare-label">Elsewhere</span>
+            <p>No AI key configured, or the API has a bad day? Extraction just stops.</p>
+          </div>
+          <div class="compare-col compare-rekono">
+            <span class="compare-label">Rekono</span>
+            <p>Falls back to a heuristic extractor automatically. Upload, review, and export keep running end to end either way.</p>
+          </div>
+        </div>
+        <div class="compare-row reveal">
+          <div class="compare-col compare-elsewhere">
+            <span class="compare-label">Elsewhere</span>
+            <p>Your invoices live on someone else's cloud. That's the only option on offer.</p>
+          </div>
+          <div class="compare-col compare-rekono">
+            <span class="compare-label">Rekono</span>
+            <p>Self-hostable on your own Postgres or SQLite — Docker Compose, Render, and Fly.io configs all ship in the repo.</p>
+          </div>
+        </div>
+        <div class="compare-row reveal">
+          <div class="compare-col compare-elsewhere">
+            <span class="compare-label">Elsewhere</span>
+            <p>Go over your plan and get billed a per-document overage rate you find out about after the fact.</p>
+          </div>
+          <div class="compare-col compare-rekono">
+            <span class="compare-label">Rekono</span>
+            <p>Flat monthly plans. Hit your document cap and you're shown the upgrade — never billed a surprise.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- PRICING -->
   <section class="block" id="pricing">
     <div class="wrap">
@@ -1117,6 +1211,7 @@
     <nav>
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
+      <a href="#compare">Why Rekono</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
       <a href="https://rekono-crv7.onrender.com/privacy.html">Privacy</a>
