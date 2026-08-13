@@ -28,7 +28,14 @@ export async function processInvoice(invoiceId) {
       // the review UI now shows verbatim, so log the detail here and surface
       // a plain-language reason instead.
       console.error(`OCR failed for invoice ${invoiceId}:`, exc.message);
-      await fail(invoice, "OCR failed: the document couldn't be processed. It may be corrupted, password-protected, or not a valid file of its type.");
+      // A missing source file (as opposed to one OCR couldn't read) usually
+      // means the upload was lost to an ephemeral filesystem restart/redeploy
+      // before processing got to it -- tell the user something they can
+      // actually act on (re-upload) instead of implying their file is bad.
+      const message = exc.message.startsWith("File not found:")
+        ? "The uploaded file is no longer available on the server (this can happen after a restart or redeploy on ephemeral hosting). Please re-upload this document."
+        : "OCR failed: the document couldn't be processed. It may be corrupted, password-protected, or not a valid file of its type.";
+      await fail(invoice, message);
       return;
     }
     throw exc;

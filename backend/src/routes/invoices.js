@@ -42,7 +42,22 @@ router.get("/api/invoices/:id/file", requireAuth, requireActivePlan, async (req,
   try {
     const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
-    res.sendFile(invoice.storagePath, { headers: { "Content-Type": invoice.contentType || "application/octet-stream" } });
+    res.sendFile(
+      invoice.storagePath,
+      { headers: { "Content-Type": invoice.contentType || "application/octet-stream" } },
+      (err) => {
+        if (!err) return;
+        // A missing source file is routine on ephemeral hosting (Render's
+        // free tier wipes uploads on every restart/redeploy) -- report it as
+        // a clean 404 instead of letting the raw ENOENT (which includes the
+        // full server-side storage path) fall through to the generic 500
+        // handler.
+        if (err.code === "ENOENT") {
+          return res.status(404).json({ detail: "This document's source file is no longer available on the server." });
+        }
+        next(err);
+      }
+    );
   } catch (err) {
     next(err);
   }
