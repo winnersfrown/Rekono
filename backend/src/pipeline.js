@@ -22,7 +22,13 @@ export async function processInvoice(invoiceId) {
     ocrText = await ocrModule.extractText(invoice.storagePath, invoice.contentType);
   } catch (exc) {
     if (exc instanceof ocrModule.OcrError) {
-      await fail(invoice, `OCR failed: ${exc.message}`);
+      // exc.message from a failed pdftoppm/tesseract call includes the full
+      // shelled-out command plus its raw stdout/stderr (Node's child_process
+      // default) -- useful in server logs, not as the user-facing message
+      // the review UI now shows verbatim, so log the detail here and surface
+      // a plain-language reason instead.
+      console.error(`OCR failed for invoice ${invoiceId}:`, exc.message);
+      await fail(invoice, "OCR failed: the document couldn't be processed. It may be corrupted, password-protected, or not a valid file of its type.");
       return;
     }
     throw exc;

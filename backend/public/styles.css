@@ -285,6 +285,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 .cross-check { padding: 0.7rem 0.85rem; border-radius: 8px; font-size: 0.82rem; margin-bottom: 1.2rem; border: 1px solid transparent; }
 .cross-check.pass { background: rgba(62, 203, 132, 0.08); border-color: rgba(62, 203, 132, 0.25); color: var(--green); }
 .cross-check.fail { background: rgba(242, 84, 91, 0.08); border-color: rgba(242, 84, 91, 0.25); color: var(--red); }
+.cross-check.processing { background: rgba(75, 134, 247, 0.08); border-color: rgba(75, 134, 247, 0.25); color: var(--blue-bright); }
 
 #upload-status, #matching-summary { margin: 0.85rem 0; font-size: 0.9rem; color: var(--muted); }
 
