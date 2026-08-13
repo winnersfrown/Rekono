@@ -134,7 +134,7 @@ function renderDetail(inv) {
   if (inv.status === "queued" || inv.status === "processing") {
     const isPdf = (inv.content_type || "").includes("pdf");
     el.innerHTML = `
-      <div class="cross-check processing">⏳ Still processing this document — this updates automatically, usually within a few seconds.</div>
+      <div class="cross-check processing">⏳ Still processing this document — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
       <div class="doc-preview">
         <h3>Source document</h3>
         ${isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`}
@@ -213,12 +213,27 @@ function renderDetail(inv) {
 }
 
 // Checks back every 3s while an invoice is still queued/processing, up to
-// ~60s, then re-renders once it's actually done -- capped rather than
-// polling forever in case a job genuinely gets stuck. Bails out early if the
-// user has since selected a different invoice, so a stale response can't
-// clobber whatever they're looking at now.
+// ~6 minutes, then re-renders once it's actually done -- capped rather than
+// polling forever in case a job genuinely gets stuck. The backend bounds its
+// own worst case (OCR and LLM calls each time out well under a minute, and
+// any unexpected error marks the invoice "failed" instead of leaving it
+// stuck), so this cap is a generous multiple of that, not the thing actually
+// keeping processing time in check. Bails out early if the user has since
+// selected a different invoice, so a stale response can't clobber whatever
+// they're looking at now.
+const POLL_MAX_ATTEMPTS = 120;
+
 function pollWhileProcessing(id, attempt = 0) {
-  if (attempt >= 20) return;
+  if (attempt >= POLL_MAX_ATTEMPTS) {
+    if (state.selectedInvoiceId === id) {
+      const banner = document.querySelector("#queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
   setTimeout(async () => {
     if (state.selectedInvoiceId !== id) return;
     const res = await apiFetch(`/api/invoices/${id}`);

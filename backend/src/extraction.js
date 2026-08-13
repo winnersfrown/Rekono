@@ -98,8 +98,21 @@ export async function extract(ocrText) {
   return extractHeuristic(ocrText);
 }
 
+// Bounds the worst case for a single extraction call: the SDK's default
+// timeout is several minutes, and its default retry behavior can multiply
+// that further. A single retry within a 60s budget is enough to ride out a
+// transient blip while still failing fast into the heuristic fallback (see
+// `extract`, above) rather than leaving the invoice stuck "processing" for
+// minutes with the user watching a spinner.
+const LLM_TIMEOUT_MS = 60_000;
+const LLM_MAX_RETRIES = 1;
+
 async function extractWithLlm(ocrText) {
-  const client = new Anthropic({ apiKey: settings.anthropicApiKey });
+  const client = new Anthropic({
+    apiKey: settings.anthropicApiKey,
+    timeout: LLM_TIMEOUT_MS,
+    maxRetries: LLM_MAX_RETRIES,
+  });
   const response = await client.messages.create({
     model: settings.anthropicModel,
     max_tokens: 4096,
