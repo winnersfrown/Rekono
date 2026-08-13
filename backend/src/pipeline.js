@@ -107,3 +107,17 @@ async function fail(invoice, message) {
     details: { error: message },
   });
 }
+
+// Safety net for the job queue (see jobs.js's drain loop): if processInvoice
+// throws in a way it didn't already handle -- a bug, an OCR failure that
+// somehow escapes the OcrError wrapping above -- the invoice would otherwise
+// stay stuck on "processing" forever, since nothing else ever calls fail()
+// for it. Only acts if the invoice is still mid-pipeline, so it can't
+// clobber a result that actually completed before the error was thrown.
+export async function markFailedIfStuck(invoiceId, exc) {
+  const invoice = await Invoice.findByPk(invoiceId);
+  if (!invoice || invoice.status === "failed" || invoice.status === "extracted" || invoice.status === "needs_review") {
+    return;
+  }
+  await fail(invoice, `Unexpected error while processing this document: ${exc.message}`);
+}

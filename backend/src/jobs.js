@@ -4,7 +4,7 @@
 // this for a real broker (BullMQ/Redis, SQS) later is a drop-in
 // replacement behind `enqueue`.
 
-import { processInvoice } from "./pipeline.js";
+import { processInvoice, markFailedIfStuck } from "./pipeline.js";
 
 const queue = [];
 let processing = false;
@@ -24,6 +24,11 @@ async function drain() {
         await processInvoice(invoiceId);
       } catch (err) {
         console.error(`Unhandled error processing invoice ${invoiceId}`, err);
+        try {
+          await markFailedIfStuck(invoiceId, err);
+        } catch (markErr) {
+          console.error(`Also failed to mark invoice ${invoiceId} as failed`, markErr);
+        }
       }
     }
   } finally {

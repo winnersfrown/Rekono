@@ -14,6 +14,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+// Neither `tesseract` nor `pdftoppm` is expected to take more than a few
+// seconds per page on a normal invoice -- these bounds exist purely so a
+// wedged/hung subprocess (a malformed PDF, an exotic codec) fails loudly
+// within a bounded time instead of leaving the invoice stuck in
+// "processing" forever with nothing watching it.
+const TESSERACT_TIMEOUT_MS = 60_000;
+const PDFTOPPM_TIMEOUT_MS = 60_000;
+
 export class OcrError extends Error {}
 
 export async function extractText(storagePath, contentType) {
@@ -28,8 +36,15 @@ export async function extractText(storagePath, contentType) {
 }
 
 async function extractFromImage(imagePath) {
-  const { stdout } = await execFileAsync("tesseract", [imagePath, "stdout"], { maxBuffer: 1024 * 1024 * 32 });
-  return stdout;
+  try {
+    const { stdout } = await execFileAsync("tesseract", [imagePath, "stdout"], {
+      maxBuffer: 1024 * 1024 * 32,
+      timeout: TESSERACT_TIMEOUT_MS,
+    });
+    return stdout;
+  } catch (exc) {
+    throw new OcrError(`OCR failed: ${exc.message}`);
+  }
 }
 
 async function extractFromPdf(pdfPath) {
@@ -37,7 +52,7 @@ async function extractFromPdf(pdfPath) {
   const prefix = path.join(tmpDir, "page");
   try {
     try {
-      await execFileAsync("pdftoppm", ["-png", "-r", "200", pdfPath, prefix]);
+      await execFileAsync("pdftoppm", ["-png", "-r", "200", pdfPath, prefix], { timeout: PDFTOPPM_TIMEOUT_MS });
     } catch (exc) {
       throw new OcrError(`Failed to rasterize PDF for OCR: ${exc.message}`);
     }
