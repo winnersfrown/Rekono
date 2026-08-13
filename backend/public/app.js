@@ -124,6 +124,27 @@ function fieldConf(inv, name) {
 
 function renderDetail(inv) {
   const el = document.getElementById("queue-detail");
+
+  // Queued/processing look identical to a genuinely-empty extraction (every
+  // field null either way) unless status is checked explicitly -- without
+  // this, "still working on it" and "extraction ran and found nothing" were
+  // indistinguishable, which is exactly what made this look broken. Auto-
+  // polls and re-renders once it's actually done instead of leaving the user
+  // staring at a blank form wondering if anything happened.
+  if (inv.status === "queued" || inv.status === "processing") {
+    const isPdf = (inv.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this document — this updates automatically, usually within a few seconds.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        ${isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`}
+      </div>
+    `;
+    loadDocPreview(inv);
+    pollWhileProcessing(inv.id);
+    return;
+  }
+
   const lowConf = (name) => fieldConf(inv, name) < 0.85 ? "low-confidence" : "";
 
   const lineItemsRows = (inv.line_items || []).map((li, i) => `
@@ -142,11 +163,15 @@ function renderDetail(inv) {
     ? inv.match_results.map((m) => `<div><span class="badge match-${m.status}">${m.status}</span> score ${m.score.toFixed(0)} — ${m.reasoning}</div>`).join("")
     : `<div class="hint">No match run yet for this invoice.</div>`;
 
-  el.innerHTML = `
-    <div class="cross-check ${inv.cross_check_passed ? "pass" : "fail"}">
+  const statusBanner = inv.status === "failed"
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeAttr(inv.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    : `<div class="cross-check ${inv.cross_check_passed ? "pass" : "fail"}">
       ${inv.cross_check_passed ? "✓" : "✗"} Cross-check: ${inv.cross_check_detail || "n/a"}
       &nbsp;·&nbsp; extraction method: ${inv.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(inv.overall_confidence)}
-    </div>
+    </div>`;
+
+  el.innerHTML = `
+    ${statusBanner}
 
     <div class="detail-grid">
       <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="f-vendor_name" value="${escapeAttr(inv.vendor_name)}" /></div>
@@ -185,6 +210,28 @@ function renderDetail(inv) {
   document.getElementById("btn-reject").addEventListener("click", () => rejectInvoice(inv.id));
 
   loadDocPreview(inv);
+}
+
+// Checks back every 3s while an invoice is still queued/processing, up to
+// ~60s, then re-renders once it's actually done -- capped rather than
+// polling forever in case a job genuinely gets stuck. Bails out early if the
+// user has since selected a different invoice, so a stale response can't
+// clobber whatever they're looking at now.
+function pollWhileProcessing(id, attempt = 0) {
+  if (attempt >= 20) return;
+  setTimeout(async () => {
+    if (state.selectedInvoiceId !== id) return;
+    const res = await apiFetch(`/api/invoices/${id}`);
+    const inv = await res.json();
+    if (state.selectedInvoiceId !== id) return;
+    if (inv.status === "queued" || inv.status === "processing") {
+      pollWhileProcessing(id, attempt + 1);
+    } else {
+      renderDetail(inv);
+      loadInvoices();
+      loadRecentUploads();
+    }
+  }, 3000);
 }
 
 // <iframe src="..."> / <img src="..."> can't carry the bearer token, so a
