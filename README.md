@@ -188,7 +188,7 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 1. Sign up at [resend.com](https://resend.com) (free tier: 3,000 emails/month, 100/day).
 2. Get an API key from the dashboard (**API Keys → Create API Key**).
 3. Set `RESEND_API_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally).
-4. By default, `CONTACT_FROM_EMAIL` is `onboarding@resend.dev` -- Resend's shared sandbox sender, which works without any domain setup as long as `CONTACT_TO_EMAIL` (defaults to `aiden.lai@yahoo.com`) is the same address you signed up to Resend with. To send from your own domain instead, verify it in Resend (**Domains** tab) and set `CONTACT_FROM_EMAIL` to an address at that domain.
+4. By default, `CONTACT_FROM_EMAIL` is `onboarding@resend.dev` -- Resend's shared sandbox sender, which works without any domain setup as long as `CONTACT_TO_EMAIL` (defaults to `wfrownusa@yahoo.com`) is the same address you signed up to Resend with. To send from your own domain instead, verify it in Resend (**Domains** tab) and set `CONTACT_FROM_EMAIL` to an address at that domain.
 
 ### Plans & billing (Stripe)
 
