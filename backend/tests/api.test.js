@@ -110,3 +110,13 @@ test("approve invoice", async () => {
   expect(res.status).toBe(200);
   expect(res.body.status).toBe("approved");
 });
+
+test("fetching a source file that no longer exists on disk returns a clean 404, not a raw path-leaking 500", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org); // storagePath points at a file that was never actually written
+
+  const res = await request(app).get(`/api/invoices/${invoice.id}/file`).set(authHeader(token));
+  expect(res.status).toBe(404);
+  expect(res.body.detail).not.toMatch(/\/tmp\//); // shouldn't leak the server-side storage path
+});

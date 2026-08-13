@@ -5,6 +5,7 @@
 // replacement behind `enqueue`.
 
 import { processInvoice, markFailedIfStuck } from "./pipeline.js";
+import { Invoice } from "./models/index.js";
 
 const queue = [];
 let processing = false;
@@ -38,4 +39,22 @@ async function drain() {
 
 export function queueDepth() {
   return queue.length;
+}
+
+// This queue is purely in-process/in-memory -- it doesn't survive a
+// restart. If the process is killed or redeployed while an invoice is
+// "queued" or "processing", that record is orphaned: the DB still says it's
+// mid-pipeline, but the job that was going to move it forward is gone, so
+// without this it would stay "processing" forever with nothing watching it.
+// Call once at boot, after the DB connection is up, to pick those back up --
+// each one re-runs the normal pipeline, which already handles a source file
+// that didn't survive the restart (see pipeline.js's "File not found"
+// handling) by failing cleanly with a re-upload prompt instead of hanging.
+export async function recoverOrphanedJobs() {
+  const stuck = await Invoice.findAll({ where: { status: ["queued", "processing"] } });
+  for (const invoice of stuck) {
+    console.warn(`Recovering orphaned invoice ${invoice.id} (was "${invoice.status}" from a previous process)`);
+    enqueue(invoice.id);
+  }
+  return stuck.length;
 }

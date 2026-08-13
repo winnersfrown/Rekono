@@ -15,12 +15,16 @@
 #      invoice files live in the container's ephemeral filesystem and are
 #      lost on every restart/redeploy/spin-down. The database (extracted
 #      data, audit trail) is unaffected -- only the original source files
-#      (needed for the review UI's document preview) don't survive.
+#      (needed for the review UI's document preview) don't survive. On
+#      restart the app notices any invoice a lost job left mid-pipeline and
+#      resolves it -- normally if the file happened to survive, otherwise
+#      failed with a clear "please re-upload this document" message -- so it
+#      never sits stuck on "processing" forever, but the source file/preview
+#      for anything uploaded before a restart is still gone for good.
 #   3. Free web services spin down after 15 minutes of no requests and
-#      cold-start (10-30s) on the next one. In the unlikely case a request
-#      lands right as the service is spinning down mid-extraction, that
-#      job could be interrupted -- rare in practice since any request
-#      resets the idle timer, but worth knowing.
+#      cold-start (10-30s) on the next one. A request that lands right as
+#      the service is spinning down mid-extraction gets recovered on the
+#      next boot per point 2 above, rather than lost.
 # Bump both `plan:` values below to `starter` if these stop being
 # acceptable tradeoffs.
 databases:
