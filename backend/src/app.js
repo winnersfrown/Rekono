@@ -18,6 +18,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const app = express();
 
+// Don't advertise the framework to every caller -- free fingerprinting for
+// anyone probing for known Express-specific issues, for zero benefit.
+app.disable("x-powered-by");
+
 // Render/Fly terminate TLS and proxy requests, so without this req.ip
 // would resolve to the proxy's own address for every request -- which
 // would make the contact form's per-IP rate limit a global one instead.
@@ -60,8 +64,18 @@ const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
 
 // Multer errors (e.g. malformed multipart body) and any route's next(err)
-// land here instead of Express's default HTML error page.
-app.use((err, req, res, next) => {
+// land here instead of Express's default HTML error page. Every deliberate
+// error response in this app (validation, auth, plan gating, etc.) is sent
+// directly by its own route via res.status(...).json(...) -- nothing ever
+// sets err.status before throwing -- so anything that reaches this handler
+// is a genuinely unexpected failure (a DB error, a bug, a malformed
+// request). Its raw message can contain internal detail that was never
+// meant to leave the server (file paths, library internals, occasionally a
+// fragment of a connection string), so it's logged in full here and never
+// echoed back to the caller -- only a generic message is.
+export function handleUnexpectedError(err, req, res, next) {
   console.error(err);
-  res.status(err.status || 500).json({ detail: err.message || "Internal server error" });
-});
+  res.status(err.status || 500).json({ detail: "Internal server error" });
+}
+
+app.use(handleUnexpectedError);
