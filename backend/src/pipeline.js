@@ -6,7 +6,21 @@ import * as confidenceModule from "./confidence.js";
 import * as extractionModule from "./extraction.js";
 import * as ocrModule from "./ocr.js";
 import { settings } from "./config.js";
-import { AuditLog, Invoice, LineItem } from "./models/index.js";
+import { PLANS } from "./plans.js";
+import { AuditLog, Invoice, LineItem, Organization } from "./models/index.js";
+
+// An org's own confidenceThreshold only applies while its plan actually
+// carries the customConfidenceThreshold feature (see plans.js) -- so a
+// value set while on Business/Scale doesn't silently keep applying after a
+// downgrade, without needing to clear it out on every plan change.
+export async function effectiveConfidenceThreshold(orgId) {
+  const org = await Organization.findByPk(orgId);
+  const plan = org && PLANS[org.plan];
+  if (plan?.customConfidenceThreshold && org.confidenceThreshold !== null && org.confidenceThreshold !== undefined) {
+    return org.confidenceThreshold;
+  }
+  return settings.reviewConfidenceThreshold;
+}
 
 export async function processInvoice(invoiceId) {
   const invoice = await Invoice.findByPk(invoiceId);
@@ -74,7 +88,8 @@ export async function processInvoice(invoiceId) {
       invoice.duplicateOfFilename = duplicateOf.originalFilename;
     }
 
-    const flagged = Boolean(duplicateOf) || report.overallConfidence < settings.reviewConfidenceThreshold || !report.crossCheckPassed;
+    const threshold = await effectiveConfidenceThreshold(invoice.orgId);
+    const flagged = Boolean(duplicateOf) || report.overallConfidence < threshold || !report.crossCheckPassed;
     invoice.status = flagged ? "needs_review" : "extracted";
     await invoice.save();
 

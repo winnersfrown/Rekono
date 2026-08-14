@@ -11,6 +11,7 @@ export const PLANS = {
     seats: 1,
     monthlyPriceUsd: 0,
     annualPriceUsd: 0,
+    customConfidenceThreshold: false,
   },
   starter: {
     name: "Starter",
@@ -18,6 +19,7 @@ export const PLANS = {
     seats: 1,
     monthlyPriceUsd: 99,
     annualPriceUsd: 79,
+    customConfidenceThreshold: false,
   },
   growth: {
     name: "Growth",
@@ -25,6 +27,7 @@ export const PLANS = {
     seats: 5,
     monthlyPriceUsd: 249,
     annualPriceUsd: 199,
+    customConfidenceThreshold: false,
   },
   business: {
     name: "Business",
@@ -32,6 +35,7 @@ export const PLANS = {
     seats: null, // unlimited
     monthlyPriceUsd: 499,
     annualPriceUsd: 399,
+    customConfidenceThreshold: true, // matches marketing copy's "Custom confidence thresholds" bullet
   },
   scale: {
     name: "Scale",
@@ -39,6 +43,7 @@ export const PLANS = {
     seats: null, // unlimited
     monthlyPriceUsd: 1499,
     annualPriceUsd: 1199,
+    customConfidenceThreshold: true,
   },
 };
 

@@ -40,6 +40,13 @@ export const Organization = sequelize.define(
     companySize: { type: DataTypes.STRING(64), allowNull: true },
     primaryUseCase: { type: DataTypes.STRING(256), allowNull: true },
     monthlyInvoiceVolume: { type: DataTypes.STRING(64), allowNull: true },
+
+    // Business/Scale-only override for the review-queue confidence bar
+    // (see plans.js's customConfidenceThreshold) -- null means "use the
+    // server-wide REVIEW_CONFIDENCE_THRESHOLD default" (see pipeline.js's
+    // effectiveConfidenceThreshold). Nullable with no default so plans
+    // without the feature, and orgs that never touch it, are unaffected.
+    confidenceThreshold: { type: DataTypes.FLOAT, allowNull: true },
   },
   { tableName: "organizations", updatedAt: false, createdAt: "createdAt" }
 );

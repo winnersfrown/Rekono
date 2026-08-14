@@ -219,6 +219,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/></svg>
             Export
           </button>
+          <button class="tab-btn" data-tab="settings">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Settings
+          </button>
         </nav>
 
         <div class="sidebar-recents">
@@ -321,6 +325,25 @@
           <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
           <a href="/api/export/csv"><button>Download CSV</button></a>
           <a href="/api/export/xlsx"><button>Download Excel</button></a>
+        </section>
+
+        <section id="tab-settings" class="tab-panel">
+          <h1>Settings</h1>
+          <p class="hint">Review-queue confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
+          <div id="settings-confidence-locked" class="hint" style="display: none;">
+            Custom thresholds are a Business/Scale feature. You're on the <span id="settings-current-plan-name"></span> plan, using the default threshold of <strong id="settings-default-threshold-locked"></strong>.
+            <button type="button" class="btn-upgrade" id="settings-upgrade-btn">Upgrade plan</button>
+          </div>
+          <form id="settings-confidence-form" style="display: none;">
+            <label>
+              Flag anything below
+              <input type="number" id="settings-confidence-input" min="0" max="100" step="1" style="width: 5rem" required />%
+              confidence
+            </label>
+            <button type="submit">Save</button>
+            <button type="button" id="settings-confidence-reset">Reset to default (<span id="settings-default-threshold"></span>)</button>
+          </form>
+          <div id="settings-confidence-status" class="hint"></div>
         </section>
       </main>
     </div>

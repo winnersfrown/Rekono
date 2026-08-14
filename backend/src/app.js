@@ -11,6 +11,7 @@ import matchingRoutes from "./routes/matching.js";
 import exportRoutes from "./routes/export.js";
 import contactRoutes from "./routes/contact.js";
 import assistantRoutes from "./routes/assistant.js";
+import settingsRoutes from "./routes/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -51,6 +52,7 @@ app.use(matchingRoutes);
 app.use(exportRoutes);
 app.use(contactRoutes);
 app.use(assistantRoutes);
+app.use(settingsRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
