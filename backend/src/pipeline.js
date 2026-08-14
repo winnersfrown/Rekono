@@ -8,6 +8,21 @@ import * as ocrModule from "./ocr.js";
 import { settings } from "./config.js";
 import { PLANS } from "./plans.js";
 import { AuditLog, Invoice, LineItem, Organization } from "./models/index.js";
+import { lookupVendorAlias } from "./vendorAlias.js";
+
+// If this exact raw vendor text has been corrected before for this org
+// (see vendorAlias.js / routes/invoices.js), use the known-good name and
+// treat it as high-confidence -- a human already verified this exact
+// mapping once, so this isn't a fresh guess. Runs on the raw extraction
+// result before confidence scoring, so the boosted confidence feeds into
+// the same needs_review decision as everything else, instead of being a
+// separate override layered on top.
+export async function applyVendorAlias(orgId, result) {
+  const alias = await lookupVendorAlias(orgId, result.fields.vendor_name);
+  if (!alias) return;
+  result.fields.vendor_name = alias.canonicalVendorName;
+  result.fieldConfidence.vendor_name = Math.max(result.fieldConfidence.vendor_name ?? 0, 0.95);
+}
 
 // An org's own confidenceThreshold only applies while its plan actually
 // carries the customConfidenceThreshold feature (see plans.js) -- so a
@@ -64,6 +79,7 @@ export async function processInvoice(invoiceId) {
 
   try {
     const result = await extractionModule.extract(ocrText);
+    await applyVendorAlias(invoice.orgId, result);
     const report = confidenceModule.score(result);
 
     invoice.vendorName = result.fields.vendor_name || "";
