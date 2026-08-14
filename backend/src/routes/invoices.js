@@ -4,6 +4,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
+import { rememberVendorCorrection } from "../vendorAlias.js";
 
 const router = Router();
 
@@ -152,6 +153,13 @@ router.patch("/api/invoices/:id", requireAuth, requireActivePlan, async (req, re
         actor: req.currentUser.email,
         details: changed,
       });
+
+      // A corrected vendor name is worth remembering for next time -- see
+      // vendorAlias.js and pipeline.js's applyVendorAlias. Fire-and-learn:
+      // never blocks or fails the correction itself if it can't be stored.
+      if (changed.vendor_name?.old) {
+        await rememberVendorCorrection(req.currentUser.orgId, changed.vendor_name.old, changed.vendor_name.new);
+      }
     }
 
     const fresh = await getOwnedInvoice(req.params.id, req.currentUser.orgId);

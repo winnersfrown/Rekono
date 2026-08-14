@@ -101,6 +101,22 @@ test("invoice correction writes audit log", async () => {
   expect(actions).toContain("human_correction");
 });
 
+test("correcting a vendor name teaches it as an alias for next time", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org); // default vendorName: "Acme Supplies Inc"
+
+  const res = await request(app)
+    .patch(`/api/invoices/${invoice.id}`)
+    .set(authHeader(token))
+    .send({ vendor_name: "Acme Corrected" });
+  expect(res.status).toBe(200);
+
+  const { lookupVendorAlias } = await import("../src/vendorAlias.js");
+  const alias = await lookupVendorAlias(org, "Acme Supplies Inc");
+  expect(alias.canonicalVendorName).toBe("Acme Corrected");
+});
+
 test("approve invoice", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);
