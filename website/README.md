@@ -1,6 +1,10 @@
 # Rekono marketing site
 
-A single self-contained landing page (`index.html`) for Rekono — no build step, no external requests (fonts are embedded as base64). Covers How It Works, Features, Pricing, and FAQ.
+A single self-contained landing page (`index.html`) for Rekono — no build step, no external requests by default (fonts are embedded as base64). Covers How It Works, Features, Pricing, and FAQ.
+
+## Analytics (optional)
+
+Off by default -- there's no analytics account for this project, so nothing to wire up out of the box. Near the end of `index.html` there's a commented-out, ready-to-uncomment `<script>` tag for [Plausible](https://plausible.io) (privacy-respecting, no cookie banner needed): sign up (or self-host it), add the site's real domain there, uncomment the line, and fill in that same domain. Any similar tool (Fathom, Simple Analytics, self-hosted Umami/PostHog) is a one-tag swap for it -- nothing else in the file needs to change. Remember to make the same edit to both `website/index.html` and the root `index.html` mirror.
 
 Preview it locally with any static file server, e.g.:
 
