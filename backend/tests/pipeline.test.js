@@ -1,5 +1,6 @@
-import { findDuplicateInvoice, markFailedIfStuck } from "../src/pipeline.js";
-import { Invoice } from "../src/models/index.js";
+import { effectiveConfidenceThreshold, findDuplicateInvoice, markFailedIfStuck } from "../src/pipeline.js";
+import { Invoice, Organization } from "../src/models/index.js";
+import { settings } from "../src/config.js";
 import { resetDb } from "./testUtils.js";
 
 const ORG_ID = "11111111-1111-1111-1111-111111111111";
@@ -93,4 +94,23 @@ test("findDuplicateInvoice never matches across organizations", async () => {
   });
 
   expect(await findDuplicateInvoice(incoming)).toBeNull();
+});
+
+test("effectiveConfidenceThreshold uses the server default when no org override is set", async () => {
+  const org = await Organization.create({ id: ORG_ID, name: "Org", plan: "business" });
+  expect(await effectiveConfidenceThreshold(org.id)).toBe(settings.reviewConfidenceThreshold);
+});
+
+test("effectiveConfidenceThreshold uses the org override on a plan with the feature", async () => {
+  const org = await Organization.create({ id: ORG_ID, name: "Org", plan: "business", confidenceThreshold: 0.6 });
+  expect(await effectiveConfidenceThreshold(org.id)).toBe(0.6);
+});
+
+test("effectiveConfidenceThreshold ignores a stale override after downgrading off Business/Scale", async () => {
+  const org = await Organization.create({ id: ORG_ID, name: "Org", plan: "starter", confidenceThreshold: 0.6 });
+  expect(await effectiveConfidenceThreshold(org.id)).toBe(settings.reviewConfidenceThreshold);
+});
+
+test("effectiveConfidenceThreshold falls back to the default for a nonexistent org", async () => {
+  expect(await effectiveConfidenceThreshold("does-not-exist")).toBe(settings.reviewConfidenceThreshold);
 });

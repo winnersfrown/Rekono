@@ -14,6 +14,7 @@ function switchTab(name) {
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
   if (name === "matching") { loadSources(); loadMatchResults(); }
+  if (name === "settings") loadOrgSettings();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -476,6 +477,76 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
   } finally {
     input.disabled = false;
     input.focus();
+  }
+});
+
+// ---- Settings ----
+// PLAN_NAMES comes from auth.js -- both scripts share the page's global
+// scope (no bundler/modules here), same as openUpgradeModal below.
+async function loadOrgSettings() {
+  const res = await apiFetch("/api/org/settings");
+  const data = await res.json();
+
+  const locked = document.getElementById("settings-confidence-locked");
+  const form = document.getElementById("settings-confidence-form");
+  const statusEl = document.getElementById("settings-confidence-status");
+  statusEl.textContent = "";
+
+  const defaultPct = Math.round(data.default_confidence_threshold * 100);
+  document.getElementById("settings-default-threshold").textContent = `${defaultPct}%`;
+  document.getElementById("settings-default-threshold-locked").textContent = `${defaultPct}%`;
+
+  if (!data.custom_confidence_threshold_available) {
+    locked.style.display = "block";
+    form.style.display = "none";
+    const me = await (await apiFetch("/api/auth/me")).json();
+    document.getElementById("settings-current-plan-name").textContent = PLAN_NAMES[me.plan] || me.plan;
+    return;
+  }
+
+  locked.style.display = "none";
+  form.style.display = "block";
+  const effectivePct = Math.round(
+    (data.confidence_threshold ?? data.default_confidence_threshold) * 100
+  );
+  document.getElementById("settings-confidence-input").value = effectivePct;
+}
+
+document.getElementById("settings-upgrade-btn").addEventListener("click", () => openUpgradeModal());
+
+document.getElementById("settings-confidence-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-confidence-status");
+  const pct = Number(document.getElementById("settings-confidence-input").value);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+    statusEl.textContent = "Enter a number between 0 and 100.";
+    return;
+  }
+  try {
+    const res = await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confidence_threshold: pct / 100 }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-confidence-reset").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-confidence-status");
+  try {
+    await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confidence_threshold: null }),
+    });
+    statusEl.textContent = "Reset to default.";
+    loadOrgSettings();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
   }
 });
 
