@@ -1373,3 +1373,19 @@
   });
 })();
 </script>
+
+<!--
+  Optional analytics -- off by default, since this repo doesn't have (and
+  can't set up on your behalf) an actual analytics account. Plausible is a
+  privacy-respecting option that needs no cookie banner: no cross-site
+  tracking, no ad-tech data sharing, IP addresses aren't stored. To turn it
+  on: sign up at https://plausible.io (or self-host it), add this site's
+  real domain there, then uncomment the line below and replace
+  YOUR-DOMAIN-HERE with that same domain (e.g. winnersfrown.github.io).
+  Any other privacy-respecting analytics tool (Fathom, Simple Analytics,
+  self-hosted Umami/Plausible/PostHog) is a straightforward swap for this
+  one script tag -- there's no other code anywhere in this file to change.
+
+  <script defer data-domain="YOUR-DOMAIN-HERE" src="https://plausible.io/js/script.js"></script>
+-->
+
