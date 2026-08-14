@@ -69,6 +69,17 @@
           <button type="submit">Set new password</button>
         </form>
       </div>
+
+      <div id="auth-invite-panel" class="auth-panel">
+        <p class="hint" id="invite-intro">Loading your invite…</p>
+        <div id="invite-error" class="auth-error" style="display: none;"></div>
+        <form id="invite-accept-form" style="display: none;">
+          <label>Email<input type="email" id="invite-email" disabled /></label>
+          <label>Your name<input type="text" id="invite-full-name" required /></label>
+          <label>Password<input type="password" id="invite-password" minlength="8" autocomplete="new-password" required /></label>
+          <button type="submit">Join the team</button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -219,6 +230,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/></svg>
             Export
           </button>
+          <button class="tab-btn" data-tab="team">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Team
+          </button>
           <button class="tab-btn" data-tab="settings">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Settings
@@ -325,6 +340,32 @@
           <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
           <a href="/api/export/csv"><button>Download CSV</button></a>
           <a href="/api/export/xlsx"><button>Download Excel</button></a>
+        </section>
+
+        <section id="tab-team" class="tab-panel">
+          <h1>Team</h1>
+          <p class="hint" id="team-seats-summary">Loading…</p>
+          <div id="team-invite-block" style="display: none;">
+            <form id="team-invite-form">
+              <label>Invite by email<input type="email" id="team-invite-email" required /></label>
+              <button type="submit">Send invite</button>
+            </form>
+            <div id="team-invite-status" class="hint"></div>
+          </div>
+
+          <h3 style="margin-top: 1.5rem;">Members</h3>
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+            <tbody id="team-members-body"></tbody>
+          </table>
+
+          <div id="team-invites-section" style="display: none;">
+            <h3 style="margin-top: 1.5rem;">Pending invites</h3>
+            <table>
+              <thead><tr><th>Email</th><th>Invited</th><th></th></tr></thead>
+              <tbody id="team-invites-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="tab-settings" class="tab-panel">

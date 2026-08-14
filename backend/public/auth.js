@@ -454,6 +454,58 @@ document.getElementById("reset-form").addEventListener("submit", async (e) => {
   }
 });
 
+// Populated from ?invite_token=... on page load, below.
+let pendingInviteToken = null;
+
+async function loadInviteDetails(token) {
+  const introEl = document.getElementById("invite-intro");
+  const formEl = document.getElementById("invite-accept-form");
+  try {
+    const res = await fetch(`/api/team/invite/${token}`);
+    const body = await res.json();
+    if (!res.ok) {
+      introEl.textContent = body.detail || "This invite link is invalid or has expired.";
+      return;
+    }
+    introEl.textContent = `You've been invited to join ${body.org_name} on Rekono.`;
+    document.getElementById("invite-email").value = body.email;
+    formEl.style.display = "flex";
+  } catch (err) {
+    introEl.textContent = String(err);
+  }
+}
+
+document.getElementById("invite-accept-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  document.getElementById("invite-error").style.display = "none";
+  const full_name = document.getElementById("invite-full-name").value.trim();
+  const password = document.getElementById("invite-password").value;
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch(`/api/team/invite/${pendingInviteToken}/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name, password }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const el = document.getElementById("invite-error");
+      el.textContent = body.detail || "Could not accept this invite.";
+      el.style.display = "block";
+      return;
+    }
+    setToken(body.access_token);
+    await bootstrapApp();
+  } catch (err) {
+    const el = document.getElementById("invite-error");
+    el.textContent = String(err);
+    el.style.display = "block";
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
 document.getElementById("logout-btn").addEventListener("click", () => {
   clearToken();
   showAuthGate();
@@ -610,6 +662,7 @@ function handleGoogleAuthReturn(status, code, reason) {
 // an already-logged-in app. Strip the token from the visible URL/history
 // right away so it doesn't linger in the address bar or browser history.
 const resetTokenFromUrl = new URLSearchParams(location.search).get("reset_token");
+const inviteTokenFromUrl = new URLSearchParams(location.search).get("invite_token");
 const checkoutParam = new URLSearchParams(location.search).get("checkout");
 const googleAuthParam = new URLSearchParams(location.search).get("google_auth");
 if (resetTokenFromUrl) {
@@ -617,6 +670,15 @@ if (resetTokenFromUrl) {
   history.replaceState(null, "", location.pathname);
   showAuthGate();
   showAuthPanel("auth-reset-panel");
+} else if (inviteTokenFromUrl) {
+  // Same reasoning as a reset link: someone who clicked an invite clearly
+  // wants to accept it, even if this browser happens to have an unrelated
+  // session already logged in.
+  pendingInviteToken = inviteTokenFromUrl;
+  history.replaceState(null, "", location.pathname);
+  showAuthGate();
+  showAuthPanel("auth-invite-panel");
+  loadInviteDetails(inviteTokenFromUrl);
 } else if (checkoutParam === "success" || checkoutParam === "cancelled") {
   handleCheckoutReturn(checkoutParam);
 } else if (googleAuthParam === "success" || googleAuthParam === "error") {

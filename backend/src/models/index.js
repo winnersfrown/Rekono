@@ -8,9 +8,13 @@ import { MatchSource } from "./MatchSource.js";
 import { MatchEntry } from "./MatchEntry.js";
 import { MatchResult } from "./MatchResult.js";
 import { VendorAlias } from "./VendorAlias.js";
+import { Invite } from "./Invite.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
+
+Organization.hasMany(Invite, { foreignKey: "orgId", as: "invites" });
+Invite.belongsTo(Organization, { foreignKey: "orgId" });
 
 Invoice.hasMany(LineItem, {
   foreignKey: "invoiceId",
@@ -109,4 +113,4 @@ export async function initDb() {
   }
 }
 
-export { Organization, User, Invoice, LineItem, AuditLog, MatchSource, MatchEntry, MatchResult, VendorAlias };
+export { Organization, User, Invoice, LineItem, AuditLog, MatchSource, MatchEntry, MatchResult, VendorAlias, Invite };

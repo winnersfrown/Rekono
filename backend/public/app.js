@@ -15,6 +15,7 @@ function switchTab(name) {
   if (name === "review") loadInvoices();
   if (name === "matching") { loadSources(); loadMatchResults(); }
   if (name === "settings") loadOrgSettings();
+  if (name === "team") loadTeam();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -555,6 +556,92 @@ document.getElementById("settings-confidence-reset").addEventListener("click", a
     });
     statusEl.textContent = "Reset to default.";
     loadOrgSettings();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+// ---- Team ----
+async function loadTeam() {
+  const res = await apiFetch("/api/team");
+  const data = await res.json();
+  const me = await (await apiFetch("/api/auth/me")).json();
+  const isOwner = me.role === "owner";
+
+  const seatText = data.seat_limit === null ? `${data.seats_used} seats used (unlimited)` : `${data.seats_used} of ${data.seat_limit} seats used`;
+  document.getElementById("team-seats-summary").textContent = seatText;
+
+  const inviteBlock = document.getElementById("team-invite-block");
+  const seatAvailable = data.seat_limit === null || data.seats_used < data.seat_limit;
+  inviteBlock.style.display = isOwner ? "block" : "none";
+  document.getElementById("team-invite-form").querySelector("button[type=submit]").disabled = !seatAvailable;
+  if (isOwner && !seatAvailable) {
+    document.getElementById("team-invite-status").textContent = "You're at your plan's seat limit. Upgrade to invite more teammates.";
+  }
+
+  const membersBody = document.getElementById("team-members-body");
+  membersBody.innerHTML = data.members
+    .map(
+      (m) => `
+    <tr>
+      <td>${escapeAttr(m.full_name)}${m.is_you ? " (you)" : ""}</td>
+      <td>${escapeAttr(m.email)}</td>
+      <td>${m.role}</td>
+      <td>${isOwner && !m.is_you ? `<button type="button" class="team-remove-btn" data-user-id="${m.id}">Remove</button>` : ""}</td>
+    </tr>
+  `
+    )
+    .join("");
+  membersBody.querySelectorAll(".team-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this teammate from your account?")) return;
+      await apiFetch(`/api/team/members/${btn.dataset.userId}`, { method: "DELETE" });
+      loadTeam();
+    });
+  });
+
+  const invitesSection = document.getElementById("team-invites-section");
+  invitesSection.style.display = data.pending_invites.length ? "block" : "none";
+  const invitesBody = document.getElementById("team-invites-body");
+  invitesBody.innerHTML = data.pending_invites
+    .map(
+      (i) => `
+    <tr>
+      <td>${escapeAttr(i.email)}</td>
+      <td>${new Date(i.invited_at).toLocaleDateString()}</td>
+      <td>${isOwner ? `<button type="button" class="team-revoke-btn" data-invite-id="${i.id}">Revoke</button>` : ""}</td>
+    </tr>
+  `
+    )
+    .join("");
+  invitesBody.querySelectorAll(".team-revoke-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/team/invites/${btn.dataset.inviteId}`, { method: "DELETE" });
+      loadTeam();
+    });
+  });
+}
+
+document.getElementById("team-invite-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const emailInput = document.getElementById("team-invite-email");
+  const statusEl = document.getElementById("team-invite-status");
+  try {
+    const res = await apiFetch("/api/team/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emailInput.value }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail || "Something went wrong.";
+      return;
+    }
+    emailInput.value = "";
+    statusEl.textContent = body.email_sent
+      ? `Invite sent to ${body.email}.`
+      : `Invite created for ${body.email}. Email wasn't sent (no RESEND_API_KEY configured) — share this link with them: ${body.invite_url}`;
+    loadTeam();
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }
