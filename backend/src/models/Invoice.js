@@ -49,6 +49,13 @@ export const Invoice = sequelize.define(
     // display hint, not data anything else derives from.
     duplicateOfInvoiceId: { type: DataTypes.STRING(32), allowNull: true },
     duplicateOfFilename: { type: DataTypes.STRING(512), allowNull: true },
+
+    // Self-reported by extraction.js (LLM) or a distinct-invoice-number
+    // heuristic (no API key) -- the document may contain more than one
+    // invoice, which extraction only ever captures one of. Forces review
+    // independent of confidence, same reasoning as duplicateOf* above.
+    possibleMultiInvoice: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    possibleMultiInvoiceReason: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
   },
   {
     tableName: "invoices",
