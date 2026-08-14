@@ -68,15 +68,24 @@ const INVOICE_TOOL = {
           required: ["description"],
         },
       },
+      possible_multiple_invoices: {
+        type: "boolean",
+        description:
+          "true if the OCR text looks like it contains more than one distinct invoice -- e.g. more than one invoice number, more than one 'total due', or repeated header/footer blocks for different vendors or dates. false for a single invoice, even a multi-page one.",
+      },
+      possible_multiple_invoices_reason: {
+        type: "string",
+        description: "One short sentence explaining why, if possible_multiple_invoices is true. Empty string otherwise.",
+      },
     },
-    required: ["vendor_name", "invoice_number", "invoice_date", "total", "line_items"],
+    required: ["vendor_name", "invoice_number", "invoice_date", "total", "line_items", "possible_multiple_invoices"],
   },
 };
 
 function extractionPrompt(ocrText) {
   return `You are an accounts-payable data entry specialist. Below is raw OCR text extracted from a scanned invoice. OCR errors (misread characters, broken lines, stray whitespace) are expected -- use context to recover the correct values.
 
-Call the \`record_invoice\` tool with the extracted fields. For every *_confidence field, report your genuine confidence (0.0 to 1.0) that the value is correct, based on how legible/unambiguous the source text was. If a field is not present in the document, use an empty string (or 0 for numbers) and a low confidence.
+Call the \`record_invoice\` tool with the extracted fields. For every *_confidence field, report your genuine confidence (0.0 to 1.0) that the value is correct, based on how legible/unambiguous the source text was. If a field is not present in the document, use an empty string (or 0 for numbers) and a low confidence. Extract the first/primary invoice's fields even if you set possible_multiple_invoices to true -- don't try to merge multiple invoices into one set of fields.
 
 OCR text:
 ---
@@ -151,7 +160,14 @@ async function extractWithLlm(ocrText) {
     confidence: clamp01(item.confidence ?? 0),
   }));
 
-  return { method: "llm", fields, fieldConfidence, lineItems };
+  return {
+    method: "llm",
+    fields,
+    fieldConfidence,
+    lineItems,
+    possibleMultiInvoice: Boolean(data.possible_multiple_invoices),
+    possibleMultiInvoiceReason: data.possible_multiple_invoices_reason || "",
+  };
 }
 
 function extractHeuristic(ocrText) {
@@ -224,7 +240,35 @@ function extractHeuristic(ocrText) {
     }
   }
 
-  return { method: "heuristic", fields, fieldConfidence, lineItems };
+  const multiInvoice = detectMultipleInvoicesHeuristic(ocrText);
+
+  return {
+    method: "heuristic",
+    fields,
+    fieldConfidence,
+    lineItems,
+    possibleMultiInvoice: multiInvoice.detected,
+    possibleMultiInvoiceReason: multiInvoice.reason,
+  };
+}
+
+// No LLM available to reason about this, so the heuristic fallback settles
+// for the cheapest reliable signal: more than one *distinct* invoice number
+// (the OCR text repeating the same one for a running total/footer doesn't
+// count) is a strong sign of more than one invoice on the page. Deliberately
+// conservative -- false negatives here just mean no flag, not a wrong
+// extraction, so there's no reason to also fire on things like "Total"
+// appearing twice (subtotal + total on a normal single invoice already does
+// that).
+function detectMultipleInvoicesHeuristic(ocrText) {
+  const matches = ocrText.matchAll(/invoice\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-]{2,})/gi);
+  const distinctInvoiceNumbers = new Set();
+  for (const m of matches) distinctInvoiceNumbers.add(m[1].toUpperCase());
+
+  if (distinctInvoiceNumbers.size > 1) {
+    return { detected: true, reason: `Found ${distinctInvoiceNumbers.size} different invoice numbers in the document.` };
+  }
+  return { detected: false, reason: "" };
 }
 
 function cleanNumber(value) {

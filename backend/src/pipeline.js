@@ -104,8 +104,12 @@ export async function processInvoice(invoiceId) {
       invoice.duplicateOfFilename = duplicateOf.originalFilename;
     }
 
+    invoice.possibleMultiInvoice = Boolean(result.possibleMultiInvoice);
+    invoice.possibleMultiInvoiceReason = result.possibleMultiInvoiceReason || "";
+
     const threshold = await effectiveConfidenceThreshold(invoice.orgId);
-    const flagged = Boolean(duplicateOf) || report.overallConfidence < threshold || !report.crossCheckPassed;
+    const flagged =
+      Boolean(duplicateOf) || invoice.possibleMultiInvoice || report.overallConfidence < threshold || !report.crossCheckPassed;
     invoice.status = flagged ? "needs_review" : "extracted";
     await invoice.save();
 
@@ -133,6 +137,7 @@ export async function processInvoice(invoiceId) {
         cross_check_passed: report.crossCheckPassed,
         cross_check_detail: report.crossCheckDetail,
         duplicate_of_invoice_id: duplicateOf?.id ?? null,
+        possible_multi_invoice: invoice.possibleMultiInvoice,
       },
     });
   } catch (exc) {

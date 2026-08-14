@@ -27,4 +27,28 @@ test("heuristic extraction used without api key", async () => {
   expect(result.fields.invoice_date).toBe("2026-01-15");
   expect(result.lineItems).toHaveLength(2);
   expect(result.lineItems[0].amount).toBe(20.0);
+  expect(result.possibleMultiInvoice).toBe(false);
+});
+
+test("heuristic extraction flags more than one distinct invoice number as a possible multi-invoice document", async () => {
+  const twoInvoiceText = `${SAMPLE_OCR_TEXT}
+
+  ----
+
+  Beta Corp
+  Invoice #: INV-2026-9999
+  Date: 02/01/2026
+  Total Due: $12.00
+  `;
+
+  const result = await extract(twoInvoiceText);
+
+  expect(result.possibleMultiInvoice).toBe(true);
+  expect(result.possibleMultiInvoiceReason).toMatch(/2 different invoice numbers/);
+});
+
+test("heuristic extraction does not flag a single invoice number repeated (e.g. header + footer)", async () => {
+  const repeatedText = `${SAMPLE_OCR_TEXT}\nInvoice #: INV-2026-0007 (copy)`;
+  const result = await extract(repeatedText);
+  expect(result.possibleMultiInvoice).toBe(false);
 });

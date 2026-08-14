@@ -53,6 +53,9 @@ export function serializeInvoiceDetail(inv) {
     duplicate_of_invoice_id: inv.duplicateOfInvoiceId,
     duplicate_of_filename: inv.duplicateOfFilename,
 
+    possible_multi_invoice: inv.possibleMultiInvoice,
+    possible_multi_invoice_reason: inv.possibleMultiInvoiceReason,
+
     created_at: inv.createdAt,
     updated_at: inv.updatedAt,
 

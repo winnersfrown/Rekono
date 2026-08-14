@@ -203,8 +203,18 @@ function renderDetail(inv) {
     ? `<div class="cross-check warn">⚠ Possible duplicate — same vendor and invoice number as "${escapeAttr(inv.duplicate_of_filename)}", already in your account. Double-check before approving to avoid paying it twice.</div>`
     : "";
 
+  // Extraction only ever fills in one invoice's worth of fields -- if the
+  // source document looks like it actually contains more than one (a batch
+  // scan, a multi-invoice statement), the fields below may only reflect
+  // part of it. See extraction.js's possible_multiple_invoices.
+  const multiInvoiceReason = (inv.possible_multi_invoice_reason || "").trim().replace(/\.+$/, "");
+  const multiInvoiceBanner = inv.possible_multi_invoice
+    ? `<div class="cross-check warn">⚠ This document may contain more than one invoice${multiInvoiceReason ? ` — ${escapeAttr(multiInvoiceReason)}` : ""}. The fields below reflect only one; split the file and re-upload separately if so.</div>`
+    : "";
+
   el.innerHTML = `
     ${duplicateBanner}
+    ${multiInvoiceBanner}
     ${statusBanner}
 
     <div class="detail-grid">
