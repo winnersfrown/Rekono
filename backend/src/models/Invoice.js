@@ -40,6 +40,15 @@ export const Invoice = sequelize.define(
     overallConfidence: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 0 },
     crossCheckPassed: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     crossCheckDetail: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+
+    // Set when a same-org invoice with the same vendor + invoice number
+    // already exists (see pipeline.js's findDuplicateInvoice) -- a likely
+    // double-upload/double-payment risk, not an extraction quality issue,
+    // so it forces review independent of confidence. Denormalized filename
+    // (rather than a join at read time) since it's just a stable one-line
+    // display hint, not data anything else derives from.
+    duplicateOfInvoiceId: { type: DataTypes.STRING(32), allowNull: true },
+    duplicateOfFilename: { type: DataTypes.STRING(512), allowNull: true },
   },
   {
     tableName: "invoices",
