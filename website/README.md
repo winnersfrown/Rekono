@@ -13,3 +13,5 @@ then open http://localhost:8080.
 ## Live on GitHub Pages
 
 The repo root also has a copy of this file (`/index.html`) purely so GitHub Pages — which serves from the repo root — can publish it at https://winnersfrown.github.io/Rekono/. `website/index.html` is the source of truth; keep the root copy in sync when editing.
+
+The repo root also has `/robots.txt` and `/sitemap.xml` for the same reason (GitHub Pages needs them at the root to serve them at `/robots.txt` and `/sitemap.xml`) — these aren't mirrored into `website/` since they're only meaningful at the live site's root.

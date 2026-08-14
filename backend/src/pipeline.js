@@ -1,6 +1,7 @@
 // The end-to-end extraction pipeline run for each queued invoice:
 // OCR -> LLM/heuristic structured extraction -> confidence scoring -> persist.
 
+import { Op } from "sequelize";
 import * as confidenceModule from "./confidence.js";
 import * as extractionModule from "./extraction.js";
 import * as ocrModule from "./ocr.js";
@@ -67,7 +68,13 @@ export async function processInvoice(invoiceId) {
     invoice.crossCheckPassed = report.crossCheckPassed;
     invoice.crossCheckDetail = report.crossCheckDetail;
 
-    const flagged = report.overallConfidence < settings.reviewConfidenceThreshold || !report.crossCheckPassed;
+    const duplicateOf = await findDuplicateInvoice(invoice);
+    if (duplicateOf) {
+      invoice.duplicateOfInvoiceId = duplicateOf.id;
+      invoice.duplicateOfFilename = duplicateOf.originalFilename;
+    }
+
+    const flagged = Boolean(duplicateOf) || report.overallConfidence < settings.reviewConfidenceThreshold || !report.crossCheckPassed;
     invoice.status = flagged ? "needs_review" : "extracted";
     await invoice.save();
 
@@ -94,12 +101,42 @@ export async function processInvoice(invoiceId) {
         overall_confidence: report.overallConfidence,
         cross_check_passed: report.crossCheckPassed,
         cross_check_detail: report.crossCheckDetail,
+        duplicate_of_invoice_id: duplicateOf?.id ?? null,
       },
     });
   } catch (exc) {
     console.error(`process_invoice failed for ${invoiceId}`, exc);
     await fail(invoice, `Unexpected error: ${exc.message}`);
   }
+}
+
+// Same org, same vendor + invoice number (trimmed, case-insensitive) on a
+// different, non-rejected invoice -- the classic double-upload/double-pay
+// signal. Deliberately narrow: only runs once both fields are non-empty, so
+// two blank/low-confidence extractions never "match" each other. A rejected
+// invoice is excluded because a human already decided that record doesn't
+// count, so it shouldn't block a genuine resubmission.
+export async function findDuplicateInvoice(invoice) {
+  const vendorName = invoice.vendorName.trim().toLowerCase();
+  const invoiceNumber = invoice.invoiceNumber.trim().toLowerCase();
+  if (!vendorName || !invoiceNumber) return null;
+
+  const candidates = await Invoice.findAll({
+    where: {
+      orgId: invoice.orgId,
+      id: { [Op.ne]: invoice.id },
+      status: { [Op.ne]: "rejected" },
+      vendorName: { [Op.ne]: "" },
+      invoiceNumber: { [Op.ne]: "" },
+    },
+    attributes: ["id", "vendorName", "invoiceNumber", "originalFilename"],
+  });
+
+  return (
+    candidates.find(
+      (c) => c.vendorName.trim().toLowerCase() === vendorName && c.invoiceNumber.trim().toLowerCase() === invoiceNumber
+    ) || null
+  );
 }
 
 async function fail(invoice, message) {

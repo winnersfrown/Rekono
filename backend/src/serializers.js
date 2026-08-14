@@ -50,6 +50,9 @@ export function serializeInvoiceDetail(inv) {
     cross_check_passed: inv.crossCheckPassed,
     cross_check_detail: inv.crossCheckDetail,
 
+    duplicate_of_invoice_id: inv.duplicateOfInvoiceId,
+    duplicate_of_filename: inv.duplicateOfFilename,
+
     created_at: inv.createdAt,
     updated_at: inv.updatedAt,
 

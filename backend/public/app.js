@@ -30,37 +30,61 @@ function fmtPct(v) {
 }
 
 // ---- Upload ----
+// Multiple files upload one at a time against the existing single-file
+// endpoint (rather than a batch endpoint) so each upload still gets its own
+// real-time document-cap check -- a file landing right at the cap correctly
+// stops the rest of the batch instead of all-or-nothing accepting a batch
+// that oversubscribes the plan.
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fileInput = document.getElementById("file-input");
-  if (!fileInput.files.length) return;
-  const fd = new FormData();
-  fd.append("file", fileInput.files[0]);
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
 
   const statusEl = document.getElementById("upload-status");
-  statusEl.textContent = "Uploading...";
-  try {
-    const res = await apiFetch("/api/invoices/upload", { method: "POST", body: fd });
-    if (!res.ok) {
-      const err = await res.json();
-      statusEl.textContent = `Error: ${err.detail || res.statusText}`;
-      return;
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/invoices/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      // Thrown by apiFetch on 401 (session expired) or 402 (onboarding
+      // required / plan cap reached / billing lapsed) -- apiFetch already
+      // put up the right gate/modal for it, and every one of those blocks
+      // every subsequent upload too, so retrying the rest of the batch
+      // would just fail the same way file by file. Stop here instead.
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
     }
-    const invoice = await res.json();
-    statusEl.textContent = `Uploaded "${invoice.original_filename}" — queued for extraction (id ${invoice.id}).`;
-    fileInput.value = "";
-    // bootstrapApp() already re-runs loadRecentUploads() via onAuthenticated()
-    // once it re-confirms the session, alongside refreshing the sidebar's
-    // "documents used this month" count -- calling loadRecentUploads() here
-    // too would just fire the same GET /api/invoices twice per upload.
-    bootstrapApp();
-  } catch (err) {
-    // err is a real Error here (thrown by apiFetch on 401/402, or a network
-    // failure) -- its own message already reads naturally on its own
-    // ("You've reached your Free plan's limit..."), so this avoids
-    // interpolating the whole Error object and doubling up "Error: Error: ".
-    statusEl.textContent = err.message || String(err);
   }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} documents — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  // bootstrapApp() already re-runs loadRecentUploads() via onAuthenticated()
+  // once it re-confirms the session, alongside refreshing the sidebar's
+  // "documents used this month" count -- calling loadRecentUploads() here
+  // too would just fire the same GET /api/invoices twice per upload, and
+  // doing it once after the whole batch (rather than per file) avoids firing
+  // it N times for an N-file batch.
+  if (uploaded) bootstrapApp();
 });
 
 async function loadRecentUploads() {
@@ -170,7 +194,16 @@ function renderDetail(inv) {
       &nbsp;·&nbsp; extraction method: ${inv.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(inv.overall_confidence)}
     </div>`;
 
+  // Same vendor + invoice number already exists elsewhere in this org --
+  // flagged as a likely double-upload/double-pay risk (see pipeline.js's
+  // findDuplicateInvoice), separate from and in addition to the cross-check
+  // banner above.
+  const duplicateBanner = inv.duplicate_of_invoice_id
+    ? `<div class="cross-check warn">⚠ Possible duplicate — same vendor and invoice number as "${escapeAttr(inv.duplicate_of_filename)}", already in your account. Double-check before approving to avoid paying it twice.</div>`
+    : "";
+
   el.innerHTML = `
+    ${duplicateBanner}
     ${statusBanner}
 
     <div class="detail-grid">
