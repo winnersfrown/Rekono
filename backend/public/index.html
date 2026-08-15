@@ -303,9 +303,15 @@
                 <button class="filter-btn" data-status="queued">Queued</button>
                 <button class="filter-btn" data-status="failed">Failed</button>
               </div>
+              <div id="bulk-toolbar" class="bulk-toolbar" style="display: none;">
+                <span id="bulk-toolbar-count" class="hint"></span>
+                <button type="button" class="approve" id="bulk-approve-btn">Approve</button>
+                <button type="button" class="reject" id="bulk-reject-btn">Reject</button>
+                <button type="button" class="btn-logout" id="bulk-clear-btn">Clear</button>
+              </div>
               <table id="invoice-table">
                 <thead>
-                  <tr><th>Vendor</th><th>Total</th><th>Status</th><th>Conf.</th></tr>
+                  <tr><th style="width: 1.6rem;"><input type="checkbox" id="select-all-invoices" aria-label="Select all" /></th><th>Vendor</th><th>Total</th><th>Status</th><th>Conf.</th></tr>
                 </thead>
                 <tbody></tbody>
               </table>
