@@ -5,6 +5,7 @@ import { Router } from "express";
 import { Resend } from "resend";
 import { z } from "zod";
 import { settings } from "../config.js";
+import { createRateLimiter } from "../rateLimit.js";
 
 const router = Router();
 
@@ -15,23 +16,12 @@ const contactSchema = z.object({
   company: z.string().max(256).optional(), // honeypot -- real visitors never see/fill this field
 });
 
-// Minimal in-memory per-IP rate limit (5 submissions / 15 min). Good enough
-// for a low-traffic contact form; resets on redeploy, which is fine here.
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT_MAX = 5;
-const submissionsByIp = new Map();
-
-function isRateLimited(ip) {
-  const now = Date.now();
-  const timestamps = (submissionsByIp.get(ip) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  timestamps.push(now);
-  submissionsByIp.set(ip, timestamps);
-  return timestamps.length > RATE_LIMIT_MAX;
-}
+// 5 submissions / 15 min per IP. Good enough for a low-traffic contact form.
+const isContactRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 
 router.post("/api/contact", async (req, res, next) => {
   try {
-    if (isRateLimited(req.ip)) {
+    if (isContactRateLimited(req.ip)) {
       return res.status(429).json({ detail: "Too many messages sent recently. Please try again later." });
     }
 

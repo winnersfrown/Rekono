@@ -95,7 +95,7 @@ async function loadRecentUploads() {
   const el = document.getElementById("sidebar-recent-uploads");
   el.innerHTML = invoices.slice(0, 8).map((inv) => (
     `<button type="button" class="sidebar-recent-item" data-id="${inv.id}">
-      <span class="sidebar-recent-name">${escapeAttr(inv.original_filename)}</span>
+      <span class="sidebar-recent-name">${escapeHtml(inv.original_filename)}</span>
       <span class="badge status-${inv.status}">${inv.status}</span>
     </button>`
   )).join("") || `<p class="hint sidebar-recent-empty">Nothing uploaded yet.</p>`;
@@ -125,7 +125,7 @@ async function loadInvoices() {
   const tbody = document.querySelector("#invoice-table tbody");
   tbody.innerHTML = invoices.map((inv) => `
     <tr data-id="${inv.id}">
-      <td>${inv.vendor_name || "(unknown)"}</td>
+      <td>${inv.vendor_name ? escapeHtml(inv.vendor_name) : "(unknown)"}</td>
       <td>${fmtMoney(inv.total)}</td>
       <td><span class="badge status-${inv.status}">${inv.status}</span></td>
       <td>${fmtPct(inv.overall_confidence)}</td>
@@ -175,7 +175,7 @@ function renderDetail(inv) {
 
   const lineItemsRows = (inv.line_items || []).map((li, i) => `
     <tr>
-      <td><input data-li="${i}" data-field="description" value="${escapeAttr(li.description)}" /></td>
+      <td><input data-li="${i}" data-field="description" value="${escapeHtml(li.description)}" /></td>
       <td><input data-li="${i}" data-field="quantity" value="${li.quantity ?? ""}" style="width:4rem" /></td>
       <td><input data-li="${i}" data-field="unit_price" value="${li.unit_price ?? ""}" style="width:5rem" /></td>
       <td><input data-li="${i}" data-field="amount" value="${li.amount ?? ""}" style="width:5rem" /></td>
@@ -186,11 +186,11 @@ function renderDetail(inv) {
   const preview = isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`;
 
   const matchHtml = (inv.match_results && inv.match_results.length)
-    ? inv.match_results.map((m) => `<div><span class="badge match-${m.status}">${m.status}</span> score ${m.score.toFixed(0)} — ${m.reasoning}</div>`).join("")
+    ? inv.match_results.map((m) => `<div><span class="badge match-${m.status}">${m.status}</span> score ${m.score.toFixed(0)} — ${escapeHtml(m.reasoning)}</div>`).join("")
     : `<div class="hint">No match run yet for this invoice.</div>`;
 
   const statusBanner = inv.status === "failed"
-    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeAttr(inv.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(inv.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
     : `<div class="cross-check ${inv.cross_check_passed ? "pass" : "fail"}">
       ${inv.cross_check_passed ? "✓" : "✗"} Cross-check: ${inv.cross_check_detail || "n/a"}
       &nbsp;·&nbsp; extraction method: ${inv.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(inv.overall_confidence)}
@@ -201,7 +201,7 @@ function renderDetail(inv) {
   // findDuplicateInvoice), separate from and in addition to the cross-check
   // banner above.
   const duplicateBanner = inv.duplicate_of_invoice_id
-    ? `<div class="cross-check warn">⚠ Possible duplicate — same vendor and invoice number as "${escapeAttr(inv.duplicate_of_filename)}", already in your account. Double-check before approving to avoid paying it twice.</div>`
+    ? `<div class="cross-check warn">⚠ Possible duplicate — same vendor and invoice number as "${escapeHtml(inv.duplicate_of_filename)}", already in your account. Double-check before approving to avoid paying it twice.</div>`
     : "";
 
   // Extraction only ever fills in one invoice's worth of fields -- if the
@@ -210,7 +210,7 @@ function renderDetail(inv) {
   // part of it. See extraction.js's possible_multiple_invoices.
   const multiInvoiceReason = (inv.possible_multi_invoice_reason || "").trim().replace(/\.+$/, "");
   const multiInvoiceBanner = inv.possible_multi_invoice
-    ? `<div class="cross-check warn">⚠ This document may contain more than one invoice${multiInvoiceReason ? ` — ${escapeAttr(multiInvoiceReason)}` : ""}. The fields below reflect only one; split the file and re-upload separately if so.</div>`
+    ? `<div class="cross-check warn">⚠ This document may contain more than one invoice${multiInvoiceReason ? ` — ${escapeHtml(multiInvoiceReason)}` : ""}. The fields below reflect only one; split the file and re-upload separately if so.</div>`
     : "";
 
   el.innerHTML = `
@@ -219,12 +219,12 @@ function renderDetail(inv) {
     ${statusBanner}
 
     <div class="detail-grid">
-      <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="f-vendor_name" value="${escapeAttr(inv.vendor_name)}" /></div>
-      <div class="field ${lowConf("invoice_number")}"><label>Invoice #</label><input id="f-invoice_number" value="${escapeAttr(inv.invoice_number)}" /></div>
+      <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="f-vendor_name" value="${escapeHtml(inv.vendor_name)}" /></div>
+      <div class="field ${lowConf("invoice_number")}"><label>Invoice #</label><input id="f-invoice_number" value="${escapeHtml(inv.invoice_number)}" /></div>
       <div class="field ${lowConf("invoice_date")}"><label>Invoice Date</label><input id="f-invoice_date" type="date" value="${inv.invoice_date || ""}" /></div>
       <div class="field ${lowConf("due_date")}"><label>Due Date</label><input id="f-due_date" type="date" value="${inv.due_date || ""}" /></div>
-      <div class="field ${lowConf("po_reference")}"><label>PO Reference</label><input id="f-po_reference" value="${escapeAttr(inv.po_reference)}" /></div>
-      <div class="field ${lowConf("currency")}"><label>Currency</label><input id="f-currency" value="${escapeAttr(inv.currency)}" /></div>
+      <div class="field ${lowConf("po_reference")}"><label>PO Reference</label><input id="f-po_reference" value="${escapeHtml(inv.po_reference)}" /></div>
+      <div class="field ${lowConf("currency")}"><label>Currency</label><input id="f-currency" value="${escapeHtml(inv.currency)}" /></div>
       <div class="field ${lowConf("subtotal")}"><label>Subtotal</label><input id="f-subtotal" value="${inv.subtotal ?? ""}" /></div>
       <div class="field ${lowConf("tax")}"><label>Tax</label><input id="f-tax" value="${inv.tax ?? ""}" /></div>
       <div class="field ${lowConf("total")}"><label>Total</label><input id="f-total" value="${inv.total ?? ""}" /></div>
@@ -316,8 +316,21 @@ async function loadDocPreview(inv) {
   }
 }
 
-function escapeAttr(s) {
-  return (s ?? "").toString().replace(/"/g, "&quot;");
+// Every interpolated value from the API (vendor names, filenames, match
+// reasoning, ...) is untrusted -- it's OCR output, a human correction, or a
+// user-chosen filename, any of which could contain HTML. Escapes all five
+// characters that matter (this used to escape only `"`, which only ever
+// protected the few call sites already inside a quoted attribute -- every
+// call site rendering into a text node, e.g. a <td>, got no real protection
+// at all). Safe to use everywhere: attribute values and text nodes alike.
+function escapeHtml(s) {
+  return (s ?? "")
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function numOrNull(v) {
@@ -399,7 +412,7 @@ async function loadSources() {
   const res = await apiFetch("/api/matching/sources");
   const sources = await res.json();
   document.getElementById("sources-list").innerHTML = "<h3>Uploaded sources</h3>" + (sources.map((s) => (
-    `<div>${s.name} (${s.source_type}) — ${s.entry_count} rows</div>`
+    `<div>${escapeHtml(s.name)} (${s.source_type}) — ${s.entry_count} rows</div>`
   )).join("") || "<div class='hint'>None yet.</div>");
 }
 
@@ -429,12 +442,12 @@ async function loadMatchResults() {
     const inv = invoiceById[r.invoice_id] || {};
     return `
       <tr>
-        <td>${inv.original_filename || r.invoice_id}</td>
-        <td>${inv.vendor_name || ""}</td>
+        <td>${inv.original_filename ? escapeHtml(inv.original_filename) : r.invoice_id}</td>
+        <td>${escapeHtml(inv.vendor_name || "")}</td>
         <td>${fmtMoney(inv.total)}</td>
         <td><span class="badge match-${r.status}">${r.status}</span></td>
         <td>${r.score.toFixed(0)}</td>
-        <td>${r.reasoning}</td>
+        <td>${escapeHtml(r.reasoning)}</td>
       </tr>
     `;
   }).join("") || "<tr><td colspan='6'>No matching results yet.</td></tr>";
@@ -584,8 +597,8 @@ async function loadTeam() {
     .map(
       (m) => `
     <tr>
-      <td>${escapeAttr(m.full_name)}${m.is_you ? " (you)" : ""}</td>
-      <td>${escapeAttr(m.email)}</td>
+      <td>${escapeHtml(m.full_name)}${m.is_you ? " (you)" : ""}</td>
+      <td>${escapeHtml(m.email)}</td>
       <td>${m.role}</td>
       <td>${isOwner && !m.is_you ? `<button type="button" class="team-remove-btn" data-user-id="${m.id}">Remove</button>` : ""}</td>
     </tr>
@@ -607,7 +620,7 @@ async function loadTeam() {
     .map(
       (i) => `
     <tr>
-      <td>${escapeAttr(i.email)}</td>
+      <td>${escapeHtml(i.email)}</td>
       <td>${new Date(i.invited_at).toLocaleDateString()}</td>
       <td>${isOwner ? `<button type="button" class="team-revoke-btn" data-invite-id="${i.id}">Revoke</button>` : ""}</td>
     </tr>

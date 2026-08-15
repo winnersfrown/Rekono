@@ -41,3 +41,15 @@ test("respects plan gating like every other data route", async () => {
   expect(res.status).toBe(402);
   expect(res.body.onboarding_required).toBe(true);
 });
+
+test("rate limits after repeated questions from the same org in a short window", async () => {
+  const token = await signup(app, request);
+  let lastRes;
+  for (let i = 0; i < 21; i++) {
+    lastRes = await request(app)
+      .post("/api/assistant/ask")
+      .set(authHeader(token))
+      .send({ question: "How many invoices need review?" });
+  }
+  expect(lastRes.status).toBe(429);
+});

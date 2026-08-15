@@ -1,17 +1,34 @@
 import fs from "node:fs/promises";
+import multer from "multer";
 import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import * as jobs from "../jobs.js";
-import { isSupported, upload } from "../storage.js";
+import { MAX_UPLOAD_BYTES, canonicalContentType, upload } from "../storage.js";
 import { AuditLog, Invoice } from "../models/index.js";
 import { serializeInvoiceDetail } from "../serializers.js";
 import { documentsUsedThisMonth } from "../documentUsage.js";
 
 const router = Router();
 
-router.post("/api/invoices/upload", requireAuth, requireActivePlan, upload.single("file"), async (req, res, next) => {
+// Multer errors (e.g. LIMIT_FILE_SIZE) happen inside upload.single() itself,
+// before the route handler's own try/catch ever runs -- handled here with
+// its own callback instead of letting Express's next(err) carry it to the
+// generic 500 handler, so an oversized file gets a clear, specific message
+// instead of looking like a server crash.
+function handleUpload(req, res, next) {
+  upload.single("file")(req, res, (err) => {
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      const maxMb = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
+      return res.status(413).json({ detail: `File too large. Maximum size is ${maxMb}MB.` });
+    }
+    if (err) return next(err);
+    next();
+  });
+}
+
+router.post("/api/invoices/upload", requireAuth, requireActivePlan, handleUpload, async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(422).json({ detail: "A file upload is required." });
@@ -35,7 +52,12 @@ router.post("/api/invoices/upload", requireAuth, requireActivePlan, upload.singl
       }
     }
 
-    if (!isSupported(req.file.originalname, req.file.mimetype)) {
+    // Never trust the multipart request's own declared Content-Type for
+    // what gets stored/served back -- see canonicalContentType's own
+    // comment in storage.js for why. A null here means neither the
+    // extension nor the declared type matched anything on the allowlist.
+    const contentType = canonicalContentType(req.file.originalname);
+    if (!contentType) {
       await fs.rm(req.file.path, { force: true });
       return res.status(422).json({
         detail: `Unsupported file type: ${req.file.originalname} (${req.file.mimetype}). Rekono accepts PDF or image files (png/jpg/tiff/bmp/webp).`,
@@ -46,7 +68,7 @@ router.post("/api/invoices/upload", requireAuth, requireActivePlan, upload.singl
       orgId: req.currentUser.orgId,
       originalFilename: req.file.originalname || "upload",
       storagePath: req.file.path,
-      contentType: req.file.mimetype || "application/octet-stream",
+      contentType,
       status: "queued",
     });
 
