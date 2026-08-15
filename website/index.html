@@ -3,7 +3,7 @@
 <title>Rekono — Invoice extraction and reconciliation, checked before it hits your books</title>
 <meta name="description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
 <link rel="canonical" href="https://winnersfrown.github.io/Rekono/">
-<meta name="theme-color" content="#0a1330">
+<meta name="theme-color" content="#f4f7fd">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Rekono">
 <meta property="og:title" content="Rekono — Invoice extraction and reconciliation, checked before it hits your books">
@@ -43,28 +43,32 @@
   }
 
   /* ---------------------------------------------------------------------
-     Rekono marketing page — deliberate single-theme "virtual ledger" world:
-     deep navy ground, electric-blue accent, slab-serif thesis type paired
-     with an engineered sans and a mono face for the numbers Rekono itself
-     extracts. Colors are painted explicitly (no OS light/dark switching)
-     because the dark/blue world IS the identity, not a mode of it.
+     Rekono marketing page — "virtual ledger" world: light paper ground,
+     electric-blue accent, slab-serif thesis type paired with an engineered
+     sans and a mono face for the numbers Rekono itself extracts. Colors are
+     painted explicitly (no OS light/dark switching) -- the blue-on-paper
+     world IS the identity, not a mode of it. --blue is unchanged from the
+     original dark theme; --blue-bright/--amber/--green are shifted a
+     little darker than their dark-theme values, since a light pastel that
+     popped against dark ink reads as washed-out and fails text-contrast
+     against a white/paper background.
      --------------------------------------------------------------------- */
 
   :root {
-    --ink-950: #060b18;
-    --ink-900: #0a1330;
-    --ink-850: #0e1a3d;
-    --ink-800: #132352;
-    --line: #24345f;
-    --line-soft: #182848;
-    --paper: #e9eefc;
-    --paper-dim: #b9c6e8;
-    --muted: #8ba0cb;
+    --ink-950: #f4f7fd;
+    --ink-900: #ffffff;
+    --ink-850: #f2f5fb;
+    --ink-800: #e7edfb;
+    --line: #d8e0f2;
+    --line-soft: #e7ecf7;
+    --paper: #101a33;
+    --paper-dim: #3b4964;
+    --muted: #5b6b8c;
     --blue: #4b86f7;
-    --blue-bright: #86b4ff;
+    --blue-bright: #2f6fe0;
     --blue-deep: #1d4ed8;
-    --amber: #e8a93b;
-    --green: #3ecb84;
+    --amber: #96650f;
+    --green: #178048;
 
     --font-display: 'Bitter', Georgia, serif;
     --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
@@ -99,8 +103,8 @@
     z-index: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(to right, rgba(75, 134, 247, 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(75, 134, 247, 0.05) 1px, transparent 1px);
+      linear-gradient(to right, rgba(75, 134, 247, 0.07) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(75, 134, 247, 0.07) 1px, transparent 1px);
     background-size: 56px 56px;
     -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 0%, transparent 75%);
             mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 0%, transparent 75%);
@@ -138,7 +142,7 @@
     position: sticky;
     top: 0;
     z-index: 40;
-    background: rgba(6, 11, 24, 0.82);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--line-soft);
   }
@@ -204,7 +208,7 @@
     color: #04081a;
     box-shadow: 0 0 0 0 rgba(75,134,247,0.0);
   }
-  .btn-primary:hover { background: var(--blue-bright); box-shadow: 0 6px 24px -8px rgba(75,134,247,0.65); transform: translateY(-1px); }
+  .btn-primary:hover { background: var(--blue-bright); box-shadow: 0 6px 24px -8px rgba(75,134,247,0.35); transform: translateY(-1px); }
   .btn-ghost {
     background: transparent;
     border-color: var(--line);
@@ -267,7 +271,7 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     padding: 26px 26px 22px;
-    box-shadow: 0 40px 80px -32px rgba(0,0,0,0.6);
+    box-shadow: 0 40px 80px -32px rgba(30,41,82,0.16);
     overflow: hidden;
   }
   .doc-mock::before {
@@ -511,7 +515,7 @@
   .price-card.featured {
     border-color: var(--blue);
     background: linear-gradient(180deg, rgba(75,134,247,0.09), var(--ink-900) 45%);
-    box-shadow: 0 20px 50px -24px rgba(75,134,247,0.5);
+    box-shadow: 0 20px 50px -24px rgba(75,134,247,0.28);
   }
   .price-card .plan-tag {
     font-family: var(--font-mono);
@@ -752,7 +756,7 @@
   .contact-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(6, 11, 24, 0.72);
+    background: rgba(15, 23, 55, 0.5);
     backdrop-filter: blur(3px);
   }
   .contact-modal-card {
@@ -764,7 +768,7 @@
     border: 1px solid var(--line);
     border-radius: 12px;
     padding: 30px 28px 26px;
-    box-shadow: 0 40px 90px -30px rgba(0,0,0,0.65);
+    box-shadow: 0 40px 90px -30px rgba(30,41,82,0.18);
   }
   .contact-modal-card h2 { font-size: 1.3rem; margin-bottom: 8px; }
   .contact-modal-card .hint { margin-bottom: 20px; }

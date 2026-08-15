@@ -2,23 +2,32 @@
    Design tokens -- shared visual language with the marketing site
    (same ink/blue/amber/green palette, same font roles) so the app
    and the public pages read as one product, not two.
+
+   Light theme: token NAMES are unchanged from the original dark
+   palette (so every selector below still resolves correctly), but
+   the values are flipped -- "ink" tokens now hold light surface
+   colors and "paper" tokens now hold dark text colors. --blue stays
+   exactly the brand blue it always was; --blue-bright/--amber/--green/
+   --red are shifted a little darker than their dark-theme values
+   since a light pastel that popped against dark ink reads as
+   washed-out and fails text-contrast against white.
    ============================================================ */
 :root {
-  --ink-950: #060b18;
-  --ink-900: #0a1330;
-  --ink-850: #0e1a3d;
-  --ink-800: #132352;
-  --line: #24345f;
-  --line-soft: #182848;
-  --paper: #e9eefc;
-  --paper-dim: #b9c6e8;
-  --muted: #8ba0cb;
+  --ink-950: #f4f7fd;
+  --ink-900: #ffffff;
+  --ink-850: #f2f5fb;
+  --ink-800: #e7edfb;
+  --line: #d8e0f2;
+  --line-soft: #e7ecf7;
+  --paper: #101a33;
+  --paper-dim: #3b4964;
+  --muted: #5b6b8c;
   --blue: #4b86f7;
-  --blue-bright: #86b4ff;
+  --blue-bright: #2f6fe0;
   --blue-deep: #1d4ed8;
-  --amber: #e8a93b;
-  --green: #3ecb84;
-  --red: #f2545b;
+  --amber: #96650f;
+  --green: #178048;
+  --red: #d43a41;
 
   /* back-compat aliases so any selector I miss below still resolves */
   --bg: var(--ink-950);
@@ -57,8 +66,8 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, rgba(75, 134, 247, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(75, 134, 247, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(75, 134, 247, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(75, 134, 247, 0.07) 1px, transparent 1px);
   background-size: 56px 56px;
   -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, transparent 75%);
           mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, transparent 75%);
@@ -145,7 +154,7 @@ button {
   transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-button:hover { background: var(--blue-bright); box-shadow: 0 6px 20px -8px rgba(75, 134, 247, 0.6); transform: translateY(-1px); }
+button:hover { background: var(--blue-bright); box-shadow: 0 6px 20px -8px rgba(75, 134, 247, 0.35); transform: translateY(-1px); }
 button:active { transform: translateY(0); }
 button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 2px; }
 
@@ -202,7 +211,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   border-radius: 10px;
   padding: 1.4rem;
   min-height: 300px;
-  box-shadow: 0 12px 32px -20px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 32px -20px rgba(30, 41, 82, 0.12);
 }
 
 .queue-detail:has(> .hint:only-child) {
@@ -274,9 +283,9 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 
 .actions { display: flex; gap: 0.5rem; margin-top: 1.2rem; }
 .actions .approve { background: var(--green); color: #04160c; }
-.actions .approve:hover { background: #55dd97; box-shadow: 0 6px 20px -8px rgba(62, 203, 132, 0.6); }
+.actions .approve:hover { background: #55dd97; box-shadow: 0 6px 20px -8px rgba(62, 203, 132, 0.35); }
 .actions .reject { background: var(--red); color: #200507; }
-.actions .reject:hover { background: #ff6b71; box-shadow: 0 6px 20px -8px rgba(242, 84, 91, 0.6); }
+.actions .reject:hover { background: #ff6b71; box-shadow: 0 6px 20px -8px rgba(242, 84, 91, 0.35); }
 .actions .save { background: var(--ink-800); color: var(--paper); border: 1px solid var(--line); }
 .actions .save:hover { background: var(--ink-800); border-color: var(--blue); box-shadow: none; }
 
@@ -306,7 +315,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 2.1rem;
-  box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 24px 60px -24px rgba(30, 41, 82, 0.16);
 }
 
 .auth-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.4rem; }
@@ -347,7 +356,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   text-decoration: none;
   transition: box-shadow 0.15s ease, background 0.15s ease;
 }
-.btn-google:hover { background: #f8f9fa; box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.4); transform: none; }
+.btn-google:hover { background: #f8f9fa; box-shadow: 0 4px 14px -6px rgba(30, 41, 82, 0.18); transform: none; }
 .btn-google svg { flex: none; }
 
 .auth-divider {
@@ -459,7 +468,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0.75rem 0.85rem;
-  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 12px 32px -12px rgba(30, 41, 82, 0.16);
 }
 .plan-badge-wrap:hover .plan-tooltip { display: block; animation: fade-in 0.12s ease; }
 
@@ -510,7 +519,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   background: var(--blue);
   transition: width 0.25s ease, background 0.25s ease;
 }
-.doc-usage.is-warning .doc-usage-fill { background: #e3a935; }
+.doc-usage.is-warning .doc-usage-fill { background: var(--amber); }
 .doc-usage.is-full .doc-usage-fill { background: var(--red); }
 
 .doc-usage-text {
@@ -518,7 +527,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   font-size: 0.7rem;
   color: var(--muted);
 }
-.doc-usage.is-warning .doc-usage-text { color: #e3a935; }
+.doc-usage.is-warning .doc-usage-text { color: var(--amber); }
 .doc-usage.is-full .doc-usage-text { color: var(--red); }
 
 .btn-upgrade {
@@ -695,7 +704,7 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(6, 11, 24, 0.72);
+  background: rgba(15, 23, 55, 0.5);
   backdrop-filter: blur(2px);
 }
 
@@ -844,10 +853,10 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   border-radius: 12px;
   padding: 0.4rem 0.4rem 0.4rem 1.1rem;
   margin-bottom: 1.4rem;
-  box-shadow: 0 16px 40px -24px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 16px 40px -24px rgba(30, 41, 82, 0.14);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.ask-form:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.15), 0 16px 40px -24px rgba(0, 0, 0, 0.7); }
+.ask-form:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.15), 0 16px 40px -24px rgba(30, 41, 82, 0.14); }
 
 .ask-form input {
   flex: 1;
