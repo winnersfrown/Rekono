@@ -33,6 +33,15 @@ const resetPasswordSchema = z.object({
   password: z.string().min(8).max(256),
 });
 
+const updateProfileSchema = z.object({
+  full_name: z.string().min(1).max(256),
+});
+
+const changePasswordSchema = z.object({
+  current_password: z.string().min(1),
+  new_password: z.string().min(8).max(256),
+});
+
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // Separate limiter per endpoint so exhausting one (e.g. retrying a typo'd
@@ -45,6 +54,10 @@ const isSignupRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 3
 const isLoginRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 const isForgotRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 const isResetRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+// Keyed by user id rather than IP: this one's behind requireAuth already, so
+// there's a stable, meaningful key that doesn't collide across a shared
+// office/NAT IP the way the pre-auth limiters above would.
+const isChangePasswordRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
 
 router.post("/api/auth/signup", async (req, res, next) => {
   try {
@@ -373,23 +386,90 @@ router.get("/api/auth/google/exchange", (req, res) => {
   res.json({ access_token: auth.createAccessToken(entry.userId), token_type: "bearer" });
 });
 
+// Shared by GET and PATCH /api/auth/me so a profile edit can hand back the
+// same full shape the frontend already knows how to render (plan badge,
+// doc usage, etc.) without a second round-trip.
+async function buildMeResponse(user) {
+  const org = user.organization;
+  const plan = PLANS[org.plan];
+  return {
+    ...serializeUser(user),
+    org_name: org.name,
+    plan: org.plan,
+    billing_period: org.billingPeriod,
+    subscription_status: org.subscriptionStatus,
+    trial_ends_at: org.trialEndsAt,
+    onboarding_completed: Boolean(org.plan),
+    // Same cap ingestion.js enforces at upload time (documentUsage.js is
+    // the one shared definition of "this month" both agree on) -- null
+    // before onboarding, since there's no plan/cap to measure against yet.
+    documents_used_this_month: plan ? await documentsUsedThisMonth(org.id) : null,
+    document_cap: plan ? plan.docCapPerMonth : null,
+  };
+}
+
 router.get("/api/auth/me", auth.requireAuth, async (req, res, next) => {
   try {
-    const org = req.currentUser.organization;
-    const plan = PLANS[org.plan];
-    res.json({
-      ...serializeUser(req.currentUser),
-      plan: org.plan,
-      billing_period: org.billingPeriod,
-      subscription_status: org.subscriptionStatus,
-      trial_ends_at: org.trialEndsAt,
-      onboarding_completed: Boolean(org.plan),
-      // Same cap ingestion.js enforces at upload time (documentUsage.js is
-      // the one shared definition of "this month" both agree on) -- null
-      // before onboarding, since there's no plan/cap to measure against yet.
-      documents_used_this_month: plan ? await documentsUsedThisMonth(org.id) : null,
-      document_cap: plan ? plan.docCapPerMonth : null,
+    res.json(await buildMeResponse(req.currentUser));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/api/auth/me", auth.requireAuth, async (req, res, next) => {
+  try {
+    const parsed = updateProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(422).json({ detail: parsed.error.issues });
+    }
+
+    const user = req.currentUser;
+    user.fullName = parsed.data.full_name;
+    await user.save();
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "profile_updated",
+      actor: user.email,
+      details: { full_name: user.fullName },
     });
+
+    res.json(await buildMeResponse(user));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/auth/change-password", auth.requireAuth, async (req, res, next) => {
+  try {
+    if (isChangePasswordRateLimited(req.currentUser.id)) {
+      return res.status(429).json({ detail: "Too many attempts. Please try again later." });
+    }
+
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(422).json({ detail: parsed.error.issues });
+    }
+
+    const user = req.currentUser;
+    const currentPasswordValid = await auth.verifyPassword(parsed.data.current_password, user.hashedPassword);
+    if (!currentPasswordValid) {
+      return res.status(401).json({ detail: "Current password is incorrect." });
+    }
+
+    user.hashedPassword = await auth.hashPassword(parsed.data.new_password);
+    await user.save();
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "password_changed",
+      actor: user.email,
+      details: {},
+    });
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

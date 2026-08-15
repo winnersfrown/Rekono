@@ -69,3 +69,50 @@ test("PATCH /api/org/settings rejects an out-of-range threshold", async () => {
     .send({ confidence_threshold: 1.5 });
   expect(res.status).toBe(422);
 });
+
+test("GET /api/org/settings includes the org name", async () => {
+  const token = await signup(app, request, { orgName: "Acme Co" });
+  const res = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(res.body.org_name).toBe("Acme Co");
+});
+
+test("the owner can rename the organization", async () => {
+  const token = await signup(app, request, { orgName: "Old Name" });
+  const res = await request(app).patch("/api/org/settings").set(authHeader(token)).send({ org_name: "New Name" });
+  expect(res.status).toBe(200);
+  expect(res.body.org_name).toBe("New Name");
+
+  const getRes = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(getRes.body.org_name).toBe("New Name");
+});
+
+test("a non-owner member cannot rename the organization", async () => {
+  const ownerToken = await signup(app, request, { orgName: "Acme Co" });
+  await upgradeToBusiness(); // needs >1 seat to invite a teammate
+
+  const inviteRes = await request(app)
+    .post("/api/team/invite")
+    .set(authHeader(ownerToken))
+    .send({ email: "teammate@example.co" });
+  const inviteToken = new URL(inviteRes.body.invite_url).searchParams.get("invite_token");
+  const acceptRes = await request(app)
+    .post(`/api/team/invite/${inviteToken}/accept`)
+    .send({ full_name: "Teammate", password: "correcthorse123" });
+  const memberToken = acceptRes.body.access_token;
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(memberToken))
+    .send({ org_name: "Hijacked Name" });
+  expect(res.status).toBe(403);
+
+  const getRes = await request(app).get("/api/org/settings").set(authHeader(ownerToken));
+  expect(getRes.body.org_name).toBe("Acme Co"); // unchanged
+});
+
+test("renaming the org does not require also sending a confidence threshold", async () => {
+  const token = await signup(app, request, { orgName: "Old Name" });
+  const res = await request(app).patch("/api/org/settings").set(authHeader(token)).send({ org_name: "New Name" });
+  expect(res.status).toBe(200);
+  expect(res.body.confidence_threshold).toBeNull(); // untouched, not reset by omission
+});

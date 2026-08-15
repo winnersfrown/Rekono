@@ -505,25 +505,50 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
 });
 
 // ---- Settings ----
-// PLAN_NAMES comes from auth.js -- both scripts share the page's global
-// scope (no bundler/modules here), same as openUpgradeModal below.
+// PLAN_NAMES/PLAN_ORDER/planSummaryText/openUpgradeModal come from auth.js
+// -- both scripts share the page's global scope (no bundler/modules here).
 async function loadOrgSettings() {
-  const res = await apiFetch("/api/org/settings");
-  const data = await res.json();
+  const [settingsRes, me] = await Promise.all([
+    apiFetch("/api/org/settings").then((r) => r.json()),
+    apiFetch("/api/auth/me").then((r) => r.json()),
+  ]);
+  const isOwner = me.role === "owner";
 
+  // Account
+  document.getElementById("settings-account-name").value = me.full_name || "";
+  document.getElementById("settings-account-email").textContent = me.email;
+  document.getElementById("settings-account-status").textContent = "";
+  document.getElementById("settings-password-status").textContent = "";
+
+  // Organization
+  const orgNameInput = document.getElementById("settings-org-name");
+  orgNameInput.value = settingsRes.org_name || "";
+  orgNameInput.disabled = !isOwner;
+  document.getElementById("settings-org-save-btn").style.display = isOwner ? "" : "none";
+  document.getElementById("settings-org-readonly-note").style.display = isOwner ? "none" : "block";
+  document.getElementById("settings-org-status").textContent = "";
+
+  // Billing
+  document.getElementById("settings-billing-summary").textContent = planSummaryText(me);
+  document.getElementById("settings-manage-billing-btn").style.display = me.plan !== "free" ? "" : "none";
+  const rank = PLAN_ORDER.indexOf(me.plan);
+  document.getElementById("settings-billing-upgrade-btn").style.display =
+    rank >= 0 && rank < PLAN_ORDER.length - 1 ? "" : "none";
+  document.getElementById("settings-billing-status").textContent = "";
+
+  // Review queue confidence threshold
   const locked = document.getElementById("settings-confidence-locked");
   const form = document.getElementById("settings-confidence-form");
   const statusEl = document.getElementById("settings-confidence-status");
   statusEl.textContent = "";
 
-  const defaultPct = Math.round(data.default_confidence_threshold * 100);
+  const defaultPct = Math.round(settingsRes.default_confidence_threshold * 100);
   document.getElementById("settings-default-threshold").textContent = `${defaultPct}%`;
   document.getElementById("settings-default-threshold-locked").textContent = `${defaultPct}%`;
 
-  if (!data.custom_confidence_threshold_available) {
+  if (!settingsRes.custom_confidence_threshold_available) {
     locked.style.display = "block";
     form.style.display = "none";
-    const me = await (await apiFetch("/api/auth/me")).json();
     document.getElementById("settings-current-plan-name").textContent = PLAN_NAMES[me.plan] || me.plan;
     return;
   }
@@ -531,10 +556,84 @@ async function loadOrgSettings() {
   locked.style.display = "none";
   form.style.display = "block";
   const effectivePct = Math.round(
-    (data.confidence_threshold ?? data.default_confidence_threshold) * 100
+    (settingsRes.confidence_threshold ?? settingsRes.default_confidence_threshold) * 100
   );
   document.getElementById("settings-confidence-input").value = effectivePct;
 }
+
+document.getElementById("settings-account-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-account-status");
+  const fullName = document.getElementById("settings-account-name").value.trim();
+  try {
+    const res = await apiFetch("/api/auth/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) showApp(body); // refreshes the sidebar name badge too
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-password-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-password-status");
+  const current = document.getElementById("settings-password-current").value;
+  const next = document.getElementById("settings-password-new").value;
+  const confirm = document.getElementById("settings-password-confirm").value;
+  if (next !== confirm) {
+    statusEl.textContent = "New passwords do not match.";
+    return;
+  }
+  try {
+    const res = await apiFetch("/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Password changed." : body.detail || "Something went wrong.";
+    if (res.ok) document.getElementById("settings-password-form").reset();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-org-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-org-status");
+  const orgName = document.getElementById("settings-org-name").value.trim();
+  try {
+    const res = await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ org_name: orgName }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-manage-billing-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-billing-status");
+  statusEl.textContent = "";
+  try {
+    const res = await apiFetch("/api/billing/portal");
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not open billing management.");
+    window.location.href = body.url;
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-billing-upgrade-btn").addEventListener("click", () => openUpgradeModal());
 
 document.getElementById("settings-upgrade-btn").addEventListener("click", () => openUpgradeModal());
 

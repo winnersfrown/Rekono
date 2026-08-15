@@ -74,6 +74,65 @@ test("orgs cannot see each others invoices", async () => {
   expect(res.body).toHaveLength(1);
 });
 
+test("PATCH /api/auth/me updates the caller's own full name", async () => {
+  const token = await signup(app, request, { email: "renameme@example.co" });
+
+  const res = await request(app).patch("/api/auth/me").set(authHeader(token)).send({ full_name: "New Name" });
+  expect(res.status).toBe(200);
+  expect(res.body.full_name).toBe("New Name");
+
+  const me = await request(app).get("/api/auth/me").set(authHeader(token));
+  expect(me.body.full_name).toBe("New Name");
+});
+
+test("PATCH /api/auth/me rejects an empty name", async () => {
+  const token = await signup(app, request, { email: "emptyname@example.co" });
+  const res = await request(app).patch("/api/auth/me").set(authHeader(token)).send({ full_name: "" });
+  expect(res.status).toBe(422);
+});
+
+test("change-password requires the correct current password", async () => {
+  const token = await signup(app, request, { email: "changepw@example.co", password: "correcthorse123" });
+
+  const wrong = await request(app)
+    .post("/api/auth/change-password")
+    .set(authHeader(token))
+    .send({ current_password: "not-the-real-password", new_password: "brandnewpassword456" });
+  expect(wrong.status).toBe(401);
+
+  const right = await request(app)
+    .post("/api/auth/change-password")
+    .set(authHeader(token))
+    .send({ current_password: "correcthorse123", new_password: "brandnewpassword456" });
+  expect(right.status).toBe(200);
+
+  // The old password no longer works, the new one does.
+  const oldLogin = await request(app)
+    .post("/api/auth/login")
+    .send({ email: "changepw@example.co", password: "correcthorse123" });
+  expect(oldLogin.status).toBe(401);
+
+  const newLogin = await request(app)
+    .post("/api/auth/login")
+    .send({ email: "changepw@example.co", password: "brandnewpassword456" });
+  expect(newLogin.status).toBe(200);
+});
+
+test("change-password rate limits after repeated attempts for the same account", async () => {
+  const token = await signup(app, request, { email: "changepwlimit@example.co", password: "correcthorse123" });
+  let lastRes;
+  for (let i = 0; i < 6; i++) {
+    lastRes = await request(app)
+      .post("/api/auth/change-password")
+      .set(authHeader(token))
+      .send({ current_password: "wrong-password", new_password: "brandnewpassword456" });
+  }
+  expect(lastRes.status).toBe(429);
+});
+
+// These two exhaust the shared per-file rate-limiter state for their
+// respective endpoints (module-level Maps live for the whole test file's
+// run) -- kept last so nothing after them needs a fresh login/signup.
 test("login rate limits after repeated attempts from the same IP", async () => {
   let lastRes;
   for (let i = 0; i < 21; i++) {

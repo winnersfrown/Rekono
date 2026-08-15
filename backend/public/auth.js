@@ -17,6 +17,17 @@ const PLAN_BENEFITS = {
   scale: ["10,000 documents/mo", "Unlimited seats", "Everything in Business", "Dedicated support channel", "Priority feature requests"],
 };
 
+// Shared by the sidebar plan badge and the Settings > Billing summary so
+// the two never drift out of sync with each other.
+function planSummaryText(user) {
+  const planName = PLAN_NAMES[user.plan] || user.plan;
+  if (user.subscription_status === "trialing" && user.trial_ends_at) {
+    const daysLeft = Math.max(0, Math.ceil((new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
+    return `${planName} plan — trial, ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+  }
+  return user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
+}
+
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -96,15 +107,7 @@ function showApp(user) {
   if (badge) badge.textContent = user.full_name || user.email;
 
   const planBadge = document.getElementById("plan-badge");
-  if (planBadge) {
-    const planName = PLAN_NAMES[user.plan] || user.plan;
-    if (user.subscription_status === "trialing" && user.trial_ends_at) {
-      const daysLeft = Math.max(0, Math.ceil((new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
-      planBadge.textContent = `${planName} plan — trial, ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
-    } else {
-      planBadge.textContent = user.billing_period ? `${planName} plan (${user.billing_period})` : `${planName} plan`;
-    }
-  }
+  if (planBadge) planBadge.textContent = planSummaryText(user);
 
   const tooltip = document.getElementById("plan-benefits-tooltip");
   if (tooltip) {

@@ -370,7 +370,40 @@
 
         <section id="tab-settings" class="tab-panel">
           <h1>Settings</h1>
-          <p class="hint">Review-queue confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
+
+          <h3>Account</h3>
+          <form id="settings-account-form">
+            <label>Full name<input type="text" id="settings-account-name" maxlength="256" required /></label>
+            <button type="submit">Save</button>
+          </form>
+          <p class="hint">Email: <strong id="settings-account-email"></strong></p>
+          <div id="settings-account-status" class="hint"></div>
+
+          <h3 style="margin-top: 1.5rem;">Change password</h3>
+          <form id="settings-password-form" style="flex-wrap: wrap;">
+            <label>Current<input type="password" id="settings-password-current" autocomplete="current-password" required /></label>
+            <label>New<input type="password" id="settings-password-new" autocomplete="new-password" minlength="8" required /></label>
+            <label>Confirm<input type="password" id="settings-password-confirm" autocomplete="new-password" minlength="8" required /></label>
+            <button type="submit">Change password</button>
+          </form>
+          <div id="settings-password-status" class="hint"></div>
+
+          <h3 style="margin-top: 1.5rem;">Organization</h3>
+          <form id="settings-org-form">
+            <label>Organization name<input type="text" id="settings-org-name" maxlength="256" required /></label>
+            <button type="submit" id="settings-org-save-btn">Save</button>
+          </form>
+          <p class="hint" id="settings-org-readonly-note" style="display: none;">Only the account owner can rename the organization.</p>
+          <div id="settings-org-status" class="hint"></div>
+
+          <h3 style="margin-top: 1.5rem;">Billing</h3>
+          <p class="hint" id="settings-billing-summary">Loading…</p>
+          <button type="button" id="settings-manage-billing-btn" style="display: none;">Manage billing</button>
+          <button type="button" class="btn-upgrade" id="settings-billing-upgrade-btn" style="display: none;">Upgrade plan</button>
+          <div id="settings-billing-status" class="hint"></div>
+
+          <h3 style="margin-top: 1.5rem;">Review queue</h3>
+          <p class="hint">Confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
           <div id="settings-confidence-locked" class="hint" style="display: none;">
             Custom thresholds are a Business/Scale feature. You're on the <span id="settings-current-plan-name"></span> plan, using the default threshold of <strong id="settings-default-threshold-locked"></strong>.
             <button type="button" class="btn-upgrade" id="settings-upgrade-btn">Upgrade plan</button>
