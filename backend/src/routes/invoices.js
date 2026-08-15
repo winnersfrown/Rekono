@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
@@ -207,6 +208,42 @@ router.post("/api/invoices/:id/reject", requireAuth, requireActivePlan, async (r
       details: {},
     });
     res.json(serializeInvoiceDetail(invoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// No status restriction -- a user can delete a document at any point in
+// its lifecycle (queued, failed, approved, whatever), same as reject.
+// Soft delete (Invoice is paranoid, see models/Invoice.js): the row and its
+// LineItems/MatchResults/AuditLog history all stay in the database, just
+// excluded from every normal query, including this invoice's own audit-log
+// endpoint -- consistent with "a deleted invoice is gone from your view,"
+// not actually erased. The underlying uploaded file is removed from disk
+// (best-effort; a source file already missing on ephemeral storage is
+// routine, see the /file route above).
+router.delete("/api/invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "deleted",
+      actor: req.currentUser.email,
+      details: { original_filename: invoice.originalFilename, status: invoice.status },
+    });
+
+    if (invoice.storagePath) {
+      await fs.unlink(invoice.storagePath).catch((err) => {
+        if (err.code !== "ENOENT") console.error(`Failed to remove file for deleted invoice ${invoice.id}:`, err.message);
+      });
+    }
+
+    await invoice.destroy();
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

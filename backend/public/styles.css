@@ -288,6 +288,11 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 .actions .reject:hover { background: #ff6b71; box-shadow: 0 6px 20px -8px rgba(242, 84, 91, 0.35); }
 .actions .save { background: var(--ink-800); color: var(--paper); border: 1px solid var(--line); }
 .actions .save:hover { background: var(--ink-800); border-color: var(--blue); box-shadow: none; }
+/* Outlined rather than solid-filled like approve/reject -- deliberately a
+   little less prominent, since this is a rarer, less-reversible action than
+   the two core review-workflow buttons next to it. */
+.actions .delete { background: transparent; color: var(--red); border: 1px solid var(--red); margin-left: auto; }
+.actions .delete:hover { background: var(--red); color: #200507; box-shadow: 0 6px 20px -8px rgba(242, 84, 91, 0.35); }
 
 .line-items-table { margin-top: 0.5rem; margin-bottom: 1.2rem; }
 
@@ -789,9 +794,20 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
 .sidebar-recent-item {
   display: flex;
   align-items: center;
+  gap: 0.15rem;
+  width: 100%;
+  border-radius: 7px;
+  transition: background 0.15s ease;
+}
+.sidebar-recent-item:hover { background: rgba(75, 134, 247, 0.08); }
+
+.sidebar-recent-open {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   background: transparent;
   border: 1px solid transparent;
   color: var(--muted);
@@ -802,11 +818,34 @@ tr:hover td { background: rgba(75, 134, 247, 0.06); cursor: pointer; }
   font-size: 0.8rem;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s ease, color 0.15s ease;
 }
-.sidebar-recent-item:hover { background: rgba(75, 134, 247, 0.08); color: var(--paper); box-shadow: none; transform: none; }
+.sidebar-recent-item:hover .sidebar-recent-open { color: var(--paper); }
+.sidebar-recent-open:hover, .sidebar-recent-open:focus-visible { background: transparent; box-shadow: none; transform: none; }
 .sidebar-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-recent-empty { padding: 0.4rem 0.5rem; margin: 0; }
+
+.sidebar-recent-delete {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.25rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.sidebar-recent-delete:hover, .sidebar-recent-delete:focus-visible {
+  background: rgba(242, 84, 91, 0.14);
+  color: var(--red);
+  box-shadow: none;
+  transform: none;
+}
 
 .sidebar-footer {
   border-top: 1px solid var(--line-soft);

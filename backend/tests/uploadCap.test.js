@@ -116,4 +116,24 @@ describe("GET /api/auth/me document usage", () => {
     const res = await request(app).get("/api/auth/me").set(authHeader(token));
     expect(res.body.documents_used_this_month).toBe(1);
   });
+
+  // Deleting a document doesn't refund the OCR/LLM cost that was already
+  // spent processing it -- if it did, "upload, delete, re-upload" would be a
+  // free way around the plan's monthly cap. See documentUsage.js.
+  test("deleting an invoice does not free up cap headroom", async () => {
+    const token = await signup(app, request, { email: "deletecap@uploadco.co" });
+    const org = await orgId(token);
+    await seedInvoices(org, 25); // fills the free plan's cap exactly
+
+    const listRes = await request(app).get("/api/invoices").set(authHeader(token));
+    const deleteRes = await request(app).delete(`/api/invoices/${listRes.body[0].id}`).set(authHeader(token));
+    expect(deleteRes.status).toBe(200);
+
+    const meRes = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(meRes.body.documents_used_this_month).toBe(25); // unchanged, still at the cap
+
+    const uploadRes = await attachFakePdf(request(app).post("/api/invoices/upload").set(authHeader(token)));
+    expect(uploadRes.status).toBe(402);
+    expect(uploadRes.body.plan_cap_reached).toBe(true);
+  });
 });
