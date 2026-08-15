@@ -73,3 +73,23 @@ test("orgs cannot see each others invoices", async () => {
   expect(res.status).toBe(200);
   expect(res.body).toHaveLength(1);
 });
+
+test("login rate limits after repeated attempts from the same IP", async () => {
+  let lastRes;
+  for (let i = 0; i < 21; i++) {
+    lastRes = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "nobody@ratelimitco.co", password: "wrong-password" });
+  }
+  expect(lastRes.status).toBe(429);
+});
+
+test("signup rate limits after repeated attempts from the same IP", async () => {
+  let lastRes;
+  for (let i = 0; i < 31; i++) {
+    lastRes = await request(app)
+      .post("/api/auth/signup")
+      .send({ org_name: "Spam Co", full_name: "Spammer", email: "spam@ratelimitco.co", password: "correcthorse123" });
+  }
+  expect(lastRes.status).toBe(429);
+});

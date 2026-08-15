@@ -32,6 +32,31 @@ app.set("trust proxy", 1);
 // login/signup calls reach this API.
 app.use(cors());
 
+// Baseline browser-security headers on every response. Deliberately not
+// including a Content-Security-Policy here: the review UI is hand-rolled
+// vanilla JS/HTML with inline styles and no nonce/hash build step, so a
+// real CSP would need that infrastructure first or it'd either break the
+// UI or be too loose to matter -- tracked as a follow-up, not skipped by
+// oversight.
+app.use((req, res, next) => {
+  // Stops browsers from MIME-sniffing a response into a different type
+  // than its declared Content-Type (e.g. treating an uploaded file as
+  // HTML/JS instead of the type we set).
+  res.set("X-Content-Type-Options", "nosniff");
+  // The review UI is never meant to be embedded in another site's frame;
+  // this blocks clickjacking attempts that try anyway.
+  res.set("X-Frame-Options", "DENY");
+  // Avoids leaking full internal URLs (invoice IDs, etc.) to third-party
+  // sites via the Referer header when a link is followed off-site.
+  res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  // Only meaningful over HTTPS -- Render terminates TLS in front of this
+  // app, so req.protocol reflects the original scheme via trust proxy.
+  if (req.protocol === "https") {
+    res.set("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  }
+  next();
+});
+
 // Stripe's webhook signature check needs the exact raw request bytes.
 // Scoped to this one path (not app.use(middleware, router), which would
 // apply express.raw() to every request reaching this point in the stack,
