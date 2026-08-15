@@ -1,4 +1,4 @@
-const state = { statusFilter: "", selectedInvoiceId: null };
+const state = { statusFilter: "", selectedInvoiceId: null, selectedRowIds: new Set() };
 let docPreviewObjectUrl = null;
 
 // ---- Tabs ----
@@ -125,6 +125,10 @@ document.querySelectorAll(".filter-btn").forEach((btn) => {
     document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     state.statusFilter = btn.dataset.status;
+    // A filter change swaps in a different working set -- carrying a bulk
+    // selection across that would leave items selected that are no longer
+    // even visible, which reads as broken rather than intentional.
+    state.selectedRowIds.clear();
     loadInvoices();
   });
 });
@@ -133,20 +137,98 @@ async function loadInvoices() {
   const qs = state.statusFilter ? `?status=${state.statusFilter}` : "";
   const res = await apiFetch(`/api/invoices${qs}`);
   const invoices = await res.json();
+
+  // Drop any previously-selected id that isn't in this render -- e.g. it
+  // was deleted, or a status-filter change hid it -- so the toolbar's count
+  // and the bulk actions never operate on rows the user can't currently see.
+  const visibleIds = new Set(invoices.map((inv) => inv.id));
+  for (const id of state.selectedRowIds) {
+    if (!visibleIds.has(id)) state.selectedRowIds.delete(id);
+  }
+
   const tbody = document.querySelector("#invoice-table tbody");
   tbody.innerHTML = invoices.map((inv) => `
     <tr data-id="${inv.id}">
+      <td><input type="checkbox" class="row-select" data-id="${inv.id}" ${state.selectedRowIds.has(inv.id) ? "checked" : ""} aria-label="Select" /></td>
       <td>${inv.vendor_name ? escapeHtml(inv.vendor_name) : "(unknown)"}</td>
       <td>${fmtMoney(inv.total)}</td>
       <td><span class="badge status-${inv.status}">${inv.status}</span></td>
       <td>${fmtPct(inv.overall_confidence)}</td>
     </tr>
-  `).join("") || "<tr><td colspan='4'>No invoices.</td></tr>";
+  `).join("") || "<tr><td colspan='5'>No invoices.</td></tr>";
 
   tbody.querySelectorAll("tr[data-id]").forEach((row) => {
     row.addEventListener("click", () => selectInvoice(row.dataset.id));
   });
+  tbody.querySelectorAll(".row-select").forEach((checkbox) => {
+    checkbox.addEventListener("click", (e) => e.stopPropagation()); // don't also open the row
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.selectedRowIds.add(checkbox.dataset.id);
+      else state.selectedRowIds.delete(checkbox.dataset.id);
+      renderBulkToolbar();
+    });
+  });
+
+  renderBulkToolbar();
 }
+
+function renderBulkToolbar() {
+  const count = state.selectedRowIds.size;
+  const toolbar = document.getElementById("bulk-toolbar");
+  toolbar.style.display = count ? "flex" : "none";
+  if (count) {
+    document.getElementById("bulk-toolbar-count").textContent = `${count} selected`;
+  }
+
+  const selectAll = document.getElementById("select-all-invoices");
+  const rowCheckboxes = document.querySelectorAll("#invoice-table .row-select");
+  const checkedCount = document.querySelectorAll("#invoice-table .row-select:checked").length;
+  selectAll.checked = rowCheckboxes.length > 0 && checkedCount === rowCheckboxes.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < rowCheckboxes.length;
+}
+
+document.getElementById("select-all-invoices").addEventListener("change", (e) => {
+  document.querySelectorAll("#invoice-table .row-select").forEach((checkbox) => {
+    checkbox.checked = e.target.checked;
+    if (e.target.checked) state.selectedRowIds.add(checkbox.dataset.id);
+    else state.selectedRowIds.delete(checkbox.dataset.id);
+  });
+  renderBulkToolbar();
+});
+
+document.getElementById("bulk-clear-btn").addEventListener("click", () => {
+  state.selectedRowIds.clear();
+  loadInvoices();
+});
+
+async function runBulkAction(action) {
+  const ids = Array.from(state.selectedRowIds);
+  if (!ids.length) return;
+  const res = await apiFetch("/api/invoices/bulk-action", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, action }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    alert(body.detail || "Bulk action failed.");
+    return;
+  }
+  state.selectedRowIds.clear();
+  const verb = action === "approve" ? "approved" : "rejected";
+  const summary = body.skipped.length
+    ? `${body.succeeded.length} ${verb}, ${body.skipped.length} skipped.`
+    : `${body.succeeded.length} ${verb}.`;
+  loadInvoices();
+  loadRecentUploads();
+  if (state.selectedInvoiceId && ids.includes(state.selectedInvoiceId)) {
+    selectInvoice(state.selectedInvoiceId); // refresh the open detail panel if it was part of the batch
+  }
+  alert(summary);
+}
+
+document.getElementById("bulk-approve-btn").addEventListener("click", () => runBulkAction("approve"));
+document.getElementById("bulk-reject-btn").addEventListener("click", () => runBulkAction("reject"));
 
 async function selectInvoice(id) {
   state.selectedInvoiceId = id;

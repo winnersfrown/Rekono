@@ -150,6 +150,93 @@ test("approve invoice", async () => {
   expect(res.body.status).toBe("approved");
 });
 
+test("bulk-approve applies to every eligible invoice in one call", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const a = await makeInvoice(org, { status: "extracted" });
+  const b = await makeInvoice(org, { status: "needs_review" });
+
+  const res = await request(app)
+    .post("/api/invoices/bulk-action")
+    .set(authHeader(token))
+    .send({ ids: [a.id, b.id], action: "approve" });
+  expect(res.status).toBe(200);
+  expect(res.body.succeeded.sort()).toEqual([a.id, b.id].sort());
+  expect(res.body.skipped).toEqual([]);
+
+  await a.reload();
+  await b.reload();
+  expect(a.status).toBe("approved");
+  expect(b.status).toBe("approved");
+
+  const auditRes = await request(app).get(`/api/invoices/${a.id}/audit-log`).set(authHeader(token));
+  expect(auditRes.body.map((e) => e.action)).toContain("approved");
+});
+
+test("bulk-approve skips an invoice whose status can't be approved, without failing the rest", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const approvable = await makeInvoice(org, { status: "extracted" });
+  const alreadyApproved = await makeInvoice(org, { status: "approved" });
+
+  const res = await request(app)
+    .post("/api/invoices/bulk-action")
+    .set(authHeader(token))
+    .send({ ids: [approvable.id, alreadyApproved.id], action: "approve" });
+  expect(res.status).toBe(200);
+  expect(res.body.succeeded).toEqual([approvable.id]);
+  expect(res.body.skipped).toEqual([{ id: alreadyApproved.id, reason: expect.stringContaining("approved") }]);
+});
+
+test("bulk-reject has no status restriction, unlike bulk-approve", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org, { status: "approved" });
+
+  const res = await request(app)
+    .post("/api/invoices/bulk-action")
+    .set(authHeader(token))
+    .send({ ids: [invoice.id], action: "reject" });
+  expect(res.status).toBe(200);
+  expect(res.body.succeeded).toEqual([invoice.id]);
+
+  await invoice.reload();
+  expect(invoice.status).toBe("rejected");
+});
+
+test("bulk-action cannot reach another org's invoice, and doesn't fail the whole batch trying", async () => {
+  const ownerA = await signup(app, request, { email: "bulk-a@example.co", orgName: "Org A" });
+  const ownerB = await signup(app, request, { email: "bulk-b@example.co", orgName: "Org B" });
+  const orgA = await orgId(ownerA);
+  const orgB = await orgId(ownerB);
+  const mine = await makeInvoice(orgA, { status: "extracted" });
+  const theirs = await makeInvoice(orgB, { status: "extracted" });
+
+  const res = await request(app)
+    .post("/api/invoices/bulk-action")
+    .set(authHeader(ownerA))
+    .send({ ids: [mine.id, theirs.id], action: "approve" });
+  expect(res.status).toBe(200);
+  expect(res.body.succeeded).toEqual([mine.id]);
+  expect(res.body.skipped).toEqual([{ id: theirs.id, reason: "Invoice not found" }]);
+
+  await theirs.reload();
+  expect(theirs.status).toBe("extracted"); // untouched
+});
+
+test("bulk-action rejects an empty id list or an unrecognized action", async () => {
+  const token = await signup(app, request);
+
+  const emptyIds = await request(app).post("/api/invoices/bulk-action").set(authHeader(token)).send({ ids: [], action: "approve" });
+  expect(emptyIds.status).toBe(422);
+
+  const badAction = await request(app)
+    .post("/api/invoices/bulk-action")
+    .set(authHeader(token))
+    .send({ ids: ["whatever"], action: "delete" });
+  expect(badAction.status).toBe(422);
+});
+
 test("deleting an invoice removes it from the list and detail views", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);

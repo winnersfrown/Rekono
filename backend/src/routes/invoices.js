@@ -30,6 +30,58 @@ router.get("/api/invoices", requireAuth, requireActivePlan, async (req, res, nex
   }
 });
 
+const bulkActionSchema = z.object({
+  ids: z.array(z.string()).min(1).max(500),
+  action: z.enum(["approve", "reject"]),
+});
+
+// Applies the same status transition + audit-log write as the single-invoice
+// approve/reject routes below, across many invoices in one call -- clearing
+// a batch of high-confidence extractions (or a bad upload run) one click at
+// a time doesn't scale once there's real volume. Never fails the whole
+// batch for one bad id: anything that doesn't belong to the caller's org,
+// or that approve's status restriction rejects, is reported back in
+// `skipped` (with why) instead, so the frontend can show exactly what
+// happened rather than an all-or-nothing error.
+router.post("/api/invoices/bulk-action", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = bulkActionSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const { ids, action } = parsed.data;
+
+    const invoices = await Invoice.findAll({ where: { id: ids, orgId: req.currentUser.orgId } });
+    const succeeded = [];
+    const skipped = [];
+
+    for (const invoice of invoices) {
+      if (action === "approve" && !["extracted", "needs_review"].includes(invoice.status)) {
+        skipped.push({ id: invoice.id, reason: `Cannot approve invoice in status ${invoice.status}` });
+        continue;
+      }
+      invoice.status = action === "approve" ? "approved" : "rejected";
+      await invoice.save();
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        invoiceId: invoice.id,
+        action: action === "approve" ? "approved" : "rejected",
+        actor: req.currentUser.email,
+        details: { bulk: true },
+      });
+      succeeded.push(invoice.id);
+    }
+
+    const foundIds = new Set(invoices.map((inv) => inv.id));
+    for (const id of ids) {
+      if (!foundIds.has(id)) skipped.push({ id, reason: "Invoice not found" });
+    }
+
+    res.json({ succeeded, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/api/invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
