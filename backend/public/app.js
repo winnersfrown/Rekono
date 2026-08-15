@@ -335,6 +335,7 @@ function renderDetail(inv) {
       <button class="save" id="btn-save">Save Corrections</button>
       <button class="approve" id="btn-approve">Approve</button>
       <button class="reject" id="btn-reject">Reject</button>
+      ${inv.status !== "approved" ? `<button class="retry" id="btn-retry">Retry Extraction</button>` : ""}
       <button class="delete" id="btn-delete">Delete</button>
     </div>
 
@@ -347,6 +348,7 @@ function renderDetail(inv) {
   document.getElementById("btn-save").addEventListener("click", () => saveCorrections(inv.id));
   document.getElementById("btn-approve").addEventListener("click", () => approveInvoice(inv.id));
   document.getElementById("btn-reject").addEventListener("click", () => rejectInvoice(inv.id));
+  document.getElementById("btn-retry")?.addEventListener("click", () => retryInvoice(inv.id));
   document.getElementById("btn-delete").addEventListener("click", () => deleteInvoice(inv.id));
 
   loadDocPreview(inv);
@@ -482,6 +484,22 @@ async function rejectInvoice(id) {
   const inv = await res.json();
   renderDetail(inv);
   loadInvoices();
+}
+
+// Re-queues the document for a fresh OCR + extraction pass without a
+// re-upload. renderDetail already knows how to show a "queued" invoice (the
+// same processing banner + auto-poll a real upload gets), so handing it the
+// response is enough to pick that up.
+async function retryInvoice(id) {
+  const res = await apiFetch(`/api/invoices/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    alert(body.detail || "Could not retry this document.");
+    return;
+  }
+  renderDetail(body);
+  loadInvoices();
+  loadRecentUploads();
 }
 
 // No status restriction on the backend -- a document can be deleted at any
