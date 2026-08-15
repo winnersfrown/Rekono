@@ -70,6 +70,15 @@
     --amber: #96650f;
     --green: #178048;
 
+    /* Same elevation/motion system as the app (backend/public/styles.css)
+       -- kept in sync so the marketing page and the product read as one
+       considered design, not two. */
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --shadow-sm: 0 1px 2px rgba(16, 26, 51, 0.05), 0 3px 8px -4px rgba(16, 26, 51, 0.08);
+    --shadow-md: 0 2px 6px -2px rgba(16, 26, 51, 0.06), 0 12px 28px -12px rgba(16, 26, 51, 0.14);
+    --shadow-lg: 0 8px 16px -8px rgba(16, 26, 51, 0.10), 0 24px 56px -20px rgba(16, 26, 51, 0.20);
+    --shadow-glow: 0 8px 24px -6px rgba(75, 134, 247, 0.35);
+
     --font-display: 'Bitter', Georgia, serif;
     --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
     --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
@@ -201,20 +210,21 @@
     text-decoration: none;
     border: 1px solid transparent;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color .15s ease;
+    transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
   }
   .btn-primary {
-    background: var(--blue);
+    background: linear-gradient(180deg, #5f97ff, var(--blue));
     color: #04081a;
-    box-shadow: 0 0 0 0 rgba(75,134,247,0.0);
+    box-shadow: var(--shadow-sm);
   }
-  .btn-primary:hover { background: var(--blue-bright); box-shadow: 0 6px 24px -8px rgba(75,134,247,0.35); transform: translateY(-1px); }
+  .btn-primary:hover { background: linear-gradient(180deg, #78a7ff, var(--blue-bright)); box-shadow: var(--shadow-glow); transform: translateY(-1.5px); }
+  .btn-primary:active { transform: translateY(0); transition-duration: 0.05s; }
   .btn-ghost {
     background: transparent;
     border-color: var(--line);
     color: var(--paper);
   }
-  .btn-ghost:hover { border-color: var(--blue-bright); color: var(--blue-bright); }
+  .btn-ghost:hover { border-color: var(--blue-bright); color: var(--blue-bright); box-shadow: var(--shadow-sm); transform: translateY(-1.5px); }
   .btn:focus-visible { outline: 2px solid var(--blue-bright); outline-offset: 3px; }
 
   header .header-cta { display: flex; align-items: center; gap: 16px; }
@@ -271,8 +281,20 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     padding: 26px 26px 22px;
-    box-shadow: 0 40px 80px -32px rgba(30,41,82,0.16);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
+  }
+  /* Soft ambient glow behind the hero card -- sits behind everything (the
+     card itself has its own background so it isn't see-through), just
+     gives the card a bit more presence against the flat page. */
+  .doc-mock-wrap { position: relative; }
+  .doc-mock-wrap::before {
+    content: "";
+    position: absolute;
+    inset: -10%;
+    background: radial-gradient(ellipse 70% 60% at 50% 40%, rgba(75, 134, 247, 0.16), transparent 70%);
+    z-index: -1;
+    pointer-events: none;
   }
   .doc-mock::before {
     content: "";
@@ -444,7 +466,9 @@
     background: var(--ink-900);
     padding: 30px 26px;
     position: relative;
+    transition: background 0.2s var(--ease);
   }
+  .feature-card:hover { background: var(--ink-950); }
   .feature-card .f-tag {
     font-family: var(--font-mono);
     font-size: 0.68rem;
@@ -511,12 +535,16 @@
     padding: 26px 22px 24px;
     display: flex;
     flex-direction: column;
+    transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
   }
+  .price-card:hover { border-color: var(--blue); box-shadow: var(--shadow-md); transform: translateY(-3px); }
   .price-card.featured {
     border-color: var(--blue);
     background: linear-gradient(180deg, rgba(75,134,247,0.09), var(--ink-900) 45%);
     box-shadow: 0 20px 50px -24px rgba(75,134,247,0.28);
+    transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
   }
+  .price-card.featured:hover { box-shadow: 0 24px 60px -20px rgba(75,134,247,0.4); transform: translateY(-3px); }
   .price-card .plan-tag {
     font-family: var(--font-mono);
     font-size: 0.68rem;
@@ -858,6 +886,7 @@
         <p class="fineprint">Runs in demo mode with no API key. Bring your own Claude key for production-grade extraction.</p>
       </div>
 
+      <div class="doc-mock-wrap">
       <div class="doc-mock" aria-hidden="true">
         <div class="doc-mock-head">
           <div>
@@ -893,6 +922,7 @@
           <span class="total-label">Total · cross-checked against line items</span>
           <span class="total-value">$54.00</span>
         </div>
+      </div>
       </div>
     </div>
   </section>
