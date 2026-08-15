@@ -101,7 +101,12 @@ async function loadRecentUploads() {
       </button>
       <button type="button" class="sidebar-recent-delete" data-id="${inv.id}" title="Delete" aria-label="Delete ${escapeHtml(inv.original_filename)}">&times;</button>
     </div>`
-  )).join("") || `<p class="hint sidebar-recent-empty">Nothing uploaded yet.</p>`;
+  )).join("") || `
+    <div class="sidebar-recent-empty">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M12 3l-3.5 3.5M12 3l3.5 3.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      <p class="hint">Nothing uploaded yet.</p>
+    </div>
+  `;
 
   el.querySelectorAll(".sidebar-recent-open").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -414,7 +419,12 @@ async function deleteInvoice(id) {
 
   if (state.selectedInvoiceId === id) {
     state.selectedInvoiceId = null;
-    document.getElementById("queue-detail").innerHTML = `<p class="hint">Select an invoice from the list to review it.</p>`;
+    document.getElementById("queue-detail").innerHTML = `
+      <div class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6l1.4 1.4L7.5 4.7"/><path d="M11 6h9.5"/><path d="M3.5 12l1.4 1.4 2.6-2.7"/><path d="M11 12h9.5"/><path d="M3.5 18l1.4 1.4 2.6-2.7"/><path d="M11 18h9.5"/></svg>
+        <p class="hint">Select an invoice from the list to review it.</p>
+      </div>
+    `;
   }
   loadInvoices();
   loadRecentUploads();
