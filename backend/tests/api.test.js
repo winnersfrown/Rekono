@@ -150,6 +150,45 @@ test("approve invoice", async () => {
   expect(res.body.status).toBe("approved");
 });
 
+test("retrying a failed invoice re-queues it and clears the error message", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org, { status: "failed", errorMessage: "OCR failed: boom" });
+
+  const res = await request(app).post(`/api/invoices/${invoice.id}/retry`).set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.status).toBe("queued");
+  expect(res.body.error_message).toBe("");
+
+  const auditRes = await request(app).get(`/api/invoices/${invoice.id}/audit-log`).set(authHeader(token));
+  expect(auditRes.body.map((e) => e.action)).toContain("retry_requested");
+});
+
+test("cannot retry an already-approved invoice", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org, { status: "approved" });
+
+  const res = await request(app).post(`/api/invoices/${invoice.id}/retry`).set(authHeader(token));
+  expect(res.status).toBe(409);
+
+  await invoice.reload();
+  expect(invoice.status).toBe("approved"); // untouched
+});
+
+test("retrying a nonexistent or another org's invoice 404s", async () => {
+  const tokenA = await signup(app, request, { email: "retry-a@example.co", orgName: "Org A" });
+  const tokenB = await signup(app, request, { email: "retry-b@example.co", orgName: "Org B" });
+  const orgB = await orgId(tokenB);
+  const theirs = await makeInvoice(orgB, { status: "failed" });
+
+  const bogus = await request(app).post("/api/invoices/not-a-real-id/retry").set(authHeader(tokenA));
+  expect(bogus.status).toBe(404);
+
+  const wrongOrg = await request(app).post(`/api/invoices/${theirs.id}/retry`).set(authHeader(tokenA));
+  expect(wrongOrg.status).toBe(404);
+});
+
 test("bulk-approve applies to every eligible invoice in one call", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);

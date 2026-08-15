@@ -6,6 +6,7 @@ import { requireActivePlan } from "../plan.js";
 import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
 import { rememberVendorCorrection } from "../vendorAlias.js";
+import { enqueue } from "../jobs.js";
 
 const router = Router();
 
@@ -259,6 +260,38 @@ router.post("/api/invoices/:id/reject", requireAuth, requireActivePlan, async (r
       actor: req.currentUser.email,
       details: {},
     });
+    res.json(serializeInvoiceDetail(invoice));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Re-runs the full OCR + extraction pipeline for a document that's already
+// on disk, without needing to re-upload the same file -- the only recovery
+// path before this for a genuinely failed extraction (a transient OCR
+// error, an LLM timeout, an API key that got fixed after the fact) was
+// deleting the invoice and uploading it again. Blocked once approved: that
+// status means a human has already signed off on the current field values
+// as correct, and a fresh extraction pass would silently overwrite them.
+router.post("/api/invoices/:id/retry", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (invoice.status === "approved") {
+      return res.status(409).json({ detail: "Cannot retry an already-approved invoice." });
+    }
+    invoice.status = "queued";
+    invoice.errorMessage = "";
+    await invoice.save();
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "retry_requested",
+      actor: req.currentUser.email,
+      details: {},
+    });
+    enqueue(invoice.id);
     res.json(serializeInvoiceDetail(invoice));
   } catch (err) {
     next(err);
