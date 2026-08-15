@@ -94,17 +94,23 @@ async function loadRecentUploads() {
   const invoices = await res.json();
   const el = document.getElementById("sidebar-recent-uploads");
   el.innerHTML = invoices.slice(0, 8).map((inv) => (
-    `<button type="button" class="sidebar-recent-item" data-id="${inv.id}">
-      <span class="sidebar-recent-name">${escapeHtml(inv.original_filename)}</span>
-      <span class="badge status-${inv.status}">${inv.status}</span>
-    </button>`
+    `<div class="sidebar-recent-item">
+      <button type="button" class="sidebar-recent-open" data-id="${inv.id}">
+        <span class="sidebar-recent-name">${escapeHtml(inv.original_filename)}</span>
+        <span class="badge status-${inv.status}">${inv.status}</span>
+      </button>
+      <button type="button" class="sidebar-recent-delete" data-id="${inv.id}" title="Delete" aria-label="Delete ${escapeHtml(inv.original_filename)}">&times;</button>
+    </div>`
   )).join("") || `<p class="hint sidebar-recent-empty">Nothing uploaded yet.</p>`;
 
-  el.querySelectorAll(".sidebar-recent-item").forEach((btn) => {
+  el.querySelectorAll(".sidebar-recent-open").forEach((btn) => {
     btn.addEventListener("click", () => {
       switchTab("review");
       selectInvoice(btn.dataset.id);
     });
+  });
+  el.querySelectorAll(".sidebar-recent-delete").forEach((btn) => {
+    btn.addEventListener("click", () => deleteInvoice(btn.dataset.id));
   });
 }
 
@@ -242,6 +248,7 @@ function renderDetail(inv) {
       <button class="save" id="btn-save">Save Corrections</button>
       <button class="approve" id="btn-approve">Approve</button>
       <button class="reject" id="btn-reject">Reject</button>
+      <button class="delete" id="btn-delete">Delete</button>
     </div>
 
     <div class="doc-preview">
@@ -253,6 +260,7 @@ function renderDetail(inv) {
   document.getElementById("btn-save").addEventListener("click", () => saveCorrections(inv.id));
   document.getElementById("btn-approve").addEventListener("click", () => approveInvoice(inv.id));
   document.getElementById("btn-reject").addEventListener("click", () => rejectInvoice(inv.id));
+  document.getElementById("btn-delete").addEventListener("click", () => deleteInvoice(inv.id));
 
   loadDocPreview(inv);
 }
@@ -387,6 +395,29 @@ async function rejectInvoice(id) {
   const inv = await res.json();
   renderDetail(inv);
   loadInvoices();
+}
+
+// No status restriction on the backend -- a document can be deleted at any
+// point in review, whenever the user decides they don't want it around
+// anymore. Callable from either the sidebar's recent-uploads list or the
+// review-detail panel, so both need refreshing regardless of which one this
+// was clicked from.
+async function deleteInvoice(id) {
+  if (!confirm("Delete this document? This can't be undone from the review UI.")) return;
+
+  const res = await apiFetch(`/api/invoices/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.detail || "Could not delete this document.");
+    return;
+  }
+
+  if (state.selectedInvoiceId === id) {
+    state.selectedInvoiceId = null;
+    document.getElementById("queue-detail").innerHTML = `<p class="hint">Select an invoice from the list to review it.</p>`;
+  }
+  loadInvoices();
+  loadRecentUploads();
 }
 
 // ---- Matching ----

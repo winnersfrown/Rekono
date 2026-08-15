@@ -96,6 +96,23 @@ test("findDuplicateInvoice never matches across organizations", async () => {
   expect(await findDuplicateInvoice(incoming)).toBeNull();
 });
 
+test("findDuplicateInvoice ignores a soft-deleted invoice, same as a rejected one", async () => {
+  const original = await makeInvoice({
+    status: "extracted",
+    vendorName: "Acme Supplies Inc",
+    invoiceNumber: "INV-1001",
+  });
+  await original.destroy(); // Invoice is paranoid -- this is a soft delete
+
+  const incoming = await makeInvoice({
+    status: "processing",
+    vendorName: "Acme Supplies Inc",
+    invoiceNumber: "INV-1001",
+  });
+
+  expect(await findDuplicateInvoice(incoming)).toBeNull();
+});
+
 test("effectiveConfidenceThreshold uses the server default when no org override is set", async () => {
   const org = await Organization.create({ id: ORG_ID, name: "Org", plan: "business" });
   expect(await effectiveConfidenceThreshold(org.id)).toBe(settings.reviewConfidenceThreshold);

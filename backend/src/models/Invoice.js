@@ -60,5 +60,16 @@ export const Invoice = sequelize.define(
   {
     tableName: "invoices",
     indexes: [{ fields: ["orgId"] }, { fields: ["status"] }],
+    // Soft delete (adds a nullable `deletedAt` column): a deleted invoice
+    // disappears from every normal query (list, detail, matching, export,
+    // the AI assistant's dataset, duplicate detection) without physically
+    // removing the row -- its LineItems/MatchResults/AuditLog entries stay
+    // intact in the database, since routes/invoices.js's DELETE handler
+    // doesn't destroy them, only the parent. That preserves this app's
+    // audit-trail guarantee even for a deleted document. The one place that
+    // deliberately does NOT respect this default (documentUsage.js's
+    // monthly count) opts back in to seeing soft-deleted rows on purpose --
+    // see the comment there.
+    paranoid: true,
   }
 );

@@ -150,6 +150,58 @@ test("approve invoice", async () => {
   expect(res.body.status).toBe("approved");
 });
 
+test("deleting an invoice removes it from the list and detail views", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org);
+
+  const res = await request(app).delete(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.ok).toBe(true);
+
+  const listRes = await request(app).get("/api/invoices").set(authHeader(token));
+  expect(listRes.body.map((i) => i.id)).not.toContain(invoice.id);
+
+  const detailRes = await request(app).get(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  expect(detailRes.status).toBe(404);
+});
+
+test("deleting an invoice is not blocked by its status -- e.g. an already-approved one", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org, { status: "approved" });
+
+  const res = await request(app).delete(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  expect(res.status).toBe(200);
+});
+
+test("deleting the same invoice twice, or one that never existed, 404s", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org);
+
+  await request(app).delete(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  const secondDelete = await request(app).delete(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  expect(secondDelete.status).toBe(404);
+
+  const bogus = await request(app).delete("/api/invoices/not-a-real-id").set(authHeader(token));
+  expect(bogus.status).toBe(404);
+});
+
+test("cannot delete an invoice belonging to another org", async () => {
+  const tokenA = await signup(app, request, { email: "orga-owner@example.co", orgName: "Org A" });
+  const tokenB = await signup(app, request, { email: "orgb-owner@example.co", orgName: "Org B" });
+  const orgA = await orgId(tokenA);
+  const invoice = await makeInvoice(orgA);
+
+  const res = await request(app).delete(`/api/invoices/${invoice.id}`).set(authHeader(tokenB));
+  expect(res.status).toBe(404);
+
+  // Still there for its actual owner.
+  const detailRes = await request(app).get(`/api/invoices/${invoice.id}`).set(authHeader(tokenA));
+  expect(detailRes.status).toBe(200);
+});
+
 test("fetching a source file that no longer exists on disk returns a clean 404, not a raw path-leaking 500", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);
