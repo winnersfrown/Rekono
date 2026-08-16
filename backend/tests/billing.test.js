@@ -1,7 +1,7 @@
 import request from "supertest";
 import { jest } from "@jest/globals";
 import { app } from "../src/app.js";
-import { cancelReplacedSubscription, createCheckoutSession } from "../src/routes/billing.js";
+import { cancelReplacedSubscription, checkoutSessionBelongsToOrg, createCheckoutSession } from "../src/routes/billing.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 // STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are never set in the test
@@ -99,6 +99,27 @@ describe("cancelReplacedSubscription", () => {
     const stripe = { subscriptions: { cancel } };
     const org = { stripeSubscriptionId: "sub_old" };
     await expect(cancelReplacedSubscription(stripe, org, "sub_new")).resolves.toBeUndefined();
+  });
+});
+
+// checkoutSessionBelongsToOrg is the only thing standing between a
+// signed-in user hand-crafting /api/billing/confirm?session_id=... with
+// someone else's real session_id and activating billing status onto their
+// own org using a stranger's completed payment -- exercised directly since
+// there's no real Stripe session to fetch in this test env.
+describe("checkoutSessionBelongsToOrg", () => {
+  test("true when the session's org_id metadata matches the caller's org", () => {
+    const session = { metadata: { org_id: "org_1" } };
+    expect(checkoutSessionBelongsToOrg(session, "org_1")).toBe(true);
+  });
+
+  test("false when the session belongs to a different org", () => {
+    const session = { metadata: { org_id: "org_1" } };
+    expect(checkoutSessionBelongsToOrg(session, "org_2")).toBe(false);
+  });
+
+  test("false when the session has no metadata at all", () => {
+    expect(checkoutSessionBelongsToOrg({}, "org_1")).toBe(false);
   });
 });
 

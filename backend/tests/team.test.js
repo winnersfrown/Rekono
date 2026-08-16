@@ -155,3 +155,48 @@ test("owner can remove a member but not themselves", async () => {
   expect(removeRes.status).toBe(204);
   expect(await User.findByPk(member.id)).toBeNull();
 });
+
+test("GET /api/team, revoking an invite, and removing a member are all scoped to the caller's org", async () => {
+  const tokenA = await signup(app, request, { email: "team-a@example.co", orgName: "Team Org A" });
+  const tokenB = await signup(app, request, { email: "team-b@example.co", orgName: "Team Org B" });
+
+  const orgAId = (await request(app).get("/api/auth/me").set(authHeader(tokenA))).body.org_id;
+  const orgA = await Organization.findByPk(orgAId);
+  orgA.plan = "growth";
+  orgA.billingPeriod = "monthly";
+  orgA.subscriptionStatus = "active";
+  await orgA.save();
+
+  const inviteRes = await request(app)
+    .post("/api/team/invite")
+    .set(authHeader(tokenA))
+    .send({ email: "teammate@teamorga.co" });
+  const inviteToken = new URL(inviteRes.body.invite_url).searchParams.get("invite_token");
+  const acceptRes = await request(app)
+    .post(`/api/team/invite/${inviteToken}/accept`)
+    .send({ full_name: "Teammate", password: "correcthorse123" });
+  const memberId = (await request(app).get("/api/auth/me").set(authHeader(acceptRes.body.access_token))).body.id;
+
+  // org B's owner can't see org A's roster...
+  const teamAsB = await request(app).get("/api/team").set(authHeader(tokenB));
+  expect(teamAsB.body.members.every((m) => m.id !== memberId)).toBe(true);
+  expect(teamAsB.body.pending_invites).toEqual([]);
+
+  // ...and can't reach into org A's invites or members by id, even though
+  // it's a valid id -- just not one that belongs to their own org.
+  await request(app).post("/api/team/invite").set(authHeader(tokenA)).send({ email: "second@teamorga.co" });
+  const pendingInviteId = (await request(app).get("/api/team").set(authHeader(tokenA))).body.pending_invites.find(
+    (i) => i.email === "second@teamorga.co"
+  ).id;
+
+  const revokeAsB = await request(app).delete(`/api/team/invites/${pendingInviteId}`).set(authHeader(tokenB));
+  expect(revokeAsB.status).toBe(404);
+
+  const removeAsB = await request(app).delete(`/api/team/members/${memberId}`).set(authHeader(tokenB));
+  expect(removeAsB.status).toBe(404);
+
+  // untouched -- still there for org A
+  expect(await User.findByPk(memberId)).not.toBeNull();
+  const finalTeamA = await request(app).get("/api/team").set(authHeader(tokenA));
+  expect(finalTeamA.body.pending_invites.map((i) => i.email)).toContain("second@teamorga.co");
+});

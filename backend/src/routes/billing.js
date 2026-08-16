@@ -129,6 +129,15 @@ router.post("/api/billing/checkout", requireAuth, async (req, res, next) => {
   }
 });
 
+// Pulled out on its own so it's directly unit-testable, same reasoning as
+// cancelReplacedSubscription/createCheckoutSession above -- a signed-in user
+// could hand-craft the confirm URL with someone else's real session_id;
+// without this check they could activate billing status onto their own org
+// using a stranger's completed payment.
+export function checkoutSessionBelongsToOrg(session, orgId) {
+  return session.metadata?.org_id === orgId;
+}
+
 // Called by the frontend immediately after Stripe redirects back to
 // success_url -- more reliable than waiting on the webhook alone, since
 // webhook delivery isn't guaranteed to land before the user's browser does.
@@ -144,10 +153,7 @@ router.get("/api/billing/confirm", requireAuth, requireStripeConfigured, async (
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
 
-    // A signed-in user could hand-craft this URL with someone else's real
-    // session_id -- without this check they could activate billing status
-    // onto their own org using a stranger's completed payment.
-    if (session.metadata?.org_id !== req.currentUser.orgId) {
+    if (!checkoutSessionBelongsToOrg(session, req.currentUser.orgId)) {
       return res.status(403).json({ detail: "This checkout session doesn't belong to your organization." });
     }
     if (session.status !== "complete") {
