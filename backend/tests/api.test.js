@@ -393,3 +393,70 @@ test("GET /api/invoices?sort orders by an allowlisted field, ignoring anything e
   res = await request(app).get("/api/invoices?sort=storagePath&order=asc").set(authHeader(token));
   expect(res.status).toBe(200);
 });
+
+test("deleting a matching source removes it and its entries, but keeps past match results", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org);
+
+  const csv = "vendor,amount,date,reference\nAcme Supplies Inc,1000.00,2026-01-05,PO-1\n";
+  let res = await request(app)
+    .post("/api/matching/sources?source_type=po")
+    .set(authHeader(token))
+    .attach("file", Buffer.from(csv), { filename: "po.csv", contentType: "text/csv" });
+  expect(res.status).toBe(201);
+  const sourceId = res.body.id;
+
+  res = await request(app).post("/api/matching/run").set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.matched).toBe(1);
+
+  const resultsBefore = await request(app).get("/api/matching/results").set(authHeader(token));
+  expect(resultsBefore.body).toHaveLength(1);
+  expect(resultsBefore.body[0].match_entry_id).not.toBeNull();
+
+  res = await request(app).delete(`/api/matching/sources/${sourceId}`).set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.ok).toBe(true);
+
+  const sourcesAfter = await request(app).get("/api/matching/sources").set(authHeader(token));
+  expect(sourcesAfter.body).toHaveLength(0);
+
+  // the match result from the deleted source is still there -- it's a
+  // record of a past evaluation, not something the source owns -- but it no
+  // longer points at a real entry.
+  const resultsAfter = await request(app).get("/api/matching/results").set(authHeader(token));
+  expect(resultsAfter.body).toHaveLength(1);
+  expect(resultsAfter.body[0].id).toBe(resultsBefore.body[0].id);
+  expect(resultsAfter.body[0].match_entry_id).toBeNull();
+
+  // re-running matching against the now-sourceless dataset shouldn't error
+  res = await request(app).post("/api/matching/run").set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.unmatched).toBe(1);
+
+  // deleting it again, or one that never existed, 404s the same way
+  const secondDelete = await request(app).delete(`/api/matching/sources/${sourceId}`).set(authHeader(token));
+  expect(secondDelete.status).toBe(404);
+  const bogus = await request(app).delete("/api/matching/sources/not-a-real-id").set(authHeader(token));
+  expect(bogus.status).toBe(404);
+});
+
+test("cannot delete another org's matching source", async () => {
+  const tokenA = await signup(app, request, { email: "sourcea@matchco.co" });
+  const tokenB = await signup(app, request, { email: "sourceb@matchco.co" });
+
+  const csv = "vendor,amount,date,reference\nAcme Supplies Inc,1000.00,2026-01-05,PO-1\n";
+  const uploadRes = await request(app)
+    .post("/api/matching/sources?source_type=po")
+    .set(authHeader(tokenA))
+    .attach("file", Buffer.from(csv), { filename: "po.csv", contentType: "text/csv" });
+  const sourceId = uploadRes.body.id;
+
+  const res = await request(app).delete(`/api/matching/sources/${sourceId}`).set(authHeader(tokenB));
+  expect(res.status).toBe(404);
+
+  // still there for its actual owner
+  const sourcesA = await request(app).get("/api/matching/sources").set(authHeader(tokenA));
+  expect(sourcesA.body).toHaveLength(1);
+});

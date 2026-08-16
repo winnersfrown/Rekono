@@ -123,6 +123,32 @@ router.get("/api/matching/sources", requireAuth, requireActivePlan, async (req, 
   }
 });
 
+router.delete("/api/matching/sources/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const source = await MatchSource.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!source) return res.status(404).json({ detail: "Source not found" });
+
+    const entryCount = await MatchEntry.count({ where: { sourceId: source.id } });
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      action: "match_source_deleted",
+      actor: req.currentUser.email,
+      details: { name: source.name, source_type: source.sourceType, entry_count: entryCount },
+    });
+
+    // Cascades to this source's MatchEntry rows (see models/index.js). Any
+    // MatchResult that was once matched against one of them keeps its own
+    // history -- match_entry_id just goes null -- since a match result is a
+    // record of a past evaluation, not something this source still owns.
+    await source.destroy();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/api/matching/run", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const sources = await MatchSource.findAll({ where: { orgId: req.currentUser.orgId }, attributes: ["id"] });

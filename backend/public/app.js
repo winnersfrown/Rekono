@@ -628,9 +628,28 @@ document.getElementById("source-form").addEventListener("submit", async (e) => {
 async function loadSources() {
   const res = await apiFetch("/api/matching/sources");
   const sources = await res.json();
-  document.getElementById("sources-list").innerHTML = "<h3>Uploaded sources</h3>" + (sources.map((s) => (
-    `<div>${escapeHtml(s.name)} (${s.source_type}) — ${s.entry_count} rows</div>`
-  )).join("") || "<div class='hint'>None yet.</div>");
+  const list = sources.map((s) => (
+    `<div class="source-row">
+      <span>${escapeHtml(s.name)} (${s.source_type}) — ${s.entry_count} rows</span>
+      <button type="button" class="source-delete" data-id="${s.id}" title="Delete" aria-label="Delete ${escapeHtml(s.name)}">&times;</button>
+    </div>`
+  )).join("") || "<div class='hint'>None yet.</div>";
+  document.getElementById("sources-list").innerHTML = `<h3>Uploaded sources</h3><div class="source-list">${list}</div>`;
+
+  document.querySelectorAll(".source-delete").forEach((btn) => {
+    btn.addEventListener("click", () => deleteSource(btn.dataset.id));
+  });
+}
+
+async function deleteSource(id) {
+  if (!confirm("Delete this source? Its uploaded rows will be removed; past matching results stay in your history.")) return;
+  const res = await apiFetch(`/api/matching/sources/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.detail || "Failed to delete source.");
+    return;
+  }
+  loadSources();
 }
 
 document.getElementById("run-matching-btn").addEventListener("click", async () => {
