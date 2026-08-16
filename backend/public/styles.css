@@ -233,7 +233,37 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .bulk-toolbar .hint { margin: 0 auto 0 0; font-weight: 600; color: var(--paper); }
 .bulk-toolbar button { padding: 0.4rem 0.75rem; font-size: 0.82rem; }
 
+.queue-search {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--paper);
+  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+.queue-search:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.15); }
+
 #invoice-table .row-select { cursor: pointer; }
+
+#invoice-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+#invoice-table th.sortable:hover { color: var(--paper); }
+#invoice-table th.sortable::after { content: ""; display: inline-block; width: 0.6em; }
+#invoice-table th.sortable.sort-active { color: var(--blue); }
+#invoice-table th.sortable.sort-active[data-order="asc"]::after { content: "\2191"; }
+#invoice-table th.sortable.sort-active[data-order="desc"]::after { content: "\2193"; }
+
+.queue-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+.queue-pagination button { padding: 0.35rem 0.75rem; font-size: 0.82rem; }
+.queue-pagination button:disabled { opacity: 0.4; cursor: default; }
 
 .queue-detail {
   background: var(--ink-900);

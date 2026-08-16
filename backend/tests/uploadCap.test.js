@@ -126,7 +126,7 @@ describe("GET /api/auth/me document usage", () => {
     await seedInvoices(org, 25); // fills the free plan's cap exactly
 
     const listRes = await request(app).get("/api/invoices").set(authHeader(token));
-    const deleteRes = await request(app).delete(`/api/invoices/${listRes.body[0].id}`).set(authHeader(token));
+    const deleteRes = await request(app).delete(`/api/invoices/${listRes.body.items[0].id}`).set(authHeader(token));
     expect(deleteRes.status).toBe(200);
 
     const meRes = await request(app).get("/api/auth/me").set(authHeader(token));
