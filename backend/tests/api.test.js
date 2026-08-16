@@ -286,7 +286,7 @@ test("deleting an invoice removes it from the list and detail views", async () =
   expect(res.body.ok).toBe(true);
 
   const listRes = await request(app).get("/api/invoices").set(authHeader(token));
-  expect(listRes.body.map((i) => i.id)).not.toContain(invoice.id);
+  expect(listRes.body.items.map((i) => i.id)).not.toContain(invoice.id);
 
   const detailRes = await request(app).get(`/api/invoices/${invoice.id}`).set(authHeader(token));
   expect(detailRes.status).toBe(404);
@@ -336,4 +336,60 @@ test("fetching a source file that no longer exists on disk returns a clean 404, 
   const res = await request(app).get(`/api/invoices/${invoice.id}/file`).set(authHeader(token));
   expect(res.status).toBe(404);
   expect(res.body.detail).not.toMatch(/\/tmp\//); // shouldn't leak the server-side storage path
+});
+
+test("GET /api/invoices paginates and reports the true total", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  for (let i = 0; i < 5; i++) await makeInvoice(org, { invoiceNumber: `INV-${i}` });
+
+  let res = await request(app).get("/api/invoices?page_size=2&page=1").set(authHeader(token));
+  expect(res.status).toBe(200);
+  expect(res.body.items).toHaveLength(2);
+  expect(res.body.total).toBe(5);
+  expect(res.body.page).toBe(1);
+  expect(res.body.page_size).toBe(2);
+
+  res = await request(app).get("/api/invoices?page_size=2&page=3").set(authHeader(token));
+  expect(res.body.items).toHaveLength(1); // 5 invoices, page 3 of size 2 has only the remainder
+  expect(res.body.total).toBe(5);
+
+  // page_size is bounded, not passed straight through
+  res = await request(app).get("/api/invoices?page_size=99999").set(authHeader(token));
+  expect(res.body.page_size).toBe(500);
+});
+
+test("GET /api/invoices?q searches vendor name and invoice number, case-insensitively", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await makeInvoice(org, { vendorName: "Acme Supplies Inc", invoiceNumber: "INV-100" });
+  await makeInvoice(org, { vendorName: "Best Bolts Co", invoiceNumber: "INV-200" });
+
+  let res = await request(app).get("/api/invoices?q=acme").set(authHeader(token));
+  expect(res.body.items).toHaveLength(1);
+  expect(res.body.items[0].vendor_name).toBe("Acme Supplies Inc");
+
+  res = await request(app).get("/api/invoices?q=INV-200").set(authHeader(token));
+  expect(res.body.items).toHaveLength(1);
+  expect(res.body.items[0].vendor_name).toBe("Best Bolts Co");
+
+  res = await request(app).get("/api/invoices?q=nonexistent-vendor").set(authHeader(token));
+  expect(res.body.items).toHaveLength(0);
+});
+
+test("GET /api/invoices?sort orders by an allowlisted field, ignoring anything else", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await makeInvoice(org, { vendorName: "Zeta Corp", total: 50, invoiceNumber: "A" });
+  await makeInvoice(org, { vendorName: "Alpha Corp", total: 500, invoiceNumber: "B" });
+
+  let res = await request(app).get("/api/invoices?sort=vendor_name&order=asc").set(authHeader(token));
+  expect(res.body.items.map((i) => i.vendor_name)).toEqual(["Alpha Corp", "Zeta Corp"]);
+
+  res = await request(app).get("/api/invoices?sort=total&order=desc").set(authHeader(token));
+  expect(res.body.items.map((i) => i.total)).toEqual([500, 50]);
+
+  // an unrecognized sort key falls back to the default rather than erroring or sorting arbitrarily
+  res = await request(app).get("/api/invoices?sort=storagePath&order=asc").set(authHeader(token));
+  expect(res.status).toBe(200);
 });

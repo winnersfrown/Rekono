@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { Router } from "express";
+import { Op, fn, col, where as sequelizeWhere } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
@@ -20,12 +21,64 @@ async function getOwnedInvoice(invoiceId, orgId, options = {}) {
   return invoice;
 }
 
+// A generous ceiling, not the everyday page size -- most callers (the
+// sidebar's recent-uploads list, the matching view's invoice lookup) still
+// just want "everything" and shouldn't have to think about pagination, but
+// an org with years of history shouldn't be able to force one query to
+// pull its entire table either.
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
+
+// Maps the API's snake_case sort names to the model attribute they sort by
+// -- deliberately a fixed allowlist rather than passing req.query.sort
+// straight through to Sequelize's `order`, which would let a caller sort
+// (or error the query) by any column on the table, including ones that
+// were never meant to be sortable from outside.
+const SORTABLE_FIELDS = {
+  created_at: "createdAt",
+  total: "total",
+  vendor_name: "vendorName",
+  overall_confidence: "overallConfidence",
+};
+
 router.get("/api/invoices", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const where = { orgId: req.currentUser.orgId };
     if (req.query.status) where.status = req.query.status;
-    const invoices = await Invoice.findAll({ where, order: [["createdAt", "DESC"]] });
-    res.json(invoices.map(serializeInvoiceListItem));
+
+    // Case-insensitive substring match against vendor name or invoice
+    // number -- the two fields someone would actually recognize an invoice
+    // by at a glance. LOWER(...) on both sides (rather than Op.iLike, which
+    // Postgres supports but SQLite doesn't) is what keeps this working the
+    // same way in dev/CI (SQLite) and production (Postgres).
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q) {
+      const needle = `%${q.toLowerCase()}%`;
+      where[Op.or] = [
+        sequelizeWhere(fn("LOWER", col("vendorName")), { [Op.like]: needle }),
+        sequelizeWhere(fn("LOWER", col("invoiceNumber")), { [Op.like]: needle }),
+      ];
+    }
+
+    const sortField = SORTABLE_FIELDS[req.query.sort] || "createdAt";
+    const sortOrder = req.query.order === "asc" ? "ASC" : "DESC";
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.page_size, 10) || DEFAULT_PAGE_SIZE));
+
+    const { rows, count } = await Invoice.findAndCountAll({
+      where,
+      order: [[sortField, sortOrder]],
+      limit: pageSize,
+      offset: (page - 1) * pageSize,
+    });
+
+    res.json({
+      items: rows.map(serializeInvoiceListItem),
+      total: count,
+      page,
+      page_size: pageSize,
+    });
   } catch (err) {
     next(err);
   }

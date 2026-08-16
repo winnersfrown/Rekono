@@ -61,7 +61,7 @@ test("orgs cannot see each others invoices", async () => {
 
   let res = await request(app).get("/api/invoices").set(authHeader(tokenB));
   expect(res.status).toBe(200);
-  expect(res.body).toEqual([]);
+  expect(res.body.items).toEqual([]);
 
   res = await request(app).get(`/api/invoices/${invoiceId}`).set(authHeader(tokenB));
   expect(res.status).toBe(404);
@@ -71,7 +71,7 @@ test("orgs cannot see each others invoices", async () => {
 
   res = await request(app).get("/api/invoices").set(authHeader(tokenA));
   expect(res.status).toBe(200);
-  expect(res.body).toHaveLength(1);
+  expect(res.body.items).toHaveLength(1);
 });
 
 test("PATCH /api/auth/me updates the caller's own full name", async () => {

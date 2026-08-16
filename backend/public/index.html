@@ -303,6 +303,7 @@
                 <button class="filter-btn" data-status="queued">Queued</button>
                 <button class="filter-btn" data-status="failed">Failed</button>
               </div>
+              <input type="search" id="invoice-search" class="queue-search" placeholder="Search vendor or invoice number…" aria-label="Search invoices" />
               <div id="bulk-toolbar" class="bulk-toolbar" style="display: none;">
                 <span id="bulk-toolbar-count" class="hint"></span>
                 <button type="button" class="approve" id="bulk-approve-btn">Approve</button>
@@ -311,10 +312,21 @@
               </div>
               <table id="invoice-table">
                 <thead>
-                  <tr><th style="width: 1.6rem;"><input type="checkbox" id="select-all-invoices" aria-label="Select all" /></th><th>Vendor</th><th>Total</th><th>Status</th><th>Conf.</th></tr>
+                  <tr>
+                    <th style="width: 1.6rem;"><input type="checkbox" id="select-all-invoices" aria-label="Select all" /></th>
+                    <th class="sortable" data-sort="vendor_name">Vendor</th>
+                    <th class="sortable" data-sort="total">Total</th>
+                    <th>Status</th>
+                    <th class="sortable" data-sort="overall_confidence">Conf.</th>
+                  </tr>
                 </thead>
                 <tbody></tbody>
               </table>
+              <div class="queue-pagination" id="queue-pagination">
+                <button type="button" id="queue-prev-page" class="btn-logout">Prev</button>
+                <span id="queue-page-info" class="hint"></span>
+                <button type="button" id="queue-next-page" class="btn-logout">Next</button>
+              </div>
             </div>
             <div class="queue-detail" id="queue-detail">
               <div class="empty-state">

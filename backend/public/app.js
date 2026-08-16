@@ -1,5 +1,22 @@
-const state = { statusFilter: "", selectedInvoiceId: null, selectedRowIds: new Set() };
+const state = {
+  statusFilter: "",
+  selectedInvoiceId: null,
+  selectedRowIds: new Set(),
+  searchQuery: "",
+  sortField: "created_at",
+  sortOrder: "desc",
+  page: 1,
+};
+const QUEUE_PAGE_SIZE = 25;
 let docPreviewObjectUrl = null;
+
+function debounce(fn, delayMs) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), delayMs);
+  };
+}
 
 // ---- Tabs ----
 // Sidebar nav items and the ask-hero's quick-action shortcuts both switch
@@ -90,10 +107,10 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 });
 
 async function loadRecentUploads() {
-  const res = await apiFetch("/api/invoices");
-  const invoices = await res.json();
+  const res = await apiFetch("/api/invoices?page_size=8");
+  const { items: invoices } = await res.json();
   const el = document.getElementById("sidebar-recent-uploads");
-  el.innerHTML = invoices.slice(0, 8).map((inv) => (
+  el.innerHTML = invoices.map((inv) => (
     `<div class="sidebar-recent-item">
       <button type="button" class="sidebar-recent-open" data-id="${inv.id}">
         <span class="sidebar-recent-name">${escapeHtml(inv.original_filename)}</span>
@@ -125,6 +142,7 @@ document.querySelectorAll(".filter-btn").forEach((btn) => {
     document.querySelectorAll(".filter-btn").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     state.statusFilter = btn.dataset.status;
+    state.page = 1;
     // A filter change swaps in a different working set -- carrying a bulk
     // selection across that would leave items selected that are no longer
     // even visible, which reads as broken rather than intentional.
@@ -134,9 +152,16 @@ document.querySelectorAll(".filter-btn").forEach((btn) => {
 });
 
 async function loadInvoices() {
-  const qs = state.statusFilter ? `?status=${state.statusFilter}` : "";
-  const res = await apiFetch(`/api/invoices${qs}`);
-  const invoices = await res.json();
+  const params = new URLSearchParams();
+  if (state.statusFilter) params.set("status", state.statusFilter);
+  if (state.searchQuery) params.set("q", state.searchQuery);
+  params.set("sort", state.sortField);
+  params.set("order", state.sortOrder);
+  params.set("page", state.page);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+
+  const res = await apiFetch(`/api/invoices?${params}`);
+  const { items: invoices, total } = await res.json();
 
   // Drop any previously-selected id that isn't in this render -- e.g. it
   // was deleted, or a status-filter change hid it -- so the toolbar's count
@@ -170,7 +195,56 @@ async function loadInvoices() {
   });
 
   renderBulkToolbar();
+  renderSortIndicators();
+  renderQueuePagination(total);
 }
+
+function renderSortIndicators() {
+  document.querySelectorAll("#invoice-table th.sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.sortField);
+    th.dataset.order = th.dataset.sort === state.sortField ? state.sortOrder : "";
+  });
+}
+
+function renderQueuePagination(total) {
+  const start = total === 0 ? 0 : (state.page - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.page * QUEUE_PAGE_SIZE);
+  document.getElementById("queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("queue-prev-page").disabled = state.page <= 1;
+  document.getElementById("queue-next-page").disabled = end >= total;
+}
+
+document.getElementById("invoice-search").addEventListener("input", debounce(() => {
+  state.searchQuery = document.getElementById("invoice-search").value.trim();
+  state.page = 1;
+  state.selectedRowIds.clear();
+  loadInvoices();
+}, 300));
+
+document.querySelectorAll("#invoice-table th.sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    if (state.sortField === th.dataset.sort) {
+      state.sortOrder = state.sortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.sortField = th.dataset.sort;
+      state.sortOrder = "asc";
+    }
+    state.page = 1;
+    loadInvoices();
+  });
+});
+
+document.getElementById("queue-prev-page").addEventListener("click", () => {
+  if (state.page <= 1) return;
+  state.page -= 1;
+  state.selectedRowIds.clear();
+  loadInvoices();
+});
+document.getElementById("queue-next-page").addEventListener("click", () => {
+  state.page += 1;
+  state.selectedRowIds.clear();
+  loadInvoices();
+});
 
 function renderBulkToolbar() {
   const count = state.selectedRowIds.size;
@@ -568,10 +642,10 @@ document.getElementById("run-matching-btn").addEventListener("click", async () =
 async function loadMatchResults() {
   const [resultsRes, invoicesRes] = await Promise.all([
     apiFetch("/api/matching/results"),
-    apiFetch("/api/invoices"),
+    apiFetch("/api/invoices?page_size=500"),
   ]);
   const results = await resultsRes.json();
-  const invoices = await invoicesRes.json();
+  const { items: invoices } = await invoicesRes.json();
   const invoiceById = Object.fromEntries(invoices.map((i) => [i.id, i]));
 
   // API returns results newest-first, so keep only the first (most recent) result per invoice.
