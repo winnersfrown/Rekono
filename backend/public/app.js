@@ -6,7 +6,9 @@ const state = {
   sortField: "created_at",
   sortOrder: "desc",
   page: 1,
+  askHistory: [],
 };
+const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
 let docPreviewObjectUrl = null;
 
@@ -699,12 +701,14 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
     const res = await apiFetch("/api/assistant/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history: state.askHistory }),
     });
     const body = await res.json();
     answerEl.classList.remove("ask-answer-loading");
     if (res.ok) {
       answerEl.textContent = body.answer;
+      state.askHistory.push({ role: "user", content: question }, { role: "assistant", content: body.answer });
+      state.askHistory = state.askHistory.slice(-MAX_ASK_HISTORY_MESSAGES);
     } else {
       answerEl.classList.add("ask-answer-error");
       answerEl.textContent = body.detail || "Something went wrong.";

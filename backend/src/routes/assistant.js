@@ -1,9 +1,10 @@
 // "Ask Rekono" -- a grounded Q&A assistant over the org's own invoice
 // data. Deliberately read-only: it answers questions, it doesn't take
 // actions (approve/reject/export/etc.), so there's no risk of an LLM
-// mistake mutating anyone's books. Each question is answered independently
-// -- no conversation memory across requests, which keeps the grounding
-// simple to reason about.
+// mistake mutating anyone's books. The client resends the visible thread
+// (capped below) with each question so follow-ups like "what about just
+// the unpaid ones" work, but nothing is persisted server-side -- there's
+// no stored conversation to clean up, and a page reload starts fresh.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { Router } from "express";
@@ -16,9 +17,36 @@ import { createRateLimiter } from "../rateLimit.js";
 
 const router = Router();
 
-const askSchema = z.object({ question: z.string().min(1).max(1000) });
+const historyEntrySchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().min(1).max(5000),
+});
+const askSchema = z.object({
+  question: z.string().min(1).max(1000),
+  history: z.array(historyEntrySchema).max(30).optional(),
+});
 
 const MAX_INVOICES_IN_CONTEXT = 300;
+
+// Only the last few exchanges -- enough for "what about just the unpaid
+// ones" to resolve against the previous answer, without letting the
+// context (and per-question token cost) grow unbounded over a long thread.
+const MAX_HISTORY_MESSAGES = 12; // 6 question/answer exchanges
+
+// The Anthropic API requires strict user/assistant alternation starting
+// with "user". The client always sends well-formed history, but this is a
+// public endpoint behind only auth -- a hand-crafted request with malformed
+// history should degrade to "answer without memory" rather than fail the
+// whole question.
+function sanitizeHistory(history) {
+  if (!Array.isArray(history)) return [];
+  const trimmed = history.slice(-MAX_HISTORY_MESSAGES);
+  for (let i = 0; i < trimmed.length; i++) {
+    const expectedRole = i % 2 === 0 ? "user" : "assistant";
+    if (trimmed[i].role !== expectedRole) return [];
+  }
+  return trimmed;
+}
 
 // Every question is a real Anthropic API call -- real money, not just server
 // load -- so this is bounded more like a cost control than a plain abuse
@@ -90,11 +118,13 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
       timeout: LLM_TIMEOUT_MS,
       maxRetries: LLM_MAX_RETRIES,
     });
+    const history = sanitizeHistory(parsed.data.history);
     const response = await client.messages.create({
       model: settings.anthropicModel,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       messages: [
+        ...history,
         {
           role: "user",
           content:

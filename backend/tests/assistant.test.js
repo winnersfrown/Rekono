@@ -53,3 +53,42 @@ test("rate limits after repeated questions from the same org in a short window",
   }
   expect(lastRes.status).toBe(429);
 });
+
+test("accepts a well-formed conversation history alongside the question", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .post("/api/assistant/ask")
+    .set(authHeader(token))
+    .send({
+      question: "What about just the unpaid ones?",
+      history: [
+        { role: "user", content: "How many invoices do I have?" },
+        { role: "assistant", content: "You have 4 invoices." },
+      ],
+    });
+  // No API key in the test env, so this still 503s -- the point is that a
+  // valid history payload clears schema validation rather than 422ing.
+  expect(res.status).toBe(503);
+});
+
+test("rejects a history entry with an invalid role", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .post("/api/assistant/ask")
+    .set(authHeader(token))
+    .send({ question: "Follow-up question", history: [{ role: "system", content: "not allowed" }] });
+  expect(res.status).toBe(422);
+});
+
+test("rejects an oversized history array", async () => {
+  const token = await signup(app, request);
+  const history = Array.from({ length: 31 }, (_, i) => ({
+    role: i % 2 === 0 ? "user" : "assistant",
+    content: `turn ${i}`,
+  }));
+  const res = await request(app)
+    .post("/api/assistant/ask")
+    .set(authHeader(token))
+    .send({ question: "Follow-up question", history });
+  expect(res.status).toBe(422);
+});
