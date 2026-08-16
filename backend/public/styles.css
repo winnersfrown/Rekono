@@ -933,6 +933,40 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   transform: none;
 }
 
+.source-list { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.75rem 0; }
+.source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 0.85rem;
+}
+.source-delete {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.source-delete:hover, .source-delete:focus-visible {
+  background: rgba(242, 84, 91, 0.14);
+  color: var(--red);
+  box-shadow: none;
+  transform: none;
+}
+
 .sidebar-footer {
   border-top: 1px solid var(--line-soft);
   padding-top: 0.85rem;
