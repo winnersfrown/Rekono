@@ -182,7 +182,7 @@ async function loadInvoices() {
       <td><span class="badge status-${inv.status}">${inv.status}</span></td>
       <td>${fmtPct(inv.overall_confidence)}</td>
     </tr>
-  `).join("") || "<tr><td colspan='5'>No invoices.</td></tr>";
+  `).join("") || "<tr><td colspan='5' class='table-empty-row'>No invoices.</td></tr>";
 
   tbody.querySelectorAll("tr[data-id]").forEach((row) => {
     row.addEventListener("click", () => selectInvoice(row.dataset.id));
@@ -401,7 +401,7 @@ function renderDetail(inv) {
 
     <table class="line-items-table">
       <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
-      <tbody id="line-items-body">${lineItemsRows || "<tr><td colspan='4'>No line items extracted.</td></tr>"}</tbody>
+      <tbody id="line-items-body">${lineItemsRows || "<tr><td colspan='4' class='table-empty-row'>No line items extracted.</td></tr>"}</tbody>
     </table>
 
     <h3>Matching</h3>
@@ -686,7 +686,7 @@ async function loadMatchResults() {
         <td>${escapeHtml(r.reasoning)}</td>
       </tr>
     `;
-  }).join("") || "<tr><td colspan='6'>No matching results yet.</td></tr>";
+  }).join("") || "<tr><td colspan='6' class='table-empty-row'>No matching results yet.</td></tr>";
 }
 
 // ---- Ask Rekono ----
