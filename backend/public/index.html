@@ -284,11 +284,13 @@
         <section id="tab-upload" class="tab-panel">
           <h1>Upload invoices</h1>
           <p class="hint">PDF or image (png/jpg/tiff/bmp/webp) — select one or several at once. Each is queued and processed asynchronously — check the Review Queue shortly after.</p>
-          <form id="upload-form">
-            <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple required />
-            <button type="submit">Upload</button>
-          </form>
-          <div id="upload-status"></div>
+          <div class="panel">
+            <form id="upload-form">
+              <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple required />
+              <button type="submit">Upload</button>
+            </form>
+            <div id="upload-status" class="hint"></div>
+          </div>
         </section>
 
         <section id="tab-review" class="tab-panel">
@@ -340,17 +342,19 @@
         <section id="tab-matching" class="tab-panel">
           <h1>Matching / Reconciliation</h1>
           <p class="hint">Upload a PO list or bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices.</p>
-          <form id="source-form">
-            <select id="source-type">
-              <option value="po">Purchase Orders</option>
-              <option value="bank">Bank Statement</option>
-            </select>
-            <input type="file" id="source-file" accept=".csv" required />
-            <button type="submit">Upload CSV</button>
-          </form>
-          <div id="sources-list"></div>
+          <div class="panel">
+            <form id="source-form">
+              <select id="source-type">
+                <option value="po">Purchase Orders</option>
+                <option value="bank">Bank Statement</option>
+              </select>
+              <input type="file" id="source-file" accept=".csv" required />
+              <button type="submit">Upload CSV</button>
+            </form>
+            <div id="sources-list"></div>
+          </div>
           <button id="run-matching-btn">Run Matching</button>
-          <div id="matching-summary"></div>
+          <div id="matching-summary" class="hint"></div>
           <table id="matching-table">
             <thead><tr><th>Invoice</th><th>Vendor</th><th>Total</th><th>Match Status</th><th>Score</th><th>Reasoning</th></tr></thead>
             <tbody></tbody>
@@ -360,16 +364,29 @@
         <section id="tab-export" class="tab-panel">
           <h1>Export</h1>
           <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
-          <a href="/api/export/csv"><button>Download CSV</button></a>
-          <a href="/api/export/xlsx"><button>Download Excel</button></a>
+          <div class="export-options">
+            <div class="export-card">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
+              <h3>CSV</h3>
+              <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
+              <a href="/api/export/csv"><button>Download CSV</button></a>
+            </div>
+            <div class="export-card">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
+              <h3>Excel</h3>
+              <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
+              <a href="/api/export/xlsx"><button>Download Excel</button></a>
+            </div>
+          </div>
         </section>
 
         <section id="tab-team" class="tab-panel">
           <h1>Team</h1>
           <p class="hint" id="team-seats-summary">Loading…</p>
-          <div id="team-invite-block" style="display: none;">
+          <div id="team-invite-block" class="panel" style="display: none;">
+            <h3>Invite a teammate</h3>
             <form id="team-invite-form">
-              <label>Invite by email<input type="email" id="team-invite-email" required /></label>
+              <label>Email<input type="email" id="team-invite-email" required /></label>
               <button type="submit">Send invite</button>
             </form>
             <div id="team-invite-status" class="hint"></div>
@@ -393,53 +410,63 @@
         <section id="tab-settings" class="tab-panel">
           <h1>Settings</h1>
 
-          <h3>Account</h3>
-          <form id="settings-account-form">
-            <label>Full name<input type="text" id="settings-account-name" maxlength="256" required /></label>
-            <button type="submit">Save</button>
-          </form>
-          <p class="hint">Email: <strong id="settings-account-email"></strong></p>
-          <div id="settings-account-status" class="hint"></div>
-
-          <h3 style="margin-top: 1.5rem;">Change password</h3>
-          <form id="settings-password-form" style="flex-wrap: wrap;">
-            <label>Current<input type="password" id="settings-password-current" autocomplete="current-password" required /></label>
-            <label>New<input type="password" id="settings-password-new" autocomplete="new-password" minlength="8" required /></label>
-            <label>Confirm<input type="password" id="settings-password-confirm" autocomplete="new-password" minlength="8" required /></label>
-            <button type="submit">Change password</button>
-          </form>
-          <div id="settings-password-status" class="hint"></div>
-
-          <h3 style="margin-top: 1.5rem;">Organization</h3>
-          <form id="settings-org-form">
-            <label>Organization name<input type="text" id="settings-org-name" maxlength="256" required /></label>
-            <button type="submit" id="settings-org-save-btn">Save</button>
-          </form>
-          <p class="hint" id="settings-org-readonly-note" style="display: none;">Only the account owner can rename the organization.</p>
-          <div id="settings-org-status" class="hint"></div>
-
-          <h3 style="margin-top: 1.5rem;">Billing</h3>
-          <p class="hint" id="settings-billing-summary">Loading…</p>
-          <button type="button" id="settings-manage-billing-btn" style="display: none;">Manage billing</button>
-          <button type="button" class="btn-upgrade" id="settings-billing-upgrade-btn" style="display: none;">Upgrade plan</button>
-          <div id="settings-billing-status" class="hint"></div>
-
-          <h3 style="margin-top: 1.5rem;">Review queue</h3>
-          <p class="hint">Confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
-          <div id="settings-confidence-locked" class="hint" style="display: none;">
-            Custom thresholds are a Business/Scale feature. You're on the <span id="settings-current-plan-name"></span> plan, using the default threshold of <strong id="settings-default-threshold-locked"></strong>.
-            <button type="button" class="btn-upgrade" id="settings-upgrade-btn">Upgrade plan</button>
+          <div class="panel">
+            <h3>Account</h3>
+            <form id="settings-account-form">
+              <label>Full name<input type="text" id="settings-account-name" maxlength="256" required /></label>
+              <button type="submit">Save</button>
+            </form>
+            <p class="hint">Email: <strong id="settings-account-email"></strong></p>
+            <div id="settings-account-status" class="hint"></div>
           </div>
-          <form id="settings-confidence-form" style="display: none;">
-            <label>
-              Flag anything below
-              <input type="number" id="settings-confidence-input" min="0" max="100" step="1" style="width: 5rem" required />%
-              confidence
-            </label>
-            <button type="submit">Save</button>
-            <button type="button" id="settings-confidence-reset">Reset to default (<span id="settings-default-threshold"></span>)</button>
-          </form>
-          <div id="settings-confidence-status" class="hint"></div>
+
+          <div class="panel">
+            <h3>Change password</h3>
+            <form id="settings-password-form" style="flex-wrap: wrap;">
+              <label>Current<input type="password" id="settings-password-current" autocomplete="current-password" required /></label>
+              <label>New<input type="password" id="settings-password-new" autocomplete="new-password" minlength="8" required /></label>
+              <label>Confirm<input type="password" id="settings-password-confirm" autocomplete="new-password" minlength="8" required /></label>
+              <button type="submit">Change password</button>
+            </form>
+            <div id="settings-password-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Organization</h3>
+            <form id="settings-org-form">
+              <label>Organization name<input type="text" id="settings-org-name" maxlength="256" required /></label>
+              <button type="submit" id="settings-org-save-btn">Save</button>
+            </form>
+            <p class="hint" id="settings-org-readonly-note" style="display: none;">Only the account owner can rename the organization.</p>
+            <div id="settings-org-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Billing</h3>
+            <p class="hint" id="settings-billing-summary">Loading…</p>
+            <button type="button" id="settings-manage-billing-btn" style="display: none;">Manage billing</button>
+            <button type="button" class="btn-upgrade" id="settings-billing-upgrade-btn" style="display: none;">Upgrade plan</button>
+            <div id="settings-billing-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Review queue</h3>
+            <p class="hint">Confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
+            <div id="settings-confidence-locked" class="hint" style="display: none;">
+              Custom thresholds are a Business/Scale feature. You're on the <span id="settings-current-plan-name"></span> plan, using the default threshold of <strong id="settings-default-threshold-locked"></strong>.
+              <button type="button" class="btn-upgrade" id="settings-upgrade-btn">Upgrade plan</button>
+            </div>
+            <form id="settings-confidence-form" style="display: none;">
+              <label>
+                Flag anything below
+                <input type="number" id="settings-confidence-input" min="0" max="100" step="1" style="width: 5rem" required />%
+                confidence
+              </label>
+              <button type="submit">Save</button>
+              <button type="button" id="settings-confidence-reset">Reset to default (<span id="settings-default-threshold"></span>)</button>
+            </form>
+            <div id="settings-confidence-status" class="hint"></div>
+          </div>
         </section>
       </main>
     </div>

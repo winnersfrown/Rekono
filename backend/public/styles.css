@@ -188,6 +188,59 @@ input:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.18);
 }
 
+/* The browser's own file-picker button ignores background/border overrides
+   on the input itself -- ::file-selector-button is the one part that's
+   actually restylable, so leaving it untouched is what makes a file input
+   look like a stray OS control next to every other custom-styled button. */
+input[type="file"]::file-selector-button,
+input[type="file"]::-webkit-file-upload-button {
+  background: var(--ink-800);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.8rem;
+  margin-right: 0.6rem;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+input[type="file"]:hover::file-selector-button,
+input[type="file"]:hover::-webkit-file-upload-button {
+  background: var(--ink-850);
+  border-color: var(--blue);
+}
+
+/* appearance:none clears the OS-drawn dropdown chrome (which the shared
+   input rule above can't touch) so a custom chevron can take its place. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235b6b8c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  padding-right: 2rem;
+}
+
+/* ---------- Panels: group a section's controls into a defined card,
+   matching .queue-detail's existing treatment -- Upload/Matching/Export/
+   Team/Settings used to float raw form rows directly on the blueprint-grid
+   background, which reads as unfinished next to the carded Review Queue. */
+.panel {
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.4rem 1.5rem;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.25rem;
+  max-width: 720px;
+}
+.panel h3:first-child { margin-top: 0; }
+.panel form:last-child, .panel > .hint:last-child, .panel > div:last-child { margin-bottom: 0; }
+
+.table-empty-row { text-align: center; color: var(--muted); padding: 1.5rem 0.85rem; }
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -284,6 +337,23 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 0.9rem; }
 .empty-state svg { color: var(--muted); opacity: 0.5; }
 .empty-state .hint { margin: 0; max-width: 30ch; }
+
+.export-options { display: flex; gap: 1rem; flex-wrap: wrap; max-width: 720px; }
+.export-card {
+  flex: 1 1 260px;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.6rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.export-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.export-card svg { color: var(--blue); }
+.export-card h3 { margin: 0.75rem 0 0.35rem; }
+.export-card .hint { margin-bottom: 1.1rem; }
+.export-card a { text-decoration: none; }
+.export-card button { width: 100%; }
 
 /* ---------- badges ---------- */
 .badge {
