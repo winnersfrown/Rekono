@@ -105,12 +105,25 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   // too would just fire the same GET /api/invoices twice per upload, and
   // doing it once after the whole batch (rather than per file) avoids firing
   // it N times for an N-file batch.
-  if (uploaded) bootstrapApp();
+  if (uploaded) {
+    invalidateCache("/api/invoices?");
+    bootstrapApp();
+  }
 });
 
 async function loadRecentUploads() {
-  const res = await apiFetch("/api/invoices?page_size=8");
-  const { items: invoices } = await res.json();
+  await cachedLoad(
+    "/api/invoices?page_size=8",
+    async () => {
+      const res = await apiFetch("/api/invoices?page_size=8");
+      const { items } = await res.json();
+      return items;
+    },
+    renderRecentUploads
+  );
+}
+
+function renderRecentUploads(invoices) {
   const el = document.getElementById("sidebar-recent-uploads");
   el.innerHTML = invoices.map((inv) => (
     `<div class="sidebar-recent-item">
@@ -161,10 +174,16 @@ async function loadInvoices() {
   params.set("order", state.sortOrder);
   params.set("page", state.page);
   params.set("page_size", QUEUE_PAGE_SIZE);
+  const url = `/api/invoices?${params}`;
 
-  const res = await apiFetch(`/api/invoices?${params}`);
-  const { items: invoices, total } = await res.json();
+  await cachedLoad(
+    url,
+    async () => (await apiFetch(url)).json(),
+    renderInvoices
+  );
+}
 
+function renderInvoices({ items: invoices, total }) {
   // Drop any previously-selected id that isn't in this render -- e.g. it
   // was deleted, or a status-filter change hid it -- so the toolbar's count
   // and the bulk actions never operate on rows the user can't currently see.
@@ -295,6 +314,7 @@ async function runBulkAction(action) {
   const summary = body.skipped.length
     ? `${body.succeeded.length} ${verb}, ${body.skipped.length} skipped.`
     : `${body.succeeded.length} ${verb}.`;
+  invalidateCache("/api/invoices?");
   loadInvoices();
   loadRecentUploads();
   if (state.selectedInvoiceId && ids.includes(state.selectedInvoiceId)) {
@@ -461,6 +481,7 @@ function pollWhileProcessing(id, attempt = 0) {
       pollWhileProcessing(id, attempt + 1);
     } else {
       renderDetail(inv);
+      invalidateCache("/api/invoices?");
       loadInvoices();
       loadRecentUploads();
     }
@@ -545,6 +566,7 @@ async function saveCorrections(id) {
   });
   const inv = await res.json();
   renderDetail(inv);
+  invalidateCache("/api/invoices?");
   loadInvoices();
 }
 
@@ -552,6 +574,7 @@ async function approveInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}/approve`, { method: "POST" });
   const inv = await res.json();
   renderDetail(inv);
+  invalidateCache("/api/invoices?");
   loadInvoices();
 }
 
@@ -559,6 +582,7 @@ async function rejectInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}/reject`, { method: "POST" });
   const inv = await res.json();
   renderDetail(inv);
+  invalidateCache("/api/invoices?");
   loadInvoices();
 }
 
@@ -574,6 +598,7 @@ async function retryInvoice(id) {
     return;
   }
   renderDetail(body);
+  invalidateCache("/api/invoices?");
   loadInvoices();
   loadRecentUploads();
 }
@@ -602,6 +627,7 @@ async function deleteInvoice(id) {
       </div>
     `;
   }
+  invalidateCache("/api/invoices?");
   loadInvoices();
   loadRecentUploads();
 }
@@ -622,12 +648,19 @@ document.getElementById("source-form").addEventListener("submit", async (e) => {
     return;
   }
   fileInput.value = "";
+  invalidateCache("/api/matching/sources");
   loadSources();
 });
 
 async function loadSources() {
-  const res = await apiFetch("/api/matching/sources");
-  const sources = await res.json();
+  await cachedLoad(
+    "/api/matching/sources",
+    async () => (await apiFetch("/api/matching/sources")).json(),
+    renderSources
+  );
+}
+
+function renderSources(sources) {
   const list = sources.map((s) => (
     `<div class="source-row">
       <span>${escapeHtml(s.name)} (${s.source_type}) — ${s.entry_count} rows</span>
@@ -649,6 +682,7 @@ async function deleteSource(id) {
     alert(body.detail || "Failed to delete source.");
     return;
   }
+  invalidateCache("/api/matching/sources");
   loadSources();
 }
 
@@ -657,16 +691,27 @@ document.getElementById("run-matching-btn").addEventListener("click", async () =
   const summary = await res.json();
   document.getElementById("matching-summary").textContent =
     `Evaluated ${summary.invoices_evaluated} invoices — matched ${summary.matched}, partial ${summary.partial}, unmatched ${summary.unmatched}.`;
+  invalidateCache("__matching_results__");
   loadMatchResults();
 });
 
 async function loadMatchResults() {
-  const [resultsRes, invoicesRes] = await Promise.all([
-    apiFetch("/api/matching/results"),
-    apiFetch("/api/invoices?page_size=500"),
-  ]);
-  const results = await resultsRes.json();
-  const { items: invoices } = await invoicesRes.json();
+  await cachedLoad(
+    "__matching_results__",
+    async () => {
+      const [resultsRes, invoicesRes] = await Promise.all([
+        apiFetch("/api/matching/results"),
+        apiFetch("/api/invoices?page_size=500"),
+      ]);
+      const results = await resultsRes.json();
+      const { items: invoices } = await invoicesRes.json();
+      return { results, invoices };
+    },
+    renderMatchResults
+  );
+}
+
+function renderMatchResults({ results, invoices }) {
   const invoiceById = Object.fromEntries(invoices.map((i) => [i.id, i]));
 
   // API returns results newest-first, so keep only the first (most recent) result per invoice.
@@ -746,10 +791,20 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
 // PLAN_NAMES/PLAN_ORDER/planSummaryText/openUpgradeModal come from auth.js
 // -- both scripts share the page's global scope (no bundler/modules here).
 async function loadOrgSettings() {
-  const [settingsRes, me] = await Promise.all([
-    apiFetch("/api/org/settings").then((r) => r.json()),
-    apiFetch("/api/auth/me").then((r) => r.json()),
-  ]);
+  await cachedLoad(
+    "__org_settings__",
+    async () => {
+      const [settingsRes, me] = await Promise.all([
+        apiFetch("/api/org/settings").then((r) => r.json()),
+        apiFetch("/api/auth/me").then((r) => r.json()),
+      ]);
+      return { settingsRes, me };
+    },
+    renderOrgSettings
+  );
+}
+
+function renderOrgSettings({ settingsRes, me }) {
   const isOwner = me.role === "owner";
 
   // Account
@@ -811,7 +866,10 @@ document.getElementById("settings-account-form").addEventListener("submit", asyn
     });
     const body = await res.json();
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
-    if (res.ok) showApp(body); // refreshes the sidebar name badge too
+    if (res.ok) {
+      invalidateCache("__org_settings__");
+      showApp(body); // refreshes the sidebar name badge too
+    }
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }
@@ -853,6 +911,7 @@ document.getElementById("settings-org-form").addEventListener("submit", async (e
     });
     const body = await res.json();
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) invalidateCache("__org_settings__");
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }
@@ -891,6 +950,7 @@ document.getElementById("settings-confidence-form").addEventListener("submit", a
     });
     const body = await res.json();
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) invalidateCache("__org_settings__");
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }
@@ -905,6 +965,7 @@ document.getElementById("settings-confidence-reset").addEventListener("click", a
       body: JSON.stringify({ confidence_threshold: null }),
     });
     statusEl.textContent = "Reset to default.";
+    invalidateCache("__org_settings__");
     loadOrgSettings();
   } catch (err) {
     statusEl.textContent = err.message || String(err);
@@ -913,9 +974,20 @@ document.getElementById("settings-confidence-reset").addEventListener("click", a
 
 // ---- Team ----
 async function loadTeam() {
-  const res = await apiFetch("/api/team");
-  const data = await res.json();
-  const me = await (await apiFetch("/api/auth/me")).json();
+  await cachedLoad(
+    "__team__",
+    async () => {
+      const [data, me] = await Promise.all([
+        apiFetch("/api/team").then((r) => r.json()),
+        apiFetch("/api/auth/me").then((r) => r.json()),
+      ]);
+      return { data, me };
+    },
+    renderTeam
+  );
+}
+
+function renderTeam({ data, me }) {
   const isOwner = me.role === "owner";
 
   const seatText = data.seat_limit === null ? `${data.seats_used} seats used (unlimited)` : `${data.seats_used} of ${data.seat_limit} seats used`;
@@ -946,6 +1018,7 @@ async function loadTeam() {
     btn.addEventListener("click", async () => {
       if (!confirm("Remove this teammate from your account?")) return;
       await apiFetch(`/api/team/members/${btn.dataset.userId}`, { method: "DELETE" });
+      invalidateCache("__team__");
       loadTeam();
     });
   });
@@ -967,6 +1040,7 @@ async function loadTeam() {
   invitesBody.querySelectorAll(".team-revoke-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       await apiFetch(`/api/team/invites/${btn.dataset.inviteId}`, { method: "DELETE" });
+      invalidateCache("__team__");
       loadTeam();
     });
   });
@@ -991,6 +1065,7 @@ document.getElementById("team-invite-form").addEventListener("submit", async (e)
     statusEl.textContent = body.email_sent
       ? `Invite sent to ${body.email}.`
       : `Invite created for ${body.email}. Email wasn't sent (no RESEND_API_KEY configured) — share this link with them: ${body.invite_url}`;
+    invalidateCache("__team__");
     loadTeam();
   } catch (err) {
     statusEl.textContent = err.message || String(err);

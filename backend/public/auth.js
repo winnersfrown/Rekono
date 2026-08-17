@@ -77,6 +77,42 @@ async function apiFetch(url, options = {}) {
   return res;
 }
 
+// ---- Stale-while-revalidate cache for the tab views (app.js's load*
+// functions) ----
+// Switching back to a tab already visited this session used to always
+// blank it out and block on a network round trip before showing anything.
+// cachedLoad renders whatever's cached for `cacheKey` immediately (if any),
+// then always fetches a fresh copy in the background and re-renders only if
+// the response actually changed -- so a cached render is never more than
+// one round trip stale, and an unchanged response doesn't cause a
+// pointless re-render (which would rebuild the DOM and rebind every event
+// listener in it for nothing).
+//
+// Not a general response cache: it's scoped to the handful of GET views
+// app.js reloads by calling the same load*() function repeatedly, and a
+// mutation that changes what one of those views shows (approve/reject/
+// delete an invoice, add/remove a team member, ...) calls invalidateCache()
+// for its prefix right before reloading, so the view the user just acted on
+// always re-fetches instead of flashing what's now stale cached data.
+const apiCache = new Map();
+
+function invalidateCache(prefix) {
+  for (const key of apiCache.keys()) {
+    if (key.startsWith(prefix)) apiCache.delete(key);
+  }
+}
+
+async function cachedLoad(cacheKey, fetcher, render) {
+  const cached = apiCache.get(cacheKey);
+  if (cached !== undefined) render(cached);
+
+  const data = await fetcher();
+  const changed = cached === undefined || JSON.stringify(cached) !== JSON.stringify(data);
+  apiCache.set(cacheKey, data);
+  if (changed) render(data);
+  return data;
+}
+
 function showAuthGate() {
   document.getElementById("auth-gate").style.display = "flex";
   document.getElementById("onboarding-gate").style.display = "none";
