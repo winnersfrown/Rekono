@@ -47,6 +47,27 @@ export const Organization = sequelize.define(
     // effectiveConfidenceThreshold). Nullable with no default so plans
     // without the feature, and orgs that never touch it, are unaffected.
     confidenceThreshold: { type: DataTypes.FLOAT, allowNull: true },
+
+    // QuickBooks Online (Phase 1: sandbox OAuth connect + manual one-way
+    // bill push -- see quickbooks.js and routes/integrations.js). realmId
+    // is Intuit's company-file identifier, returned alongside the OAuth
+    // code and required on every subsequent Accounting API call. Tokens are
+    // stored server-side (never returned to the frontend, same as
+    // stripeCustomerId etc.) -- refreshToken is the long-lived one (100
+    // days, itself refreshed on use); accessToken is short-lived (1 hour).
+    // All nullable with no default: a disconnected org simply has all of
+    // these null, and "connected" is defined as realmId !== null.
+    quickbooksRealmId: { type: DataTypes.STRING(64), allowNull: true },
+    quickbooksAccessToken: { type: DataTypes.TEXT, allowNull: true },
+    quickbooksRefreshToken: { type: DataTypes.TEXT, allowNull: true },
+    quickbooksAccessTokenExpiresAt: { type: DataTypes.DATE, allowNull: true },
+    quickbooksRefreshTokenExpiresAt: { type: DataTypes.DATE, allowNull: true },
+    // Expense account an org picks (from GET /api/integrations/quickbooks/accounts)
+    // as the default line-item account on every Bill pushed to QuickBooks.
+    // Name is denormalized alongside the id purely for display, same
+    // reasoning as Invoice's duplicateOfFilename.
+    quickbooksDefaultExpenseAccountId: { type: DataTypes.STRING(64), allowNull: true },
+    quickbooksDefaultExpenseAccountName: { type: DataTypes.STRING(256), allowNull: true },
   },
   { tableName: "organizations", updatedAt: false, createdAt: "createdAt" }
 );

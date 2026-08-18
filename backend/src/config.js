@@ -61,4 +61,14 @@ export const settings = {
   // crashing, same graceful-degradation pattern as Resend/Stripe above.
   googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+
+  // QuickBooks Online integration (routes/integrations.js, quickbooks.js).
+  // Unset QUICKBOOKS_CLIENT_ID -> those routes respond 503 instead of
+  // crashing, same graceful-degradation pattern as Resend/Stripe/Google
+  // above. Defaults to Intuit's Sandbox environment (no app-review needed)
+  // -- set QUICKBOOKS_ENVIRONMENT=production only once the Intuit app has
+  // passed production review.
+  quickbooksClientId: process.env.QUICKBOOKS_CLIENT_ID || "",
+  quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || "",
+  quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || "sandbox",
 };

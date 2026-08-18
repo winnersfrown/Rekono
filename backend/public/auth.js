@@ -696,6 +696,31 @@ function handleGoogleAuthReturn(status, code, reason) {
     });
 }
 
+// QuickBooks redirects back here after /api/integrations/quickbooks/callback
+// -- either ?quickbooks=connected or ?quickbooks=error&reason=<code>. Unlike
+// Google/Stripe's redirects above, this one always happens to an
+// already-logged-in session (connecting QuickBooks is a settings action, not
+// part of signing in), so there's no token/code to hand off here -- just
+// re-confirm the existing session and land back on the Settings tab where
+// the user started.
+const QUICKBOOKS_ERROR_MESSAGES = {
+  state_mismatch: "QuickBooks connection failed (session expired). Please try again.",
+  denied: "QuickBooks connection was cancelled.",
+  oauth_failed: "QuickBooks connection failed. Please try again.",
+};
+
+function handleQuickbooksReturn(status, reason) {
+  history.replaceState(null, "", location.pathname);
+  bootstrapApp().then(() => {
+    if (typeof switchTab !== "function") return;
+    switchTab("settings");
+    const statusEl = document.getElementById("settings-quickbooks-status");
+    if (!statusEl) return;
+    statusEl.textContent =
+      status === "connected" ? "QuickBooks connected." : QUICKBOOKS_ERROR_MESSAGES[reason] || "QuickBooks connection failed. Please try again.";
+  });
+}
+
 // A reset link takes priority over any existing session -- someone who
 // clicked it clearly wants to set a new password, not silently land back in
 // an already-logged-in app. Strip the token from the visible URL/history
@@ -704,6 +729,7 @@ const resetTokenFromUrl = new URLSearchParams(location.search).get("reset_token"
 const inviteTokenFromUrl = new URLSearchParams(location.search).get("invite_token");
 const checkoutParam = new URLSearchParams(location.search).get("checkout");
 const googleAuthParam = new URLSearchParams(location.search).get("google_auth");
+const quickbooksParam = new URLSearchParams(location.search).get("quickbooks");
 if (resetTokenFromUrl) {
   pendingResetToken = resetTokenFromUrl;
   history.replaceState(null, "", location.pathname);
@@ -723,6 +749,8 @@ if (resetTokenFromUrl) {
 } else if (googleAuthParam === "success" || googleAuthParam === "error") {
   const params = new URLSearchParams(location.search);
   handleGoogleAuthReturn(googleAuthParam, params.get("code"), params.get("reason"));
+} else if (quickbooksParam === "connected" || quickbooksParam === "error") {
+  handleQuickbooksReturn(quickbooksParam, new URLSearchParams(location.search).get("reason"));
 } else {
   bootstrapApp();
 }

@@ -434,6 +434,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .actions .save:hover { background: var(--ink-800); border-color: var(--blue); box-shadow: var(--shadow-sm); transform: translateY(-1.5px); }
 .actions .retry { background: transparent; color: var(--blue-bright); border: 1px solid var(--blue); }
 .actions .retry:hover { background: var(--blue); color: #04081a; box-shadow: var(--shadow-glow); transform: translateY(-1.5px); }
+.actions .qb-push { background: transparent; color: var(--blue-bright); border: 1px solid var(--blue); }
+.actions .qb-push:hover:not(:disabled) { background: var(--blue); color: #04081a; box-shadow: var(--shadow-glow); transform: translateY(-1.5px); }
+.actions .qb-push:disabled { opacity: 0.55; cursor: default; }
 /* Outlined rather than solid-filled like approve/reject -- deliberately a
    little less prominent, since this is a rarer, less-reversible action than
    the two core review-workflow buttons next to it. */
