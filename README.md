@@ -193,6 +193,13 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/export/csv` \| `/api/export/xlsx` | Export all invoices with status + latest match result |
 | `POST /api/assistant/ask` | Ask a question about this org's invoices; answered by Claude grounded in that data only. Optional `history` (last few `{role, content}` turns) carries conversation context for follow-up questions -- nothing is persisted server-side |
 | `POST /api/contact` | Public (no auth) -- the marketing site's "Talk to us" form. Rate-limited, honeypot-protected. |
+| `GET /api/integrations/quickbooks/status` | Whether QuickBooks is configured server-side and whether this org has connected, plus the chosen default expense account |
+| `GET /api/integrations/quickbooks/connect` | Returns an `authorize_url` to redirect the browser to (requires `QUICKBOOKS_CLIENT_ID`) |
+| `GET /api/integrations/quickbooks/callback` | Intuit redirects back here after consent; exchanges the code for tokens and redirects to `/` |
+| `GET /api/integrations/quickbooks/accounts` | This org's QuickBooks expense accounts, for the default-account picker |
+| `PATCH /api/integrations/quickbooks/default-account` | `{account_id, account_name}` -- sets which expense account new Bills are pushed against |
+| `POST /api/integrations/quickbooks/disconnect` | Clears this org's QuickBooks connection |
+| `POST /api/integrations/quickbooks/invoices/:id/push` | Pushes one invoice to QuickBooks as a Bill (one-way, manual, Phase 1 -- see Roadmap) |
 
 ## Configuration
 
@@ -200,7 +207,7 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 
 ### Secrets & API keys
 
-Every secret this app uses (`ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
+Every secret this app uses (`ANTHROPIC_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
 
 - They're never sent to the browser. `backend/public/` is plain static HTML/JS with no build/bundling step, so there's no risk of a secret accidentally getting compiled into client-side code the way there can be in a bundled frontend -- the server-side `config.js` module is never loaded there in the first place.
 - They're never echoed back in an API response, including error responses -- an unexpected server error (a DB failure, a bug) logs its full detail server-side but only ever returns a generic `"Internal server error"` to the caller (`app.js`'s `handleUnexpectedError`), so a stray internal error message can't leak connection strings or other detail. Every deliberate error response (validation, auth, plan gating) is written by hand in its own route and never includes secret material.
@@ -252,6 +259,16 @@ The "Sign in with Google" button needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
 4. Copy the generated **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Render/Fly dashboard, or `.env` locally).
 5. No new database columns or account-linking table: a Google sign-in is matched to an existing account purely by verified email, and creates a new org + user (same as a normal signup, sent through the same onboarding wizard) if there's no match yet. See `completeGoogleLogin` in `routes/auth.js`.
 
+### QuickBooks Online (Phase 1)
+
+The Settings tab's "Integrations" panel needs `QUICKBOOKS_CLIENT_ID`/`QUICKBOOKS_CLIENT_SECRET` set, or it shows "QuickBooks isn't set up yet" instead of a Connect button (every other route works regardless). Phase 1 is deliberately scoped: OAuth connect against Intuit's free Sandbox company file, a default-expense-account picker, and a manual, one-way, per-invoice "Push to QuickBooks" button that creates a Bill. No sync-back, no bulk push, no push-on-approve automation yet -- see Roadmap.
+
+1. Create an app at the [Intuit Developer Portal](https://developer.intuit.com) (**My Apps → Create an app → QuickBooks Online and Payments**).
+2. Under the app's **Keys & OAuth** tab, copy the **Sandbox** **Client ID**/**Client Secret** into `QUICKBOOKS_CLIENT_ID`/`QUICKBOOKS_CLIENT_SECRET`. Leave `QUICKBOOKS_ENVIRONMENT` unset (defaults to `sandbox`) -- no Intuit app-review is required for Sandbox use, only for Production.
+3. Under **Redirect URIs**, add `https://<your-deployed-url>/api/integrations/quickbooks/callback` (and `http://localhost:8000/api/integrations/quickbooks/callback` for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/integrations/quickbooks/callback`.
+4. The Developer Portal also provides a free Sandbox company file (**Sandbox** tab) to connect against and inspect pushed Bills in.
+5. Connecting stores tokens per-org on `Organization` (`quickbooksAccessToken`/`quickbooksRefreshToken`, both nullable so a disconnected org just has `null`s -- see `models/Organization.js`); access tokens auto-refresh on use (`ensureFreshToken` in `quickbooks.js`). Going to Production later means switching `QUICKBOOKS_ENVIRONMENT=production`, swapping in Production keys, and passing Intuit's app-assessment review (token storage/data retention, roughly 2-3 weeks) -- Sandbox needs none of that.
+
 ## Roadmap (beyond this MVP)
 
 Deliberately not built yet, to keep the MVP demoable and honest about what's real:
@@ -259,7 +276,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Email ingestion** (forward invoices to a dedicated address) and **watched folder/Drive integration** — additive front-ends onto `storage.js`'s upload handling + the existing job queue.
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
-- **Accounting software integrations**: push approved invoices to QuickBooks/Xero/NetSuite via API/webhook — this is what makes it sellable rather than a CSV toy, and the natural next step once export is validated with a design partner.
+- **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, sync-back (payment status), and Xero/NetSuite support — this is what makes it sellable rather than a CSV toy.
 - **Dashboard**: exceptions queue, reconciliation status, aging report, once there's enough volume for those views to matter.
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.

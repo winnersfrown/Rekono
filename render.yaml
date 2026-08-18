@@ -64,3 +64,7 @@ services:
         sync: false # optional -- enables "Sign in with Google" (email/password works without it)
       - key: GOOGLE_CLIENT_SECRET
         sync: false # optional, pairs with GOOGLE_CLIENT_ID -- see README's "Sign in with Google" section
+      - key: QUICKBOOKS_CLIENT_ID
+        sync: false # optional -- enables the Settings tab's QuickBooks integration
+      - key: QUICKBOOKS_CLIENT_SECRET
+        sync: false # optional, pairs with QUICKBOOKS_CLIENT_ID -- see README's "QuickBooks Online (Phase 1)" section

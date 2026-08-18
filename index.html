@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rekono — Invoice extraction and reconciliation, checked before it hits your books</title>
@@ -9,9 +12,14 @@
 <meta property="og:title" content="Rekono — Invoice extraction and reconciliation, checked before it hits your books">
 <meta property="og:description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
 <meta property="og:url" content="https://winnersfrown.github.io/Rekono/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://winnersfrown.github.io/Rekono/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Rekono — Every invoice, read, checked, and reconciled before it touches your books.">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Rekono — Invoice extraction and reconciliation, checked before it hits your books">
 <meta name="twitter:description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
+<meta name="twitter:image" content="https://winnersfrown.github.io/Rekono/og-image.png">
 <style>
   @font-face {
     font-family: 'Bitter';
@@ -849,7 +857,32 @@
   .contact-status.status-ok { background: rgba(62,203,132,0.1); border: 1px solid rgba(62,203,132,0.3); color: var(--green); }
   .contact-status.status-error { background: rgba(232,169,59,0.1); border: 1px solid rgba(232,169,59,0.3); color: var(--amber); }
   .contact-status a { color: inherit; text-decoration: underline; }
+
+  /* ---------- sticky mobile CTA ---------- */
+  /* Hidden by default (desktop already has the header's "Get started"
+     button); on narrow viewports the header CTA gets cramped next to the
+     wordmark, so this bottom bar gives a full-width, thumb-reachable CTA
+     instead. body padding-bottom keeps the footer/final-CTA from being
+     covered by it. */
+  .mobile-sticky-cta { display: none; }
+  @media (max-width: 640px) {
+    body { padding-bottom: 78px; }
+    .mobile-sticky-cta {
+      display: flex;
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 50;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+      background: rgba(244, 247, 253, 0.94);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--line);
+      box-shadow: var(--shadow-lg);
+    }
+    .mobile-sticky-cta .btn { width: 100%; justify-content: center; }
+  }
 </style>
+</head>
+<body>
 <noscript><style>.reveal{opacity:1!important;transform:none!important;}</style></noscript>
 
 
@@ -1219,7 +1252,7 @@
         </details>
         <details class="faq-item reveal">
           <summary>Do you integrate with QuickBooks, Xero, or NetSuite?<span class="q-mark">+</span></summary>
-          <div class="a">Not yet. CSV and Excel export ship today, built on the same data those integrations will need — direct sync is next on the roadmap as we work with early customers.</div>
+          <div class="a">QuickBooks Online is live — connect your account and push an approved invoice to QuickBooks as a Bill in one click. Xero and NetSuite are next on the roadmap, along with deeper QuickBooks automation (bulk push, sync-back).</div>
         </details>
         <details class="faq-item reveal">
           <summary>Can I self-host it?<span class="q-mark">+</span></summary>
@@ -1267,12 +1300,16 @@
 </footer>
 
 
+<div class="mobile-sticky-cta">
+  <a href="https://rekono-crv7.onrender.com/" class="btn btn-primary">Get started free</a>
+</div>
+
 <div id="contact-modal" class="contact-modal" aria-hidden="true">
   <div class="contact-modal-backdrop" data-close-modal></div>
   <div class="contact-modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title">
     <button type="button" class="contact-modal-close" data-close-modal aria-label="Close">&times;</button>
     <h2 id="contact-modal-title">Talk to us</h2>
-    <p class="hint">Tell us a bit about what you're looking for and we'll get back to you.</p>
+    <p class="hint">Tell us a bit about what you're looking for — we reply within 1 business day.</p>
     <form id="contact-form">
       <label>Name<input type="text" id="contact-name" required maxlength="256" /></label>
       <label>Email<input type="email" id="contact-email" required /></label>
@@ -1385,7 +1422,7 @@
       })
       .then(function (result) {
         if (result.ok) {
-          showStatus('ok', "Message sent \u2014 we'll get back to you soon.");
+          showStatus('ok', "Message sent \u2014 we'll get back to you within 1 business day.");
           form.reset();
         } else {
           showStatus(
@@ -1422,4 +1459,26 @@
 
   <script defer data-domain="YOUR-DOMAIN-HERE" src="https://plausible.io/js/script.js"></script>
 -->
+
+<!--
+  Optional Google Analytics (GA4) -- also off by default, same reasoning as
+  Plausible above: this repo can't create a Google Analytics account or
+  measurement ID on your behalf. To turn it on: create a GA4 property at
+  https://analytics.google.com, copy its Measurement ID (looks like
+  "G-XXXXXXXXXX", found under Admin -> Data Streams -> your web stream),
+  replace G-XXXXXXXXXX in both places below with it, and uncomment both
+  script tags. Unlike Plausible, GA4 sets cookies and tracks across
+  sessions -- check whether your jurisdiction requires a cookie-consent
+  banner before enabling it (Plausible above needs none).
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+-->
+</body>
+</html>
 

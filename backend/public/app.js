@@ -7,6 +7,7 @@ const state = {
   sortOrder: "desc",
   page: 1,
   askHistory: [],
+  quickbooksConnected: false,
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
@@ -33,7 +34,7 @@ function switchTab(name) {
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
   if (name === "matching") { loadSources(); loadMatchResults(); }
-  if (name === "settings") loadOrgSettings();
+  if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
 }
 
@@ -432,6 +433,7 @@ function renderDetail(inv) {
       <button class="approve" id="btn-approve">Approve</button>
       <button class="reject" id="btn-reject">Reject</button>
       ${inv.status !== "approved" ? `<button class="retry" id="btn-retry">Retry Extraction</button>` : ""}
+      ${state.quickbooksConnected ? `<button class="qb-push" id="btn-qb-push" ${inv.quickbooks_bill_id ? "disabled" : ""}>${inv.quickbooks_bill_id ? "Pushed to QuickBooks" : "Push to QuickBooks"}</button>` : ""}
       <button class="delete" id="btn-delete">Delete</button>
     </div>
 
@@ -445,6 +447,7 @@ function renderDetail(inv) {
   document.getElementById("btn-approve").addEventListener("click", () => approveInvoice(inv.id));
   document.getElementById("btn-reject").addEventListener("click", () => rejectInvoice(inv.id));
   document.getElementById("btn-retry")?.addEventListener("click", () => retryInvoice(inv.id));
+  document.getElementById("btn-qb-push")?.addEventListener("click", () => pushInvoiceToQuickbooks(inv.id));
   document.getElementById("btn-delete").addEventListener("click", () => deleteInvoice(inv.id));
 
   loadDocPreview(inv);
@@ -601,6 +604,27 @@ async function retryInvoice(id) {
   invalidateCache("/api/invoices?");
   loadInvoices();
   loadRecentUploads();
+}
+
+async function pushInvoiceToQuickbooks(id) {
+  const btn = document.getElementById("btn-qb-push");
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Pushing…";
+  }
+  try {
+    const res = await apiFetch(`/api/integrations/quickbooks/invoices/${id}/push`, { method: "POST" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not push to QuickBooks.");
+    const inv = await (await apiFetch(`/api/invoices/${id}`)).json();
+    renderDetail(inv);
+  } catch (err) {
+    alert(err.message || String(err));
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Push to QuickBooks";
+    }
+  }
 }
 
 // No status restriction on the backend -- a document can be deleted at any
@@ -972,6 +996,94 @@ document.getElementById("settings-confidence-reset").addEventListener("click", a
   }
 });
 
+// ---- QuickBooks integration ----
+async function loadQuickbooksStatus() {
+  await cachedLoad("__quickbooks__", async () => (await apiFetch("/api/integrations/quickbooks/status")).json(), renderQuickbooksStatus);
+}
+
+async function renderQuickbooksStatus(status) {
+  state.quickbooksConnected = status.connected;
+  document.getElementById("settings-quickbooks-status").textContent = "";
+
+  // connected always wins, even in the (only ever config-drift) case where
+  // QUICKBOOKS_CLIENT_ID was unset after a connection was already made --
+  // otherwise "not set up yet" and "connected" could show at once.
+  document.getElementById("qb-unconfigured").style.display = !status.configured && !status.connected ? "block" : "none";
+  document.getElementById("qb-disconnected").style.display = status.configured && !status.connected ? "block" : "none";
+  document.getElementById("qb-connected").style.display = status.connected ? "block" : "none";
+  if (!status.connected) return;
+
+  const select = document.getElementById("qb-default-account");
+  select.innerHTML = `<option value="">Choose an account…</option>`;
+  if (status.default_expense_account_id) {
+    select.innerHTML += `<option value="${status.default_expense_account_id}" selected>${escapeHtml(status.default_expense_account_name || status.default_expense_account_id)}</option>`;
+  }
+
+  try {
+    const res = await apiFetch("/api/integrations/quickbooks/accounts");
+    const accounts = await res.json();
+    if (!res.ok) return; // leave the current selection showing rather than clearing it on a transient failure
+    select.innerHTML =
+      `<option value="">Choose an account…</option>` +
+      accounts
+        .map(
+          (a) =>
+            `<option value="${a.id}" ${a.id === status.default_expense_account_id ? "selected" : ""}>${escapeHtml(a.name)}</option>`
+        )
+        .join("");
+  } catch {
+    // Accounts list failed to load (e.g. token expired) -- the previously
+    // saved default still shows via the option added above, just without
+    // the rest of the list to pick a different one from until this
+    // succeeds.
+  }
+}
+
+document.getElementById("qb-connect-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-quickbooks-status");
+  statusEl.textContent = "";
+  try {
+    const res = await apiFetch("/api/integrations/quickbooks/connect");
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not connect to QuickBooks.");
+    window.location.href = body.authorize_url;
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("qb-disconnect-btn").addEventListener("click", async () => {
+  if (!confirm("Disconnect QuickBooks? You can reconnect at any time.")) return;
+  const statusEl = document.getElementById("settings-quickbooks-status");
+  try {
+    const res = await apiFetch("/api/integrations/quickbooks/disconnect", { method: "POST" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not disconnect QuickBooks.");
+    invalidateCache("__quickbooks__");
+    renderQuickbooksStatus(body);
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("qb-default-account").addEventListener("change", async (e) => {
+  const option = e.target.selectedOptions[0];
+  const statusEl = document.getElementById("settings-quickbooks-status");
+  if (!option || !option.value) return;
+  try {
+    const res = await apiFetch("/api/integrations/quickbooks/default-account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: option.value, account_name: option.textContent }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Default account saved." : body.detail || "Something went wrong.";
+    if (res.ok) invalidateCache("__quickbooks__");
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
 // ---- Team ----
 async function loadTeam() {
   await cachedLoad(
@@ -1077,4 +1189,7 @@ document.getElementById("team-invite-form").addEventListener("submit", async (e)
 // since there's nothing to load until we know the user is authenticated).
 function onAuthenticated() {
   loadRecentUploads();
+  // Needed early (not just when the Settings tab is opened) so the invoice
+  // detail panel's "Push to QuickBooks" button knows whether to show up.
+  loadQuickbooksStatus();
 }

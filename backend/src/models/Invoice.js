@@ -56,6 +56,14 @@ export const Invoice = sequelize.define(
     // independent of confidence, same reasoning as duplicateOf* above.
     possibleMultiInvoice: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     possibleMultiInvoiceReason: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+
+    // Set once this invoice has been pushed to QuickBooks Online as a Bill
+    // (see routes/integrations.js's push route) -- Intuit's Bill.Id for the
+    // created object, used both to show "Pushed" in the UI and to prevent a
+    // duplicate push of the same invoice. Null until pushed; nullable with
+    // no default like every column added after this session's schema-drift
+    // incidents.
+    quickbooksBillId: { type: DataTypes.STRING(64), allowNull: true },
   },
   {
     tableName: "invoices",

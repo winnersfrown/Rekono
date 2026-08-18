@@ -450,6 +450,32 @@
           </div>
 
           <div class="panel">
+            <h3>Integrations</h3>
+            <p class="hint">Push approved invoices to QuickBooks Online as Bills.</p>
+
+            <p class="hint" id="qb-unconfigured" style="display: none;">
+              QuickBooks isn't set up yet. Please contact us to enable it.
+            </p>
+
+            <div id="qb-disconnected" style="display: none;">
+              <button type="button" id="qb-connect-btn">Connect QuickBooks</button>
+            </div>
+
+            <div id="qb-connected" style="display: none;">
+              <p class="hint">✓ Connected to QuickBooks.</p>
+              <label>
+                Default expense account
+                <select id="qb-default-account">
+                  <option value="">Choose an account…</option>
+                </select>
+              </label>
+              <button type="button" id="qb-disconnect-btn">Disconnect</button>
+            </div>
+
+            <div id="settings-quickbooks-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
             <h3>Review queue</h3>
             <p class="hint">Confidence threshold: invoices scoring below this get flagged for human review instead of fast-tracked.</p>
             <div id="settings-confidence-locked" class="hint" style="display: none;">
