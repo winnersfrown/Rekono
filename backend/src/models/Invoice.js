@@ -78,6 +78,17 @@ export const Invoice = sequelize.define(
     quickbooksExpenseAccountId: { type: DataTypes.STRING(64), allowNull: true },
     quickbooksExpenseAccountName: { type: DataTypes.STRING(256), allowNull: true },
     quickbooksExpenseAccountConfidence: { type: DataTypes.FLOAT, allowNull: true },
+
+    // Set once a human confirms that a QuickBooks bank/card transaction
+    // (see quickbooks.js's fetchBankTransactions) is this invoice's payment
+    // -- see routes/integrations.js's bank-transactions confirm route.
+    // Rekono never writes this back to QuickBooks itself (see that route's
+    // comment for why); it only records, on Rekono's side, that the pushed
+    // Bill has been paid, closing the loop from "pushed" to "paid" in this
+    // app's own UI. Null until confirmed.
+    quickbooksPaidAt: { type: DataTypes.DATE, allowNull: true },
+    quickbooksPaymentTransactionId: { type: DataTypes.STRING(64), allowNull: true },
+    quickbooksPaymentTransactionType: { type: DataTypes.STRING(32), allowNull: true }, // "Purchase" today; room for "Deposit" etc. later
   },
   {
     tableName: "invoices",

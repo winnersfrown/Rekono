@@ -60,6 +60,8 @@ export function serializeInvoiceDetail(inv) {
     quickbooks_expense_account_id: inv.quickbooksExpenseAccountId,
     quickbooks_expense_account_name: inv.quickbooksExpenseAccountName,
     quickbooks_expense_account_confidence: inv.quickbooksExpenseAccountConfidence,
+    quickbooks_paid_at: inv.quickbooksPaidAt,
+    quickbooks_payment_transaction_id: inv.quickbooksPaymentTransactionId,
 
     created_at: inv.createdAt,
     updated_at: inv.updatedAt,

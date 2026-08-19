@@ -3,11 +3,14 @@ import {
   applyTokens,
   ensureFreshToken,
   exchangeCodeForTokens,
+  fetchBankTransactions,
   fetchExpenseAccounts,
+  findExactAmountCandidates,
   findOrCreateVendor,
   pushInvoiceAsBill,
   quickbooksApiBaseUrl,
   refreshAccessToken,
+  suggestBankTransactionMatch,
   suggestExpenseAccount,
 } from "../src/quickbooks.js";
 
@@ -265,6 +268,84 @@ describe("suggestExpenseAccount", () => {
 
   test("returns no suggestion when there are no accounts to choose from", async () => {
     const result = await suggestExpenseAccount(fakeInvoice(), []);
+    expect(result).toEqual({ suggested: false });
+  });
+});
+
+describe("fetchBankTransactions", () => {
+  test("returns a normalized transaction list", async () => {
+    const org = fakeOrg();
+    const fetchImpl = jest.fn().mockResolvedValue(
+      jsonResponse({
+        QueryResponse: {
+          Purchase: [
+            { Id: "p1", TxnDate: "2026-01-20", TotalAmt: 199.99, EntityRef: { name: "Acme Corp" }, PrivateNote: "", Line: [{ Description: "" }] },
+            { Id: "p2", TxnDate: "2026-01-21", TotalAmt: 42, Line: [{ Description: "SQ *STARBUCKS 4421" }] },
+          ],
+        },
+      })
+    );
+    const result = await fetchBankTransactions(org, { fetchImpl });
+    expect(result.data).toEqual([
+      { id: "p1", date: "2026-01-20", amount: 199.99, payeeName: "Acme Corp", description: "" },
+      { id: "p2", date: "2026-01-21", amount: 42, payeeName: "", description: "SQ *STARBUCKS 4421" },
+    ]);
+  });
+
+  test("returns not_connected without calling fetch when the org isn't connected", async () => {
+    const org = fakeOrg({ quickbooksRealmId: null });
+    const fetchImpl = jest.fn();
+    const result = await fetchBankTransactions(org, { fetchImpl });
+    expect(result.error).toBe("not_connected");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("findExactAmountCandidates", () => {
+  const invoices = [
+    { id: "inv1", total: 100, invoiceDate: "2026-01-01", dueDate: "2026-01-15" },
+    { id: "inv2", total: 200, invoiceDate: "2026-01-01", dueDate: "2026-01-15" },
+  ];
+
+  test("matches on exact amount within the date window", () => {
+    const result = findExactAmountCandidates({ date: "2026-01-16", amount: 100 }, invoices);
+    expect(result).toEqual([invoices[0]]);
+  });
+
+  test("excludes candidates outside the date window", () => {
+    const result = findExactAmountCandidates({ date: "2026-03-01", amount: 100 }, invoices);
+    expect(result).toEqual([]);
+  });
+
+  test("includes invoices with no date on file regardless of transaction date", () => {
+    const undated = [{ id: "inv3", total: 100, invoiceDate: null, dueDate: null }];
+    const result = findExactAmountCandidates({ date: "2026-06-01", amount: 100 }, undated);
+    expect(result).toEqual(undated);
+  });
+
+  test("returns every candidate that shares the amount and window", () => {
+    const sameAmount = [
+      { id: "inv1", total: 100, invoiceDate: "2026-01-01", dueDate: "2026-01-15" },
+      { id: "inv2", total: 100, invoiceDate: "2026-01-02", dueDate: "2026-01-16" },
+    ];
+    const result = findExactAmountCandidates({ date: "2026-01-16", amount: 100 }, sameAmount);
+    expect(result.map((i) => i.id)).toEqual(["inv1", "inv2"]);
+  });
+});
+
+describe("suggestBankTransactionMatch", () => {
+  // Same limitation as suggestExpenseAccount's tests -- ANTHROPIC_API_KEY is
+  // never set in the test environment, so this can only be exercised down
+  // to its "not configured" no-op here.
+  test("returns no suggestion without ANTHROPIC_API_KEY configured", async () => {
+    const transaction = { date: "2026-01-16", amount: 100, payeeName: "Acme Corp" };
+    const candidates = [{ id: "inv1", vendorName: "Acme Corp", total: 100, invoiceDate: "2026-01-01", dueDate: "2026-01-15" }];
+    const result = await suggestBankTransactionMatch(transaction, candidates);
+    expect(result).toEqual({ suggested: false });
+  });
+
+  test("returns no suggestion when there are no candidate invoices", async () => {
+    const result = await suggestBankTransactionMatch({ date: "2026-01-16", amount: 100 }, []);
     expect(result).toEqual({ suggested: false });
   });
 });

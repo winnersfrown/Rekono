@@ -9,6 +9,7 @@ import { MatchEntry } from "./MatchEntry.js";
 import { MatchResult } from "./MatchResult.js";
 import { VendorAlias } from "./VendorAlias.js";
 import { VendorExpenseAccount } from "./VendorExpenseAccount.js";
+import { DismissedBankTransaction } from "./DismissedBankTransaction.js";
 import { Invite } from "./Invite.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
@@ -125,5 +126,6 @@ export {
   MatchResult,
   VendorAlias,
   VendorExpenseAccount,
+  DismissedBankTransaction,
   Invite,
 };

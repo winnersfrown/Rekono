@@ -15,11 +15,12 @@
 import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
+import { Op } from "sequelize";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import * as quickbooks from "../quickbooks.js";
-import { AuditLog, Invoice, LineItem, Organization } from "../models/index.js";
+import { AuditLog, DismissedBankTransaction, Invoice, LineItem, Organization } from "../models/index.js";
 import { lookupVendorExpenseAccount, rememberVendorExpenseAccount } from "../vendorExpenseAccount.js";
 
 const router = Router();
@@ -343,6 +344,137 @@ router.post(
       });
 
       res.json({ ok: true, quickbooks_bill_id: invoice.quickbooksBillId });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// Bank reconciliation: surfaces QuickBooks bank/card transactions that look
+// like payment for a bill Rekono already pushed but hasn't been marked
+// paid yet -- see quickbooks.js's fetchBankTransactions/
+// findExactAmountCandidates/suggestBankTransactionMatch for how transactions
+// get matched to candidates. Deliberately read-only against QuickBooks: a
+// duplicate Purchase transaction (the actual root cause of the mismatch,
+// see quickbooks.js's comment) is left for the human to clean up in
+// QuickBooks itself once they've confirmed the match here -- an automatic
+// delete/void of someone else's QuickBooks transaction is a different, much
+// higher-risk kind of write than anything this app has done before, and not
+// one this Phase 1 route takes on.
+router.get(
+  "/api/integrations/quickbooks/bank-transactions",
+  requireAuth,
+  requireActivePlan,
+  async (req, res, next) => {
+    try {
+      const org = req.currentUser.organization;
+      if (!org.quickbooksRealmId) {
+        return res.status(400).json({ detail: "Connect QuickBooks before reviewing bank transactions." });
+      }
+
+      const [transactionsResult, candidateInvoices, dismissed] = await Promise.all([
+        quickbooks.fetchBankTransactions(org),
+        Invoice.findAll({
+          where: { orgId: req.currentUser.orgId, quickbooksBillId: { [Op.ne]: null }, quickbooksPaidAt: null },
+        }),
+        DismissedBankTransaction.findAll({ where: { orgId: req.currentUser.orgId } }),
+      ]);
+      if (transactionsResult.error) {
+        return res.status(502).json({ detail: "Could not load QuickBooks bank transactions. Try reconnecting QuickBooks." });
+      }
+
+      const dismissedIds = new Set(dismissed.map((d) => d.quickbooksTransactionId));
+      const transactions = transactionsResult.data.filter((t) => !dismissedIds.has(t.id));
+
+      const results = [];
+      for (const txn of transactions) {
+        const candidates = quickbooks.findExactAmountCandidates(txn, candidateInvoices);
+        let suggestion = { suggested: false };
+        if (candidates.length === 1) {
+          suggestion = { suggested: true, invoiceId: candidates[0].id, confidence: 1, reasoning: "Exact amount and date match." };
+        } else if (candidates.length > 1) {
+          suggestion = await quickbooks.suggestBankTransactionMatch(txn, candidates);
+        }
+        results.push({
+          transaction_id: txn.id,
+          date: txn.date,
+          amount: txn.amount,
+          payee_name: txn.payeeName,
+          description: txn.description,
+          candidates: candidates.map((c) => ({ id: c.id, vendor_name: c.vendorName, total: c.total, invoice_date: c.invoiceDate, due_date: c.dueDate })),
+          suggested_invoice_id: suggestion.suggested ? suggestion.invoiceId : null,
+          confidence: suggestion.suggested ? suggestion.confidence : null,
+          reasoning: suggestion.suggested ? suggestion.reasoning : "",
+        });
+      }
+
+      res.json(results);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+const confirmBankMatchSchema = z.object({
+  invoice_id: z.string().min(1),
+  transaction_date: z.string().min(1),
+});
+
+router.post(
+  "/api/integrations/quickbooks/bank-transactions/:txnId/confirm",
+  requireAuth,
+  requireActivePlan,
+  async (req, res, next) => {
+    try {
+      const parsed = confirmBankMatchSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+      const invoice = await Invoice.findOne({ where: { id: parsed.data.invoice_id, orgId: req.currentUser.orgId } });
+      if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+      if (!invoice.quickbooksBillId) {
+        return res.status(400).json({ detail: "This invoice hasn't been pushed to QuickBooks yet." });
+      }
+
+      invoice.quickbooksPaidAt = new Date(parsed.data.transaction_date);
+      invoice.quickbooksPaymentTransactionId = req.params.txnId;
+      invoice.quickbooksPaymentTransactionType = "Purchase";
+      await invoice.save();
+
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        invoiceId: invoice.id,
+        action: "quickbooks_payment_matched",
+        actor: req.currentUser.email,
+        details: { quickbooks_transaction_id: req.params.txnId },
+      });
+
+      res.json({
+        ok: true,
+        quickbooks_paid_at: invoice.quickbooksPaidAt,
+        quickbooks_payment_transaction_id: invoice.quickbooksPaymentTransactionId,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+// A user's "this isn't a match" -- remembered per-org so the same
+// transaction doesn't keep resurfacing every time this list loads.
+// findOrCreate rather than create: dismissing twice (e.g. a double click,
+// or the list reloading before the row's removed from the DOM) is a no-op,
+// not a duplicate-key error.
+router.post(
+  "/api/integrations/quickbooks/bank-transactions/:txnId/dismiss",
+  requireAuth,
+  requireActivePlan,
+  async (req, res, next) => {
+    try {
+      await DismissedBankTransaction.findOrCreate({
+        where: { orgId: req.currentUser.orgId, quickbooksTransactionId: req.params.txnId },
+      });
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

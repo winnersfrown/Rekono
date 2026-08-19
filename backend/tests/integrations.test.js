@@ -59,6 +59,9 @@ describe("auth is required", () => {
     ["post", "/api/integrations/quickbooks/invoices/fake-id/push"],
     ["post", "/api/integrations/quickbooks/invoices/fake-id/suggest-account"],
     ["patch", "/api/integrations/quickbooks/invoices/fake-id/expense-account"],
+    ["get", "/api/integrations/quickbooks/bank-transactions"],
+    ["post", "/api/integrations/quickbooks/bank-transactions/fake-id/confirm"],
+    ["post", "/api/integrations/quickbooks/bank-transactions/fake-id/dismiss"],
   ])("%s %s requires authentication", async (method, path) => {
     const res = await request(app)[method](path);
     expect(res.status).toBe(401);
@@ -305,5 +308,89 @@ describe("PATCH /api/integrations/quickbooks/invoices/:id/expense-account", () =
       .post(`/api/integrations/quickbooks/invoices/${secondInvoice.id}/suggest-account`)
       .set(authHeader(token));
     expect(suggestRes.body.quickbooks_expense_account_id).toBe("77");
+  });
+});
+
+// Only the "not connected" path is covered here, same boundary the existing
+// GET /accounts tests already draw -- the route always calls
+// quickbooks.fetchBankTransactions once connected, which needs a real
+// Intuit call. That path (plus the heuristic/AI matching it feeds into) is
+// covered instead at the quickbooks.js unit level (see quickbooks.test.js's
+// fetchBankTransactions/findExactAmountCandidates/suggestBankTransactionMatch
+// tests).
+describe("GET /api/integrations/quickbooks/bank-transactions", () => {
+  test("requires a connection first", async () => {
+    const token = await signup(app, request);
+    const res = await request(app).get("/api/integrations/quickbooks/bank-transactions").set(authHeader(token));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/integrations/quickbooks/bank-transactions/:txnId/confirm", () => {
+  test("validates the request body", async () => {
+    const token = await signup(app, request);
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/bank-transactions/txn1/confirm")
+      .set(authHeader(token))
+      .send({});
+    expect(res.status).toBe(422);
+  });
+
+  test("404s for an invoice that doesn't exist", async () => {
+    const token = await signup(app, request);
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/bank-transactions/txn1/confirm")
+      .set(authHeader(token))
+      .send({ invoice_id: "does-not-exist", transaction_date: "2026-01-16" });
+    expect(res.status).toBe(404);
+  });
+
+  test("refuses to confirm a match against a bill that hasn't been pushed to QuickBooks", async () => {
+    const token = await signup(app, request);
+    const invoice = await makeInvoice(await orgId(token));
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/bank-transactions/txn1/confirm")
+      .set(authHeader(token))
+      .send({ invoice_id: invoice.id, transaction_date: "2026-01-16" });
+    expect(res.status).toBe(400);
+  });
+
+  test("marks the invoice paid and records the matched transaction", async () => {
+    const token = await signup(app, request);
+    const invoice = await makeInvoice(await orgId(token), { quickbooksBillId: "bill_1" });
+
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/bank-transactions/txn1/confirm")
+      .set(authHeader(token))
+      .send({ invoice_id: invoice.id, transaction_date: "2026-01-16" });
+    expect(res.status).toBe(200);
+    expect(res.body.quickbooks_payment_transaction_id).toBe("txn1");
+    expect(new Date(res.body.quickbooks_paid_at).toISOString().slice(0, 10)).toBe("2026-01-16");
+
+    await invoice.reload();
+    expect(invoice.quickbooksPaidAt).not.toBeNull();
+    expect(invoice.quickbooksPaymentTransactionType).toBe("Purchase");
+  });
+
+  test("an invoice belonging to another org can't be matched", async () => {
+    const tokenA = await signup(app, request, { email: "a2@example.co", orgName: "Org A2" });
+    const invoiceA = await makeInvoice(await orgId(tokenA), { quickbooksBillId: "bill_1" });
+
+    const tokenB = await signup(app, request, { email: "b2@example.co", orgName: "Org B2" });
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/bank-transactions/txn1/confirm")
+      .set(authHeader(tokenB))
+      .send({ invoice_id: invoiceA.id, transaction_date: "2026-01-16" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/integrations/quickbooks/bank-transactions/:txnId/dismiss", () => {
+  test("is idempotent", async () => {
+    const token = await signup(app, request);
+    const res1 = await request(app).post("/api/integrations/quickbooks/bank-transactions/txn1/dismiss").set(authHeader(token));
+    expect(res1.status).toBe(200);
+    const res2 = await request(app).post("/api/integrations/quickbooks/bank-transactions/txn1/dismiss").set(authHeader(token));
+    expect(res2.status).toBe(200);
   });
 });

@@ -76,7 +76,7 @@ function switchTab(name) {
   if (navBtn) navBtn.classList.add("active");
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
-  if (name === "matching") { loadSources(); loadMatchResults(); }
+  if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
 }
@@ -491,6 +491,7 @@ function renderDetail(inv) {
       <button class="reject" id="btn-reject">Reject</button>
       ${inv.status !== "approved" ? `<button class="retry" id="btn-retry">Retry Extraction</button>` : ""}
       ${state.quickbooksConnected ? `<button class="qb-push" id="btn-qb-push" ${inv.quickbooks_bill_id ? "disabled" : ""}>${inv.quickbooks_bill_id ? "Pushed to QuickBooks" : "Push to QuickBooks"}</button>` : ""}
+      ${inv.quickbooks_paid_at ? `<span class="badge badge-paid">Paid ${escapeHtml(String(inv.quickbooks_paid_at).slice(0, 10))}</span>` : ""}
       <button class="delete" id="btn-delete">Delete</button>
     </div>
 
@@ -902,6 +903,110 @@ function renderMatchResults({ results, invoices }) {
       </tr>
     `;
   }).join("") || "<tr><td colspan='6' class='table-empty-row'>No matching results yet.</td></tr>";
+}
+
+// ---- QuickBooks bank reconciliation ----
+// Surfaces QuickBooks bank/card transactions that look like payment for a
+// bill Rekono already pushed but hasn't been marked paid yet (see
+// routes/integrations.js's GET .../bank-transactions). Lives inside the
+// Matching tab since it's the same underlying job -- lining up an external
+// record against Rekono's invoices -- just against QuickBooks' bank feed
+// instead of an uploaded CSV.
+async function loadQuickbooksReconciliation() {
+  const section = document.getElementById("qb-reconcile-section");
+  if (!state.quickbooksConnected) {
+    section.style.display = "none";
+    return;
+  }
+  section.style.display = "block";
+  await cachedLoad(
+    "__qb_reconcile__",
+    async () => {
+      const res = await apiFetch("/api/integrations/quickbooks/bank-transactions");
+      return res.ok ? res.json() : [];
+    },
+    renderQuickbooksReconciliation
+  );
+}
+
+function renderQuickbooksReconciliation(transactions) {
+  const list = document.getElementById("qb-reconcile-list");
+  if (!transactions.length) {
+    list.innerHTML = "<div class='hint'>No unmatched bank transactions right now.</div>";
+    return;
+  }
+
+  list.innerHTML = transactions.map((t) => {
+    const candidateOptions = t.candidates
+      .map((c) => `<option value="${c.id}" ${c.id === t.suggested_invoice_id ? "selected" : ""}>${escapeHtml(c.vendor_name || "Unknown vendor")} — ${fmtMoney(c.total)}</option>`)
+      .join("");
+    const note = !t.candidates.length
+      ? "No unpaid pushed bills match this amount."
+      : t.suggested_invoice_id
+      ? `Suggested match${t.confidence != null ? ` (${fmtPct(t.confidence)} confidence)` : ""}${t.reasoning ? ` — ${escapeHtml(t.reasoning)}` : ""}`
+      : "Multiple bills match this amount — pick the right one.";
+
+    return `
+      <div class="reconcile-row" data-txn-id="${t.transaction_id}">
+        <div class="reconcile-txn">
+          <span class="reconcile-date">${escapeHtml(t.date || "—")}</span>
+          <span class="reconcile-payee">${escapeHtml(t.payee_name || t.description || "Unknown payee")}</span>
+          <span class="reconcile-amount">${fmtMoney(t.amount)}</span>
+        </div>
+        <div class="reconcile-match">
+          <select class="reconcile-select" ${!t.candidates.length ? "disabled" : ""}>
+            <option value="">Choose a bill…</option>
+            ${candidateOptions}
+          </select>
+          <button type="button" class="reconcile-confirm" ${!t.candidates.length ? "disabled" : ""}>Confirm match</button>
+          <button type="button" class="reconcile-dismiss">Not a match</button>
+        </div>
+        <div class="reconcile-note hint">${note}</div>
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".reconcile-confirm").forEach((btn) => {
+    btn.addEventListener("click", () => confirmBankMatch(btn.closest(".reconcile-row")));
+  });
+  list.querySelectorAll(".reconcile-dismiss").forEach((btn) => {
+    btn.addEventListener("click", () => dismissBankTransaction(btn.closest(".reconcile-row")));
+  });
+}
+
+async function confirmBankMatch(row) {
+  const txnId = row.dataset.txnId;
+  const invoiceId = row.querySelector(".reconcile-select").value;
+  if (!invoiceId) {
+    await alertDialog("Choose a bill", "Pick which bill this transaction is paying before confirming.");
+    return;
+  }
+  const transactionDate = row.querySelector(".reconcile-date").textContent;
+  try {
+    const res = await apiFetch(`/api/integrations/quickbooks/bank-transactions/${txnId}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invoice_id: invoiceId, transaction_date: transactionDate }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not confirm this match.");
+    invalidateCache("__qb_reconcile__");
+    row.remove();
+  } catch (err) {
+    await alertDialog("Couldn't confirm match", err.message || String(err));
+  }
+}
+
+async function dismissBankTransaction(row) {
+  const txnId = row.dataset.txnId;
+  try {
+    const res = await apiFetch(`/api/integrations/quickbooks/bank-transactions/${txnId}/dismiss`, { method: "POST" });
+    if (!res.ok) throw new Error("Could not dismiss this transaction.");
+    invalidateCache("__qb_reconcile__");
+    row.remove();
+  } catch (err) {
+    await alertDialog("Couldn't dismiss", err.message || String(err));
+  }
 }
 
 // ---- Ask Rekono ----
