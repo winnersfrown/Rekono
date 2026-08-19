@@ -186,8 +186,16 @@ function extractHeuristic(ocrText) {
     // etc., often the largest text on the page and OCR'd as its own line)
     // rather than blindly taking line 1 -- otherwise the vendor name comes
     // back as literally the word "Invoice" whenever the document has one.
-    const genericHeaderLine = /^(invoice|bill|receipt|statement|estimate|quote)s?\s*[:#\-]?\s*$/i;
-    const vendorLine = lines.find((ln) => !genericHeaderLine.test(ln));
+    // Matches at the start of the line rather than the whole line, capped
+    // to a short length: OCR frequently merges a nearby logo/graphic's
+    // misread text onto the same line (e.g. a logo placeholder reads as
+    // "Loco" and lands right after "INVOICE"), which a whole-line-only
+    // match would miss entirely -- but a real company name that happens to
+    // start with one of these words ("Invoice Ninja Inc.") is usually
+    // longer than a bare title line, so the length cap keeps this from
+    // swallowing those too.
+    const genericHeaderLine = /^(invoice|bill|receipt|statement|estimate|quote)s?\b/i;
+    const vendorLine = lines.find((ln) => !(genericHeaderLine.test(ln) && ln.length <= 20));
     if (vendorLine) {
       fields.vendor_name = vendorLine.slice(0, 512);
       fieldConfidence.vendor_name = HEURISTIC_FIELD_CONFIDENCE;
@@ -204,13 +212,35 @@ function extractHeuristic(ocrText) {
     fieldConfidence.invoice_number = HEURISTIC_FIELD_CONFIDENCE;
   }
 
-  const dateMatch = ocrText.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
-  if (dateMatch) {
-    fields.invoice_date = normalizeLooseDate(dateMatch[1]);
-    fieldConfidence.invoice_date = HEURISTIC_FIELD_CONFIDENCE;
+  // Label-scoped rather than "the first date-shaped thing anywhere in the
+  // document" -- a plain document-wide date regex has no way to tell an
+  // invoice date apart from a due date, a PO date, or any other date on
+  // the page, and would always win with whichever happens to appear first
+  // in reading order. Due date is looked up first so invoice date's
+  // fallback (any line just saying "date") can exclude it.
+  const dueDateLine = lines.find((ln) => /\bdue\s*date\b/i.test(ln));
+  if (dueDateLine) {
+    const d = firstDateInLine(dueDateLine);
+    if (d) {
+      fields.due_date = d;
+      fieldConfidence.due_date = HEURISTIC_FIELD_CONFIDENCE;
+    }
   }
 
-  const poMatch = ocrText.match(/\bP\.?O\.?\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-]{2,})/i);
+  const invoiceDateLine =
+    lines.find((ln) => /\binvoice\s*date\b/i.test(ln)) || lines.find((ln) => /\bdate\b/i.test(ln) && ln !== dueDateLine);
+  if (invoiceDateLine) {
+    const d = firstDateInLine(invoiceDateLine);
+    if (d) {
+      fields.invoice_date = d;
+      fieldConfidence.invoice_date = HEURISTIC_FIELD_CONFIDENCE;
+    }
+  }
+
+  // Character class includes "/" -- a common separator in real PO
+  // references (e.g. "2312/2019", an order-number/year format), which the
+  // previous class silently truncated at.
+  const poMatch = ocrText.match(/\bP\.?O\.?\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{2,})/i);
   if (poMatch) {
     fields.po_reference = poMatch[1];
     fieldConfidence.po_reference = HEURISTIC_FIELD_CONFIDENCE;
@@ -309,6 +339,11 @@ function cleanDate(value) {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return value;
   return normalizeLooseDate(String(value));
+}
+
+function firstDateInLine(line) {
+  const m = line.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})\b/);
+  return m ? normalizeLooseDate(m[1]) : "";
 }
 
 function normalizeLooseDate(value) {
