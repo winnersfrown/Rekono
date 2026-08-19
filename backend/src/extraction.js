@@ -182,11 +182,23 @@ function extractHeuristic(ocrText) {
     .filter(Boolean);
 
   if (lines.length) {
-    fields.vendor_name = lines[0].slice(0, 512);
-    fieldConfidence.vendor_name = HEURISTIC_FIELD_CONFIDENCE;
+    // Skip a leading generic document-type header ("INVOICE", "STATEMENT",
+    // etc., often the largest text on the page and OCR'd as its own line)
+    // rather than blindly taking line 1 -- otherwise the vendor name comes
+    // back as literally the word "Invoice" whenever the document has one.
+    const genericHeaderLine = /^(invoice|bill|receipt|statement|estimate|quote)s?\s*[:#\-]?\s*$/i;
+    const vendorLine = lines.find((ln) => !genericHeaderLine.test(ln));
+    if (vendorLine) {
+      fields.vendor_name = vendorLine.slice(0, 512);
+      fieldConfidence.vendor_name = HEURISTIC_FIELD_CONFIDENCE;
+    }
   }
 
-  const invMatch = ocrText.match(/invoice\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-]{2,})/i);
+  // Requires an explicit marker (#, "no", "number", or a colon/dash) between
+  // "invoice" and the captured value -- without this, "invoice" matching the
+  // page's own title (with nothing but a line break after it) would capture
+  // whatever word starts the next line instead of the real invoice number.
+  const invMatch = ocrText.match(/invoice\s*(?:#|no\.?|number|[:\-])\s*[:\-]?\s*([A-Za-z0-9\-]{2,})/i);
   if (invMatch) {
     fields.invoice_number = invMatch[1];
     fieldConfidence.invoice_number = HEURISTIC_FIELD_CONFIDENCE;
@@ -218,10 +230,26 @@ function extractHeuristic(ocrText) {
     fieldConfidence.subtotal = HEURISTIC_FIELD_CONFIDENCE;
   }
 
-  const taxMatch = ocrText.match(/tax\s*[:\-]?\s*\$?\s*([\d,]+\.\d{2})/i);
-  if (taxMatch) {
-    fields.tax = parseFloat(taxMatch[1].replace(/,/g, ""));
-    fieldConfidence.tax = HEURISTIC_FIELD_CONFIDENCE;
+  // A simple "tax ... first decimal number after it" regex grabs a tax
+  // *rate* ("Sales Tax 6.25%") instead of the actual tax amount whenever a
+  // percentage sits between the label and the dollar figure -- both have
+  // two decimal digits, so a bare \d+\.\d{2} pattern can't tell them apart.
+  // Scanning the tax line (and the line after, in case OCR breaks the
+  // label and amount onto separate lines) for every non-percentage decimal
+  // number and taking the *last* one sidesteps that: amounts are reliably
+  // the right-most/last figure on the line, while a rate immediately
+  // precedes a literal "%".
+  const taxLineIndex = lines.findIndex((ln) => /\btax\b/i.test(ln));
+  if (taxLineIndex !== -1) {
+    for (const ln of [lines[taxLineIndex], lines[taxLineIndex + 1]]) {
+      if (!ln) continue;
+      const amounts = [...ln.matchAll(/\$?\s*([\d,]+\.\d{2})(?!\s*%)(?!\d)/g)];
+      if (amounts.length) {
+        fields.tax = parseFloat(amounts[amounts.length - 1][1].replace(/,/g, ""));
+        fieldConfidence.tax = HEURISTIC_FIELD_CONFIDENCE;
+        break;
+      }
+    }
   }
 
   const lineItemPattern =
