@@ -52,3 +52,39 @@ test("heuristic extraction does not flag a single invoice number repeated (e.g. 
   const result = await extract(repeatedText);
   expect(result.possibleMultiInvoice).toBe(false);
 });
+
+// Regression coverage for a real invoice layout that tripped up all three
+// of these fields at once: a bare "INVOICE" title line (no vendor name, no
+// invoice number marker after it) followed by a tax line where the rate
+// percentage sits between the "Tax" label and the actual dollar amount.
+const TITLED_INVOICE_TEXT = `INVOICE
+East Repair Inc.
+1912 Harvest Lane
+New York, NY 12210
+
+INVOICE #    US-001
+INVOICE DATE 11/02/2019
+DUE DATE     26/02/2019
+
+1  Front and rear brake cables  10  100.00
+2  New set of pedal arms         1   30.00
+
+Subtotal      145.00
+Sales Tax 6.25%  9.06
+TOTAL         $154.06
+`;
+
+test("heuristic extraction skips a bare document-title line for vendor name", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.vendor_name).toBe("East Repair Inc.");
+});
+
+test("heuristic extraction doesn't capture the page title as the invoice number", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.invoice_number).toBe("US-001");
+});
+
+test("heuristic extraction finds the tax amount, not the tax rate percentage", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.tax).toBe(9.06);
+});
