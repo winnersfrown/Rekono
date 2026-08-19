@@ -53,17 +53,22 @@ test("heuristic extraction does not flag a single invoice number repeated (e.g. 
   expect(result.possibleMultiInvoice).toBe(false);
 });
 
-// Regression coverage for a real invoice layout that tripped up all three
-// of these fields at once: a bare "INVOICE" title line (no vendor name, no
-// invoice number marker after it) followed by a tax line where the rate
-// percentage sits between the "Tax" label and the actual dollar amount.
-const TITLED_INVOICE_TEXT = `INVOICE
+// Regression coverage for a real invoice layout (verified against actual
+// Tesseract output on a reproduction of it, not hand-written) that tripped
+// up every one of these fields at once: a logo placeholder OCR'd as
+// garbage text merged onto the title line ("INVOICE Loco"), no marker
+// after the bare title before the real invoice number, a tax line where
+// the rate percentage sits between the label and the actual dollar
+// amount, a due date with no dedicated extraction at all, and a PO
+// reference containing a "/" that got truncated.
+const TITLED_INVOICE_TEXT = `INVOICE Loco
 East Repair Inc.
 1912 Harvest Lane
 New York, NY 12210
 
 INVOICE #    US-001
 INVOICE DATE 11/02/2019
+PO.#         2312/2019
 DUE DATE     26/02/2019
 
 1  Front and rear brake cables  10  100.00
@@ -87,4 +92,19 @@ test("heuristic extraction doesn't capture the page title as the invoice number"
 test("heuristic extraction finds the tax amount, not the tax rate percentage", async () => {
   const result = await extract(TITLED_INVOICE_TEXT);
   expect(result.fields.tax).toBe(9.06);
+});
+
+test("heuristic extraction skips a title line even when OCR merges garbage onto it", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.vendor_name).toBe("East Repair Inc.");
+});
+
+test("heuristic extraction finds the due date, not just the invoice date", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.due_date).toBe("2019-02-26");
+});
+
+test("heuristic extraction doesn't truncate a PO reference containing a slash", async () => {
+  const result = await extract(TITLED_INVOICE_TEXT);
+  expect(result.fields.po_reference).toBe("2312/2019");
 });
