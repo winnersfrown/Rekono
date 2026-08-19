@@ -8,6 +8,7 @@ import { MatchSource } from "./MatchSource.js";
 import { MatchEntry } from "./MatchEntry.js";
 import { MatchResult } from "./MatchResult.js";
 import { VendorAlias } from "./VendorAlias.js";
+import { VendorExpenseAccount } from "./VendorExpenseAccount.js";
 import { Invite } from "./Invite.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
@@ -113,4 +114,16 @@ export async function initDb() {
   }
 }
 
-export { Organization, User, Invoice, LineItem, AuditLog, MatchSource, MatchEntry, MatchResult, VendorAlias, Invite };
+export {
+  Organization,
+  User,
+  Invoice,
+  LineItem,
+  AuditLog,
+  MatchSource,
+  MatchEntry,
+  MatchResult,
+  VendorAlias,
+  VendorExpenseAccount,
+  Invite,
+};

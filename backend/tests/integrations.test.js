@@ -1,6 +1,7 @@
 import request from "supertest";
 import { app } from "../src/app.js";
 import { Invoice, Organization } from "../src/models/index.js";
+import { rememberVendorExpenseAccount } from "../src/vendorExpenseAccount.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 // QUICKBOOKS_CLIENT_ID is never set in the test environment (jest.setup.js),
@@ -56,6 +57,8 @@ describe("auth is required", () => {
     ["patch", "/api/integrations/quickbooks/default-account"],
     ["post", "/api/integrations/quickbooks/disconnect"],
     ["post", "/api/integrations/quickbooks/invoices/fake-id/push"],
+    ["post", "/api/integrations/quickbooks/invoices/fake-id/suggest-account"],
+    ["patch", "/api/integrations/quickbooks/invoices/fake-id/expense-account"],
   ])("%s %s requires authentication", async (method, path) => {
     const res = await request(app)[method](path);
     expect(res.status).toBe(401);
@@ -198,5 +201,109 @@ describe("POST /api/integrations/quickbooks/invoices/:id/push", () => {
 
     const res = await request(app).post(`/api/integrations/quickbooks/invoices/${invoiceA.id}/push`).set(authHeader(tokenB));
     expect(res.status).toBe(404);
+  });
+});
+
+// Only paths that don't require a real call to Intuit's API are covered
+// here, same boundary the existing GET /accounts tests already draw --
+// "no memory, has to actually fetch+categorize" is covered instead at the
+// quickbooks.js unit level (see quickbooks.test.js's suggestExpenseAccount
+// tests), with an injected fetchImpl standing in for Intuit/Anthropic.
+describe("POST /api/integrations/quickbooks/invoices/:id/suggest-account", () => {
+  test("404s for an invoice that doesn't exist", async () => {
+    const token = await signup(app, request);
+    await connectOrg();
+    const res = await request(app)
+      .post("/api/integrations/quickbooks/invoices/does-not-exist/suggest-account")
+      .set(authHeader(token));
+    expect(res.status).toBe(404);
+  });
+
+  test("requires a connection first", async () => {
+    const token = await signup(app, request);
+    const invoice = await makeInvoice(await orgId(token));
+    const res = await request(app)
+      .post(`/api/integrations/quickbooks/invoices/${invoice.id}/suggest-account`)
+      .set(authHeader(token));
+    expect(res.status).toBe(400);
+  });
+
+  test("echoes back an already-categorized invoice without re-suggesting", async () => {
+    const token = await signup(app, request);
+    await connectOrg();
+    const invoice = await makeInvoice(await orgId(token), {
+      quickbooksExpenseAccountId: "42",
+      quickbooksExpenseAccountName: "Office Supplies",
+      quickbooksExpenseAccountConfidence: 0.6,
+    });
+
+    const res = await request(app)
+      .post(`/api/integrations/quickbooks/invoices/${invoice.id}/suggest-account`)
+      .set(authHeader(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      quickbooks_expense_account_id: "42",
+      quickbooks_expense_account_name: "Office Supplies",
+      quickbooks_expense_account_confidence: 0.6,
+    });
+  });
+
+  test("uses a remembered vendor account instead of asking for a fresh suggestion", async () => {
+    const token = await signup(app, request);
+    const org = await connectOrg();
+    const invoice = await makeInvoice(await orgId(token), { vendorName: "Amazon Web Services" });
+    await rememberVendorExpenseAccount(org.id, "Amazon Web Services", "77", "Software & Subscriptions");
+
+    const res = await request(app)
+      .post(`/api/integrations/quickbooks/invoices/${invoice.id}/suggest-account`)
+      .set(authHeader(token));
+    expect(res.status).toBe(200);
+    expect(res.body.quickbooks_expense_account_id).toBe("77");
+    expect(res.body.quickbooks_expense_account_name).toBe("Software & Subscriptions");
+    expect(res.body.quickbooks_expense_account_confidence).toBe(1);
+  });
+});
+
+describe("PATCH /api/integrations/quickbooks/invoices/:id/expense-account", () => {
+  test("validates the request body", async () => {
+    const token = await signup(app, request);
+    await connectOrg();
+    const invoice = await makeInvoice(await orgId(token));
+    const res = await request(app)
+      .patch(`/api/integrations/quickbooks/invoices/${invoice.id}/expense-account`)
+      .set(authHeader(token))
+      .send({});
+    expect(res.status).toBe(422);
+  });
+
+  test("404s for an invoice that doesn't exist", async () => {
+    const token = await signup(app, request);
+    const res = await request(app)
+      .patch("/api/integrations/quickbooks/invoices/does-not-exist/expense-account")
+      .set(authHeader(token))
+      .send({ account_id: "42", account_name: "Office Supplies" });
+    expect(res.status).toBe(404);
+  });
+
+  test("sets the invoice's account and remembers it for the vendor", async () => {
+    const token = await signup(app, request);
+    const org = await connectOrg();
+    const invoice = await makeInvoice(await orgId(token), { vendorName: "Amazon Web Services" });
+
+    const res = await request(app)
+      .patch(`/api/integrations/quickbooks/invoices/${invoice.id}/expense-account`)
+      .set(authHeader(token))
+      .send({ account_id: "77", account_name: "Software & Subscriptions" });
+    expect(res.status).toBe(200);
+    expect(res.body.quickbooks_expense_account_id).toBe("77");
+    expect(res.body.quickbooks_expense_account_confidence).toBe(1);
+
+    // A second invoice from the same vendor should now suggest the
+    // remembered account directly, with no LLM call needed.
+    const secondInvoice = await makeInvoice(org.id, { vendorName: "Amazon Web Services" });
+    const suggestRes = await request(app)
+      .post(`/api/integrations/quickbooks/invoices/${secondInvoice.id}/suggest-account`)
+      .set(authHeader(token));
+    expect(suggestRes.body.quickbooks_expense_account_id).toBe("77");
   });
 });

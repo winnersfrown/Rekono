@@ -473,6 +473,18 @@ function renderDetail(inv) {
     <h3>Matching</h3>
     ${matchHtml}
 
+    ${state.quickbooksConnected ? `
+    <div class="detail-grid" style="margin-top: 0.6rem;">
+      <div class="field" id="qb-expense-account-field">
+        <label>QuickBooks Expense Account</label>
+        <select id="f-qb-expense-account" ${inv.quickbooks_bill_id ? "disabled" : ""}>
+          <option value="">Choose an account…</option>
+        </select>
+        <div class="confidence-note" id="qb-expense-account-note">Loading a suggestion…</div>
+      </div>
+    </div>
+    ` : ""}
+
     <div class="actions">
       <button class="save" id="btn-save">Save Corrections</button>
       <button class="approve" id="btn-approve">Approve</button>
@@ -496,6 +508,11 @@ function renderDetail(inv) {
   document.getElementById("btn-retry")?.addEventListener("click", () => retryInvoice(inv.id));
   document.getElementById("btn-qb-push")?.addEventListener("click", () => pushInvoiceToQuickbooks(inv.id));
   document.getElementById("btn-delete").addEventListener("click", () => deleteInvoice(inv.id));
+
+  document.getElementById("f-qb-expense-account")?.addEventListener("change", (e) => {
+    saveExpenseAccountCorrection(inv.id, e.target);
+  });
+  if (state.quickbooksConnected) loadExpenseAccountSuggestion(inv);
 
   loadDocPreview(inv);
 }
@@ -671,6 +688,80 @@ async function pushInvoiceToQuickbooks(id) {
       btn.disabled = false;
       btn.textContent = "Push to QuickBooks";
     }
+  }
+}
+
+// Populates the expense-account dropdown and asks the backend for a
+// suggestion (vendor memory first, then an LLM categorization call -- see
+// quickbooks.js's suggestExpenseAccount). Idempotent on the backend side:
+// an invoice that's already categorized just gets its existing choice
+// echoed back instead of a fresh guess, so calling this on every render is
+// safe rather than wasteful.
+async function loadExpenseAccountSuggestion(inv) {
+  if (!document.getElementById("f-qb-expense-account")) return;
+
+  try {
+    const suggestRes = await apiFetch(`/api/integrations/quickbooks/invoices/${inv.id}/suggest-account`, { method: "POST" });
+    const suggestion = suggestRes.ok ? await suggestRes.json() : null;
+
+    // The detail panel may have moved on to a different invoice (or away
+    // from it entirely) while that request was in flight.
+    if (state.selectedInvoiceId !== inv.id) return;
+    const select = document.getElementById("f-qb-expense-account");
+    const note = document.getElementById("qb-expense-account-note");
+    if (!select || !note) return;
+
+    const chosenId = suggestion?.quickbooks_expense_account_id;
+    const chosenName = suggestion?.quickbooks_expense_account_name;
+
+    // Seed the current choice first, before trying to load the full
+    // account list -- same defensive order as the Settings tab's
+    // default-account dropdown, so a transient accounts-list failure below
+    // leaves the actual saved/suggested account visibly selected instead
+    // of silently reverting to blank.
+    select.innerHTML = `<option value="">Choose an account…</option>`;
+    if (chosenId) select.innerHTML += `<option value="${chosenId}" selected>${escapeHtml(chosenName || chosenId)}</option>`;
+
+    const accountsRes = await apiFetch("/api/integrations/quickbooks/accounts");
+    if (state.selectedInvoiceId === inv.id && accountsRes.ok) {
+      const accounts = await accountsRes.json();
+      select.innerHTML =
+        `<option value="">Choose an account…</option>` +
+        accounts.map((a) => `<option value="${a.id}" ${a.id === chosenId ? "selected" : ""}>${escapeHtml(a.name)}</option>`).join("");
+    }
+
+    const confidence = suggestion?.quickbooks_expense_account_confidence;
+    const field = document.getElementById("qb-expense-account-field");
+    if (!chosenId) {
+      note.textContent = "No suggestion available — choose one, or the org default will be used when pushed.";
+    } else if (confidence != null && confidence < 0.85) {
+      note.textContent = `Suggested (${fmtPct(confidence)} confidence) — double-check before pushing.`;
+      field?.classList.add("low-confidence");
+    } else {
+      note.textContent = confidence >= 1 ? "" : `Suggested (${fmtPct(confidence)} confidence).`;
+    }
+  } catch {
+    const note = document.getElementById("qb-expense-account-note");
+    if (note) note.textContent = "Couldn't load a suggestion — choose one manually, or the org default will be used.";
+  }
+}
+
+async function saveExpenseAccountCorrection(id, selectEl) {
+  const note = document.getElementById("qb-expense-account-note");
+  if (!selectEl.value) return;
+  const accountName = selectEl.selectedOptions[0].textContent;
+  try {
+    const res = await apiFetch(`/api/integrations/quickbooks/invoices/${id}/expense-account`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: selectEl.value, account_name: accountName }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not save the expense account.");
+    document.getElementById("qb-expense-account-field")?.classList.remove("low-confidence");
+    if (note) note.textContent = "Saved — remembered for this vendor's future invoices too.";
+  } catch (err) {
+    if (note) note.textContent = err.message || String(err);
   }
 }
 

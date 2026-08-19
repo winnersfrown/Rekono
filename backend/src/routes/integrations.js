@@ -19,7 +19,8 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import * as quickbooks from "../quickbooks.js";
-import { AuditLog, Invoice, Organization } from "../models/index.js";
+import { AuditLog, Invoice, LineItem, Organization } from "../models/index.js";
+import { lookupVendorExpenseAccount, rememberVendorExpenseAccount } from "../vendorExpenseAccount.js";
 
 const router = Router();
 
@@ -198,6 +199,111 @@ router.post("/api/integrations/quickbooks/disconnect", requireAuth, requireActiv
     next(err);
   }
 });
+
+function expenseAccountResponse(invoice) {
+  return {
+    quickbooks_expense_account_id: invoice.quickbooksExpenseAccountId,
+    quickbooks_expense_account_name: invoice.quickbooksExpenseAccountName,
+    quickbooks_expense_account_confidence: invoice.quickbooksExpenseAccountConfidence,
+  };
+}
+
+// Categorizes one invoice against org's real chart of accounts (vendor
+// memory first, then an LLM call -- see quickbooks.js's suggestExpenseAccount).
+// Idempotent once a choice exists: an invoice that already has an account
+// (suggested earlier, or a human's own pick) just echoes it back rather
+// than silently re-guessing and overwriting a correction.
+router.post(
+  "/api/integrations/quickbooks/invoices/:id/suggest-account",
+  requireAuth,
+  requireActivePlan,
+  async (req, res, next) => {
+    try {
+      const invoice = await Invoice.findOne({
+        where: { id: req.params.id, orgId: req.currentUser.orgId },
+        include: [{ model: LineItem, as: "lineItems" }],
+      });
+      if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+
+      const org = req.currentUser.organization;
+      if (!org.quickbooksRealmId) {
+        return res.status(400).json({ detail: "Connect QuickBooks before categorizing invoices." });
+      }
+
+      if (invoice.quickbooksExpenseAccountId) {
+        return res.json(expenseAccountResponse(invoice));
+      }
+
+      const remembered = await lookupVendorExpenseAccount(org.id, invoice.vendorName);
+      if (remembered) {
+        invoice.quickbooksExpenseAccountId = remembered.expenseAccountId;
+        invoice.quickbooksExpenseAccountName = remembered.expenseAccountName;
+        invoice.quickbooksExpenseAccountConfidence = 1;
+        await invoice.save();
+        return res.json(expenseAccountResponse(invoice));
+      }
+
+      const accountsResult = await quickbooks.fetchExpenseAccounts(org);
+      if (!accountsResult.error) {
+        const suggestion = await quickbooks.suggestExpenseAccount(invoice, accountsResult.data);
+        if (suggestion.suggested) {
+          invoice.quickbooksExpenseAccountId = suggestion.accountId;
+          invoice.quickbooksExpenseAccountName = suggestion.accountName;
+          invoice.quickbooksExpenseAccountConfidence = suggestion.confidence;
+          await invoice.save();
+        }
+      }
+      // accountsResult.error (transient QuickBooks API issue) or no
+      // suggestion (no ANTHROPIC_API_KEY, or nothing fit) both leave the
+      // invoice uncategorized rather than erroring -- pushing still works
+      // via the org's default account either way.
+
+      res.json(expenseAccountResponse(invoice));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+const expenseAccountSchema = z.object({
+  account_id: z.string().min(1),
+  account_name: z.string().min(1),
+});
+
+// A human's own pick, whether correcting a suggestion or setting one from
+// scratch -- always remembered per-vendor (see rememberVendorExpenseAccount)
+// since a person choosing this account is the strongest signal available,
+// stronger than the LLM's own suggestion.
+router.patch(
+  "/api/integrations/quickbooks/invoices/:id/expense-account",
+  requireAuth,
+  requireActivePlan,
+  async (req, res, next) => {
+    try {
+      const parsed = expenseAccountSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+      const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+      if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+
+      invoice.quickbooksExpenseAccountId = parsed.data.account_id;
+      invoice.quickbooksExpenseAccountName = parsed.data.account_name;
+      invoice.quickbooksExpenseAccountConfidence = 1;
+      await invoice.save();
+
+      await rememberVendorExpenseAccount(
+        req.currentUser.orgId,
+        invoice.vendorName,
+        parsed.data.account_id,
+        parsed.data.account_name
+      );
+
+      res.json(expenseAccountResponse(invoice));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
 
 router.post(
   "/api/integrations/quickbooks/invoices/:id/push",
