@@ -22,13 +22,15 @@ function debounce(fn, delayMs) {
 }
 
 // ---- Confirm modal ----
-// Replaces the native confirm() dialog (browser chrome, shows the raw
-// hostname, can't be styled) with one that matches the rest of the app.
-// Returns a Promise<boolean> so call sites read the same as before:
-// `if (!(await confirmDialog(...))) return;`.
+// Replaces the native confirm()/alert() dialogs (browser chrome, shows the
+// raw hostname, can't be styled) with one that matches the rest of the app.
+// confirmDialog returns a Promise<boolean> so call sites read the same as
+// before: `if (!(await confirmDialog(...))) return;`. alertDialog is the
+// same modal with Cancel hidden, for the notice-only case (nothing to
+// confirm, just something the user needs to see and dismiss).
 let confirmModalResolve = null;
 
-function confirmDialog(title, message, { confirmLabel = "OK", danger = false } = {}) {
+function confirmDialog(title, message, { confirmLabel = "OK", danger = false, hideCancel = false } = {}) {
   return new Promise((resolve) => {
     confirmModalResolve = resolve;
     document.getElementById("confirm-modal-title").textContent = title;
@@ -36,8 +38,13 @@ function confirmDialog(title, message, { confirmLabel = "OK", danger = false } =
     const confirmBtn = document.getElementById("confirm-modal-confirm");
     confirmBtn.textContent = confirmLabel;
     confirmBtn.classList.toggle("modal-btn-danger", danger);
+    document.getElementById("confirm-modal-cancel").style.display = hideCancel ? "none" : "";
     document.getElementById("confirm-modal").style.display = "flex";
   });
+}
+
+function alertDialog(title, message) {
+  return confirmDialog(title, message, { hideCancel: true });
 }
 
 function closeConfirmModal(result) {
@@ -343,7 +350,7 @@ async function runBulkAction(action) {
   });
   const body = await res.json();
   if (!res.ok) {
-    alert(body.detail || "Bulk action failed.");
+    await alertDialog("Bulk action failed", body.detail || "Something went wrong.");
     return;
   }
   state.selectedRowIds.clear();
@@ -357,7 +364,7 @@ async function runBulkAction(action) {
   if (state.selectedInvoiceId && ids.includes(state.selectedInvoiceId)) {
     selectInvoice(state.selectedInvoiceId); // refresh the open detail panel if it was part of the batch
   }
-  alert(summary);
+  await alertDialog("Bulk action complete", summary);
 }
 
 document.getElementById("bulk-approve-btn").addEventListener("click", () => runBulkAction("approve"));
@@ -637,7 +644,7 @@ async function retryInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}/retry`, { method: "POST" });
   const body = await res.json();
   if (!res.ok) {
-    alert(body.detail || "Could not retry this document.");
+    await alertDialog("Couldn't retry extraction", body.detail || "Could not retry this document.");
     return;
   }
   renderDetail(body);
@@ -659,7 +666,7 @@ async function pushInvoiceToQuickbooks(id) {
     const inv = await (await apiFetch(`/api/invoices/${id}`)).json();
     renderDetail(inv);
   } catch (err) {
-    alert(err.message || String(err));
+    await alertDialog("Couldn't push to QuickBooks", err.message || String(err));
     if (btn) {
       btn.disabled = false;
       btn.textContent = "Push to QuickBooks";
@@ -682,7 +689,7 @@ async function deleteInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    alert(body.detail || "Could not delete this document.");
+    await alertDialog("Couldn't delete document", body.detail || "Could not delete this document.");
     return;
   }
 
@@ -712,7 +719,7 @@ document.getElementById("source-form").addEventListener("submit", async (e) => {
   const res = await apiFetch(`/api/matching/sources?source_type=${sourceType}`, { method: "POST", body: fd });
   if (!res.ok) {
     const err = await res.json();
-    alert(`Error: ${err.detail || res.statusText}`);
+    await alertDialog("Upload failed", err.detail || res.statusText);
     return;
   }
   fileInput.value = "";
@@ -751,7 +758,7 @@ async function deleteSource(id) {
   const res = await apiFetch(`/api/matching/sources/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    alert(body.detail || "Failed to delete source.");
+    await alertDialog("Couldn't delete source", body.detail || "Failed to delete source.");
     return;
   }
   invalidateCache("/api/matching/sources");
