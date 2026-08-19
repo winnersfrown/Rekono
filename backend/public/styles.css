@@ -894,6 +894,30 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 }
 .modal-close:hover { color: var(--paper); border-color: var(--blue); background: transparent; box-shadow: none; transform: none; }
 
+/* ---------- confirm modal (replaces the native confirm() dialog) ---------- */
+.confirm-modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.6rem;
+  box-shadow: var(--shadow-lg);
+}
+.confirm-modal-card h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+.confirm-modal-card p { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin: 0; }
+.confirm-modal-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.4rem; }
+.modal-btn-cancel { background: transparent; border: 1px solid var(--line); color: var(--paper); }
+.modal-btn-cancel:hover { background: transparent; border-color: var(--blue); color: var(--blue-bright); box-shadow: none; }
+.confirm-modal-actions .modal-btn-danger {
+  background: linear-gradient(180deg, #f97b81, var(--red));
+  color: #200507;
+}
+.confirm-modal-actions .modal-btn-danger:hover {
+  background: linear-gradient(180deg, #ff9297, #ff6b71);
+  box-shadow: 0 8px 24px -6px rgba(242, 84, 91, 0.4);
+}
+
 /* ---------- app sidebar layout ---------- */
 .app-layout { display: flex; min-height: 100vh; align-items: stretch; }
 
