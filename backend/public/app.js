@@ -353,7 +353,9 @@ function renderDetail(inv) {
       <div class="cross-check processing">⏳ Still processing this document — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
       <div class="doc-preview">
         <h3>Source document</h3>
-        ${isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`}
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="doc-preview-media"></iframe>` : `<img id="doc-preview-media" />`}
+        </div>
       </div>
     `;
     loadDocPreview(inv);
@@ -439,7 +441,9 @@ function renderDetail(inv) {
 
     <div class="doc-preview">
       <h3>Source document</h3>
-      ${preview}
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
     </div>
   `;
 

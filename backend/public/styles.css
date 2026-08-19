@@ -423,7 +423,21 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .confidence-note { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
 
 .doc-preview { margin-top: 1.2rem; }
-.doc-preview iframe, .doc-preview img { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+/* Scrolls instead of cropping/shrinking the document to fit -- the frame
+   caps how tall the panel gets, but the document itself renders at full
+   width and its own natural height inside it. Crucially, the <img> case
+   sets height: auto rather than a fixed pixel height: a fixed height on an
+   <img> stretches/squishes it to fit (no aspect ratio is preserved without
+   object-fit), which visibly distorted portrait-oriented invoices. */
+.doc-preview-frame {
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink-850);
+}
+.doc-preview-frame img { display: block; width: 100%; height: auto; }
+.doc-preview-frame iframe { display: block; width: 100%; height: 640px; border: none; }
 
 .actions { display: flex; gap: 0.5rem; margin-top: 1.2rem; }
 .actions .approve { background: linear-gradient(180deg, #4fdb95, var(--green)); color: #04160c; }
