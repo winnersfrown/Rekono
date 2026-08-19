@@ -57,6 +57,9 @@ export function serializeInvoiceDetail(inv) {
     possible_multi_invoice_reason: inv.possibleMultiInvoiceReason,
 
     quickbooks_bill_id: inv.quickbooksBillId,
+    quickbooks_expense_account_id: inv.quickbooksExpenseAccountId,
+    quickbooks_expense_account_name: inv.quickbooksExpenseAccountName,
+    quickbooks_expense_account_confidence: inv.quickbooksExpenseAccountConfidence,
 
     created_at: inv.createdAt,
     updated_at: inv.updatedAt,

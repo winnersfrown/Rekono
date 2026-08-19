@@ -64,6 +64,20 @@ export const Invoice = sequelize.define(
     // no default like every column added after this session's schema-drift
     // incidents.
     quickbooksBillId: { type: DataTypes.STRING(64), allowNull: true },
+
+    // Per-invoice QuickBooks expense-account categorization (see
+    // quickbooks.js's suggestExpenseAccount) -- independent of the org-level
+    // default (Organization.quickbooksDefaultExpenseAccountId): when set,
+    // this invoice's own account is used on push instead; when null, push
+    // falls back to the org default, exactly as it did before this feature
+    // existed. Confidence is its own column rather than a key in
+    // fieldConfidence above since this isn't an extraction.js FIELD -- it's
+    // computed later (only once an org is connected to QuickBooks) from a
+    // different source entirely: an LLM call against the org's real chart
+    // of accounts, not the invoice's OCR text.
+    quickbooksExpenseAccountId: { type: DataTypes.STRING(64), allowNull: true },
+    quickbooksExpenseAccountName: { type: DataTypes.STRING(256), allowNull: true },
+    quickbooksExpenseAccountConfidence: { type: DataTypes.FLOAT, allowNull: true },
   },
   {
     tableName: "invoices",

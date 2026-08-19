@@ -418,7 +418,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   font-size: 0.85rem;
 }
 
-.field.low-confidence input { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(232, 169, 59, 0.25); }
+.field.low-confidence input, .field.low-confidence select { border-color: var(--amber); box-shadow: 0 0 0 1px rgba(232, 169, 59, 0.25); }
 
 .confidence-note { font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
 

@@ -11,6 +11,7 @@
 // them into a specific status code. Only genuinely unexpected failures
 // (thrown by fetchImpl itself, e.g. a network error) propagate up to the
 // route's try/catch and the app-wide 500 handler.
+import Anthropic from "@anthropic-ai/sdk";
 import { settings } from "./config.js";
 
 export const QUICKBOOKS_AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
@@ -141,13 +142,17 @@ export async function findOrCreateVendor(org, vendorName, { fetchImpl = fetch } 
   return { data: { id: created.data.Vendor.Id, name: created.data.Vendor.DisplayName } };
 }
 
-// Pushes one Rekono invoice to QuickBooks as a single-line Bill against
-// org's chosen default expense account. One-way and manual (per-invoice,
-// triggered by the user) in Phase 1 -- no sync-back, no bulk push, no
-// automatic push-on-approve.
+// Pushes one Rekono invoice to QuickBooks as a single-line Bill. Uses this
+// invoice's own categorized expense account (see suggestExpenseAccount,
+// below) if it has one, falling back to org's static default otherwise --
+// so a categorized invoice files under its actual spend category, while an
+// org that never touches categorization keeps working exactly as Phase 1
+// shipped. One-way and manual (per-invoice, triggered by the user) -- no
+// sync-back, no bulk push, no automatic push-on-approve.
 export async function pushInvoiceAsBill(org, invoice, { fetchImpl = fetch } = {}) {
   if (!org.quickbooksRealmId) return { error: "not_connected" };
-  if (!org.quickbooksDefaultExpenseAccountId) return { error: "no_default_account" };
+  const accountId = invoice.quickbooksExpenseAccountId || org.quickbooksDefaultExpenseAccountId;
+  if (!accountId) return { error: "no_default_account" };
   if (invoice.quickbooksBillId) return { error: "already_pushed" };
 
   const vendor = await findOrCreateVendor(org, invoice.vendorName || "Unknown vendor", { fetchImpl });
@@ -159,7 +164,7 @@ export async function pushInvoiceAsBill(org, invoice, { fetchImpl = fetch } = {}
       {
         DetailType: "AccountBasedExpenseLineDetail",
         Amount: invoice.total ?? 0,
-        AccountBasedExpenseLineDetail: { AccountRef: { value: org.quickbooksDefaultExpenseAccountId } },
+        AccountBasedExpenseLineDetail: { AccountRef: { value: accountId } },
       },
     ],
     ...(invoice.invoiceDate ? { TxnDate: invoice.invoiceDate } : {}),
@@ -171,4 +176,92 @@ export async function pushInvoiceAsBill(org, invoice, { fetchImpl = fetch } = {}
   const result = await qbFetch(org, "/bill", { method: "POST", body: billPayload, fetchImpl });
   if (result.error) return result;
   return { data: { id: result.data.Bill.Id } };
+}
+
+const CATEGORIZE_TOOL = {
+  name: "categorize_expense",
+  description:
+    "Pick the QuickBooks expense account this invoice's spend belongs under, from the given list, with a confidence (0.0-1.0) and one short reason.",
+  input_schema: {
+    type: "object",
+    properties: {
+      account_id: {
+        type: "string",
+        description: "The id of the chosen account, exactly as given in the account list. Empty string if none of the given accounts are a reasonable fit.",
+      },
+      confidence: { type: "number" },
+      reasoning: { type: "string", description: "One short sentence explaining the pick." },
+    },
+    required: ["account_id", "confidence", "reasoning"],
+  },
+};
+
+const CATEGORIZE_TIMEOUT_MS = 30_000;
+
+// Suggests which of org's QuickBooks expense accounts this invoice's spend
+// belongs under -- e.g. an AWS invoice's line items ("Compute", "Storage")
+// point at "Software & Subscriptions" or "Cloud Hosting", not whatever the
+// org's static default account happens to be. There's no reasonable
+// regex/heuristic version of this: matching free-text vendor/line-item
+// wording against an arbitrary, org-specific chart of accounts is exactly
+// the kind of judgment call a fixed pattern can't make. Unlike
+// extraction.js's fields, this has no fallback path -- without
+// ANTHROPIC_API_KEY it simply returns no suggestion, and callers fall back
+// to the org's default account, i.e. exactly the behavior this app had
+// before this feature existed.
+export async function suggestExpenseAccount(invoice, accounts) {
+  if (!settings.anthropicApiKey || !accounts?.length) return { suggested: false };
+
+  const lineItemsText =
+    (invoice.lineItems || [])
+      .map((li) => `- ${li.description || "(no description)"}${li.amount != null ? ` — $${li.amount}` : ""}`)
+      .join("\n") || "(no line items on file)";
+  const accountsText = accounts.map((a) => `${a.id}: ${a.name}`).join("\n");
+
+  const prompt = `You are categorizing a vendor invoice for accounts-payable bookkeeping. Given the invoice below and the company's available QuickBooks expense accounts, pick the single best-fitting account for this spend.
+
+Vendor: ${invoice.vendorName || "(unknown)"}
+Line items:
+${lineItemsText}
+
+Available expense accounts (id: name):
+${accountsText}
+
+Call the categorize_expense tool with your pick. If truly nothing fits, return an empty account_id and a low confidence rather than forcing a bad match.`;
+
+  try {
+    const client = new Anthropic({ apiKey: settings.anthropicApiKey, timeout: CATEGORIZE_TIMEOUT_MS, maxRetries: 1 });
+    const response = await client.messages.create({
+      model: settings.anthropicModel,
+      max_tokens: 1024,
+      tools: [CATEGORIZE_TOOL],
+      tool_choice: { type: "tool", name: "categorize_expense" },
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const toolUse = response.content.find((block) => block.type === "tool_use");
+    const data = toolUse?.input;
+    const account = accounts.find((a) => a.id === data?.account_id);
+    if (!account) return { suggested: false };
+
+    return {
+      suggested: true,
+      accountId: account.id,
+      accountName: account.name,
+      confidence: clamp01(data.confidence),
+      reasoning: data.reasoning || "",
+    };
+  } catch (err) {
+    // Same reasoning as extraction.js's LLM path: fall back rather than
+    // fail the whole request on a transient API error -- the caller already
+    // treats "no suggestion" as a normal, expected outcome.
+    console.error("QuickBooks expense-account categorization failed:", err.message);
+    return { suggested: false };
+  }
+}
+
+function clamp01(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
 }

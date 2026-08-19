@@ -8,6 +8,7 @@ import {
   pushInvoiceAsBill,
   quickbooksApiBaseUrl,
   refreshAccessToken,
+  suggestExpenseAccount,
 } from "../src/quickbooks.js";
 
 // QUICKBOOKS_CLIENT_ID/QUICKBOOKS_CLIENT_SECRET are never set in the test
@@ -219,5 +220,51 @@ describe("pushInvoiceAsBill", () => {
 
     const result = await pushInvoiceAsBill(org, fakeInvoice(), { fetchImpl });
     expect(result.error).toBe("api_error");
+  });
+
+  test("uses the invoice's own categorized account over the org default when set", async () => {
+    const org = fakeOrg(); // default account "42"
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ QueryResponse: { Vendor: [{ Id: "55", DisplayName: "Acme Corp" }] } }))
+      .mockResolvedValueOnce(jsonResponse({ Bill: { Id: "b1" } }));
+
+    const result = await pushInvoiceAsBill(org, fakeInvoice({ quickbooksExpenseAccountId: "77" }), { fetchImpl });
+    expect(result.data).toEqual({ id: "b1" });
+
+    const billBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(billBody.Line[0].AccountBasedExpenseLineDetail.AccountRef).toEqual({ value: "77" });
+  });
+
+  test("falls back to the org default when the invoice has no categorized account", async () => {
+    const org = fakeOrg(); // default account "42"
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ QueryResponse: { Vendor: [{ Id: "55", DisplayName: "Acme Corp" }] } }))
+      .mockResolvedValueOnce(jsonResponse({ Bill: { Id: "b1" } }));
+
+    const result = await pushInvoiceAsBill(org, fakeInvoice({ quickbooksExpenseAccountId: null }), { fetchImpl });
+    expect(result.data).toEqual({ id: "b1" });
+
+    const billBody = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(billBody.Line[0].AccountBasedExpenseLineDetail.AccountRef).toEqual({ value: "42" });
+  });
+});
+
+describe("suggestExpenseAccount", () => {
+  // ANTHROPIC_API_KEY is never set in the test environment (jest.setup.js),
+  // so -- same limitation as extraction.js's LLM path -- this can only be
+  // exercised down to its "not configured" no-op here. What matters is that
+  // it degrades to "no suggestion" instead of guessing or throwing.
+  test("returns no suggestion without ANTHROPIC_API_KEY configured", async () => {
+    const invoice = fakeInvoice({ lineItems: [{ description: "Compute", amount: 50 }] });
+    const accounts = [{ id: "42", name: "Office Supplies" }, { id: "77", name: "Software & Subscriptions" }];
+    const result = await suggestExpenseAccount(invoice, accounts);
+    expect(result).toEqual({ suggested: false });
+  });
+
+  test("returns no suggestion when there are no accounts to choose from", async () => {
+    const result = await suggestExpenseAccount(fakeInvoice(), []);
+    expect(result).toEqual({ suggested: false });
   });
 });
