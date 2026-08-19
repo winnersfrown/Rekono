@@ -265,3 +265,116 @@ function clamp01(value) {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(1, n));
 }
+
+// Reads org's QuickBooks bank/card feed activity (Purchase transactions --
+// direct one-step expenses, as opposed to a Bill paid later) from the last
+// sinceDays. This is the half of reconciliation QuickBooks' public API
+// actually supports: the "for review"/unmatched bank feed itself has no
+// public API, but once a transaction has been added as a Purchase (the
+// common outcome when a bookkeeper doesn't recognize it as paying an
+// existing Bill), it's a normal, queryable transaction. That's the real
+// problem this feature targets -- a Purchase that duplicates a Bill Rekono
+// already pushed and is still sitting unpaid.
+export async function fetchBankTransactions(org, { sinceDays = 90, fetchImpl = fetch } = {}) {
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const query = `select Id, TxnDate, TotalAmt, EntityRef, PrivateNote, Line from Purchase where TxnDate > '${since}' orderby TxnDate desc maxresults 200`;
+  const result = await qbFetch(org, `/query?query=${encodeURIComponent(query)}`, { fetchImpl });
+  if (result.error) return result;
+
+  const purchases = result.data?.QueryResponse?.Purchase || [];
+  return {
+    data: purchases.map((p) => ({
+      id: p.Id,
+      date: p.TxnDate,
+      amount: p.TotalAmt,
+      payeeName: p.EntityRef?.name || "",
+      description: p.PrivateNote || p.Line?.find((l) => l.Description)?.Description || "",
+    })),
+  };
+}
+
+// Pure heuristic pre-filter: which of org's already-pushed, still-unpaid
+// invoices could this bank transaction plausibly be paying? QuickBooks bill
+// payments are for the exact bill total, so amount matches exactly (to the
+// cent); the date window absorbs the normal lag between an invoice's due
+// date and when it actually clears the bank. No network, no AI -- this
+// alone is often enough to resolve to a single confident candidate, so
+// reconciliation still works without ANTHROPIC_API_KEY configured. AI
+// (suggestBankTransactionMatch, below) only gets involved when this leaves
+// more than one plausible candidate to choose between.
+export function findExactAmountCandidates(transaction, invoices, { dateWindowDays = 14 } = {}) {
+  const txnDate = new Date(transaction.date);
+  return invoices.filter((inv) => {
+    if (inv.total == null || Math.abs(inv.total - transaction.amount) > 0.01) return false;
+    const refDateStr = inv.dueDate || inv.invoiceDate;
+    if (!refDateStr) return true;
+    const diffDays = Math.abs((txnDate - new Date(refDateStr)) / (24 * 60 * 60 * 1000));
+    return diffDays <= dateWindowDays;
+  });
+}
+
+const MATCH_TOOL = {
+  name: "match_bank_transaction",
+  description:
+    "Pick which (if any) of the given unpaid bills this bank/card transaction is most likely paying, with a confidence (0.0-1.0) and one short reason.",
+  input_schema: {
+    type: "object",
+    properties: {
+      invoice_id: {
+        type: "string",
+        description: "The id of the matching bill, exactly as given in the candidate list. Empty string if none is a plausible match.",
+      },
+      confidence: { type: "number" },
+      reasoning: { type: "string", description: "One short sentence explaining the pick." },
+    },
+    required: ["invoice_id", "confidence", "reasoning"],
+  },
+};
+
+const MATCH_TIMEOUT_MS = 30_000;
+
+// Disambiguates between multiple same-amount candidates (findExactAmountCandidates
+// already guarantees the amount and rough timing line up) using the
+// transaction's payee/memo text -- which is frequently an abbreviated or
+// garbled bank/processor string ("SQ *STARBUCKS 4421") rather than a clean
+// vendor name, exactly the kind of free-text judgment call a fixed pattern
+// can't make. Same no-fallback shape as suggestExpenseAccount: without
+// ANTHROPIC_API_KEY this returns no suggestion, and the caller leaves the
+// transaction for a human to pick between the candidates manually.
+export async function suggestBankTransactionMatch(transaction, candidateInvoices) {
+  if (!settings.anthropicApiKey || !candidateInvoices?.length) return { suggested: false };
+
+  const candidatesText = candidateInvoices
+    .map((inv) => `${inv.id}: vendor "${inv.vendorName || "(unknown)"}", amount $${inv.total}, invoice date ${inv.invoiceDate || "?"}, due ${inv.dueDate || "?"}`)
+    .join("\n");
+
+  const prompt = `A QuickBooks bank/card transaction needs to be matched to the unpaid bill it's most likely paying, if any. All candidates already match on dollar amount and rough timing -- use the payee/memo text to pick between them.
+
+Transaction: ${transaction.payeeName || "(no payee on file)"} — $${transaction.amount} on ${transaction.date}${transaction.description ? `, memo: "${transaction.description}"` : ""}
+
+Candidate unpaid bills (id: details):
+${candidatesText}
+
+Call match_bank_transaction with your pick. Bank/card transaction descriptions are often abbreviated or garbled (e.g. "SQ *STARBUCKS 4421" for "Starbucks Corp") -- weigh that against a clean vendor name mismatch. If truly nothing plausibly matches, return an empty invoice_id and a low confidence rather than forcing a bad match.`;
+
+  try {
+    const client = new Anthropic({ apiKey: settings.anthropicApiKey, timeout: MATCH_TIMEOUT_MS, maxRetries: 1 });
+    const response = await client.messages.create({
+      model: settings.anthropicModel,
+      max_tokens: 1024,
+      tools: [MATCH_TOOL],
+      tool_choice: { type: "tool", name: "match_bank_transaction" },
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const toolUse = response.content.find((block) => block.type === "tool_use");
+    const data = toolUse?.input;
+    const invoice = candidateInvoices.find((inv) => inv.id === data?.invoice_id);
+    if (!invoice) return { suggested: false };
+
+    return { suggested: true, invoiceId: invoice.id, confidence: clamp01(data.confidence), reasoning: data.reasoning || "" };
+  } catch (err) {
+    console.error("QuickBooks bank-transaction matching failed:", err.message);
+    return { suggested: false };
+  }
+}

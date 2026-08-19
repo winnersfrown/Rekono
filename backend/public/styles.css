@@ -395,6 +395,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .badge.match-matched { background: rgba(62, 203, 132, 0.14); border-color: rgba(62, 203, 132, 0.3); color: var(--green); }
 .badge.match-partial { background: rgba(232, 169, 59, 0.14); border-color: rgba(232, 169, 59, 0.3); color: var(--amber); }
 .badge.match-unmatched { background: rgba(242, 84, 91, 0.14); border-color: rgba(242, 84, 91, 0.3); color: var(--red); }
+.badge.badge-paid { background: rgba(62, 203, 132, 0.14); border-color: rgba(62, 203, 132, 0.3); color: var(--green); }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem 1rem; margin-bottom: 1.2rem; }
 
@@ -1077,6 +1078,46 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   box-shadow: none;
   transform: none;
 }
+
+/* ---------- QuickBooks bank reconciliation ---------- */
+#qb-reconcile-section { margin-top: 1.6rem; }
+#qb-reconcile-section h2 { font-size: 1.05rem; margin-bottom: 0.2rem; }
+
+.reconcile-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.65rem 0.8rem;
+  margin-bottom: 0.5rem;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.reconcile-txn { display: flex; align-items: baseline; gap: 0.7rem; font-size: 0.88rem; min-width: 15rem; }
+.reconcile-date { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); }
+.reconcile-payee { font-weight: 600; }
+.reconcile-amount { font-family: var(--font-mono); color: var(--blue-bright); }
+
+.reconcile-match { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.reconcile-select {
+  background: var(--ink-850);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: inherit;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+}
+.reconcile-dismiss {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.reconcile-dismiss:hover, .reconcile-dismiss:focus-visible { color: var(--red); border-color: var(--red); }
+
+.reconcile-note { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
 
 .sidebar-footer {
   border-top: 1px solid var(--line-soft);
