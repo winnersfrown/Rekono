@@ -21,6 +21,42 @@ function debounce(fn, delayMs) {
   };
 }
 
+// ---- Confirm modal ----
+// Replaces the native confirm() dialog (browser chrome, shows the raw
+// hostname, can't be styled) with one that matches the rest of the app.
+// Returns a Promise<boolean> so call sites read the same as before:
+// `if (!(await confirmDialog(...))) return;`.
+let confirmModalResolve = null;
+
+function confirmDialog(title, message, { confirmLabel = "OK", danger = false } = {}) {
+  return new Promise((resolve) => {
+    confirmModalResolve = resolve;
+    document.getElementById("confirm-modal-title").textContent = title;
+    document.getElementById("confirm-modal-message").textContent = message;
+    const confirmBtn = document.getElementById("confirm-modal-confirm");
+    confirmBtn.textContent = confirmLabel;
+    confirmBtn.classList.toggle("modal-btn-danger", danger);
+    document.getElementById("confirm-modal").style.display = "flex";
+  });
+}
+
+function closeConfirmModal(result) {
+  document.getElementById("confirm-modal").style.display = "none";
+  if (confirmModalResolve) {
+    confirmModalResolve(result);
+    confirmModalResolve = null;
+  }
+}
+
+document.getElementById("confirm-modal-confirm").addEventListener("click", () => closeConfirmModal(true));
+document.getElementById("confirm-modal-cancel").addEventListener("click", () => closeConfirmModal(false));
+document.getElementById("confirm-modal").addEventListener("click", (e) => {
+  if (e.target.id === "confirm-modal") closeConfirmModal(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.getElementById("confirm-modal").style.display !== "none") closeConfirmModal(false);
+});
+
 // ---- Tabs ----
 // Sidebar nav items and the ask-hero's quick-action shortcuts both switch
 // tabs via [data-tab], but only the sidebar nav (.tab-btn) gets the
@@ -637,7 +673,11 @@ async function pushInvoiceToQuickbooks(id) {
 // review-detail panel, so both need refreshing regardless of which one this
 // was clicked from.
 async function deleteInvoice(id) {
-  if (!confirm("Delete this document? This can't be undone from the review UI.")) return;
+  const ok = await confirmDialog("Delete this document?", "This can't be undone from the review UI.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
 
   const res = await apiFetch(`/api/invoices/${id}`, { method: "DELETE" });
   if (!res.ok) {
@@ -703,7 +743,11 @@ function renderSources(sources) {
 }
 
 async function deleteSource(id) {
-  if (!confirm("Delete this source? Its uploaded rows will be removed; past matching results stay in your history.")) return;
+  const ok = await confirmDialog("Delete this source?", "Its uploaded rows will be removed. Past matching results stay in your history.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
   const res = await apiFetch(`/api/matching/sources/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -1057,7 +1101,8 @@ document.getElementById("qb-connect-btn").addEventListener("click", async () => 
 });
 
 document.getElementById("qb-disconnect-btn").addEventListener("click", async () => {
-  if (!confirm("Disconnect QuickBooks? You can reconnect at any time.")) return;
+  const ok = await confirmDialog("Disconnect QuickBooks?", "You can reconnect at any time.", { confirmLabel: "Disconnect" });
+  if (!ok) return;
   const statusEl = document.getElementById("settings-quickbooks-status");
   try {
     const res = await apiFetch("/api/integrations/quickbooks/disconnect", { method: "POST" });
@@ -1132,7 +1177,11 @@ function renderTeam({ data, me }) {
     .join("");
   membersBody.querySelectorAll(".team-remove-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Remove this teammate from your account?")) return;
+      const ok = await confirmDialog("Remove this teammate?", "They'll lose access to your account immediately.", {
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!ok) return;
       await apiFetch(`/api/team/members/${btn.dataset.userId}`, { method: "DELETE" });
       invalidateCache("__team__");
       loadTeam();
