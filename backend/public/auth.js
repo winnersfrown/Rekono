@@ -13,7 +13,7 @@ const PLAN_BENEFITS = {
   free: ["25 documents/mo", "1 seat", "Extraction + review queue", "CSV / Excel export"],
   starter: ["150 documents/mo", "1 seat", "Extraction + review queue", "CSV / Excel export", "Email support"],
   growth: ["750 documents/mo", "5 seats", "Everything in Starter", "Matching engine + full audit trail", "Priority support"],
-  business: ["2,500 documents/mo", "Unlimited seats", "Everything in Growth", "Custom confidence thresholds", "Dedicated onboarding"],
+  business: ["2,500 documents/mo", "Unlimited seats", "Everything in Growth", "Custom confidence thresholds", "Risk-based auto-approval", "Dedicated onboarding"],
   scale: ["10,000 documents/mo", "Unlimited seats", "Everything in Business", "Dedicated support channel", "Priority feature requests"],
 };
 

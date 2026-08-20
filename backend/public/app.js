@@ -1104,6 +1104,25 @@ function renderOrgSettings({ settingsRes, me }) {
     rank >= 0 && rank < PLAN_ORDER.length - 1 ? "" : "none";
   document.getElementById("settings-billing-status").textContent = "";
 
+  // Risk-based auto-approval -- rendered before the confidence-threshold
+  // block's early return below, since the two features are gated by
+  // separate plan flags (even though today's plans.js happens to turn them
+  // on together).
+  const autoApprovalLocked = document.getElementById("settings-autoapproval-locked");
+  const autoApprovalForm = document.getElementById("settings-autoapproval-form");
+  document.getElementById("settings-autoapproval-status").textContent = "";
+
+  if (!settingsRes.risk_based_auto_approval_available) {
+    autoApprovalLocked.style.display = "block";
+    autoApprovalForm.style.display = "none";
+    document.getElementById("settings-autoapproval-plan-name").textContent = PLAN_NAMES[me.plan] || me.plan;
+  } else {
+    autoApprovalLocked.style.display = "none";
+    autoApprovalForm.style.display = "block";
+    document.getElementById("settings-autoapproval-enabled").checked = settingsRes.auto_approval_enabled;
+    document.getElementById("settings-autoapproval-max").value = settingsRes.auto_approval_max_amount ?? "";
+  }
+
   // Review queue confidence threshold
   const locked = document.getElementById("settings-confidence-locked");
   const form = document.getElementById("settings-confidence-form");
@@ -1242,6 +1261,38 @@ document.getElementById("settings-confidence-reset").addEventListener("click", a
     statusEl.textContent = "Reset to default.";
     invalidateCache("__org_settings__");
     loadOrgSettings();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-autoapproval-upgrade-btn").addEventListener("click", () => openUpgradeModal());
+
+document.getElementById("settings-autoapproval-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-autoapproval-status");
+  const enabled = document.getElementById("settings-autoapproval-enabled").checked;
+  const maxRaw = document.getElementById("settings-autoapproval-max").value;
+  const max = maxRaw === "" ? null : Number(maxRaw);
+
+  if (max !== null && (!Number.isFinite(max) || max < 0)) {
+    statusEl.textContent = "Enter a maximum amount of 0 or more.";
+    return;
+  }
+  if (enabled && max === null) {
+    statusEl.textContent = "Set a maximum dollar amount before enabling.";
+    return;
+  }
+
+  try {
+    const res = await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_approval_enabled: enabled, auto_approval_max_amount: max }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) invalidateCache("__org_settings__");
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }

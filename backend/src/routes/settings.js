@@ -1,7 +1,8 @@
-// Org-level settings that vary by plan. Currently just the review-queue
-// confidence threshold (Business/Scale-only, see plans.js's
-// customConfidenceThreshold) -- a real place to hang future per-org
-// settings without inventing a new route file each time.
+// Org-level settings that vary by plan: the review-queue confidence
+// threshold and risk-based auto-approval, both Business/Scale-only (see
+// plans.js's customConfidenceThreshold/riskBasedAutoApproval) -- a real
+// place to hang future per-org settings without inventing a new route file
+// each time.
 
 import { Router } from "express";
 import { z } from "zod";
@@ -21,6 +22,10 @@ const settingsSchema = z.object({
   // having to resend the confidence threshold, and vice versa.
   confidence_threshold: z.number().min(0).max(1).nullable().optional(),
   org_name: z.string().min(1).max(256).optional(),
+  // Same "always allowed to reset, only gated going non-default" shape as
+  // confidence_threshold above.
+  auto_approval_enabled: z.boolean().optional(),
+  auto_approval_max_amount: z.number().min(0).nullable().optional(),
 });
 
 function settingsResponse(org) {
@@ -33,6 +38,9 @@ function settingsResponse(org) {
     custom_confidence_threshold_available: Boolean(plan?.customConfidenceThreshold),
     default_confidence_threshold: settings.reviewConfidenceThreshold,
     org_name: org.name,
+    auto_approval_enabled: Boolean(org.autoApprovalEnabled),
+    auto_approval_max_amount: org.autoApprovalMaxAmount,
+    risk_based_auto_approval_available: Boolean(plan?.riskBasedAutoApproval),
   };
 }
 
@@ -55,6 +63,32 @@ router.patch("/api/org/settings", requireAuth, requireActivePlan, async (req, re
         });
       }
       org.confidenceThreshold = parsed.data.confidence_threshold;
+    }
+
+    if (parsed.data.auto_approval_max_amount !== undefined) {
+      if (parsed.data.auto_approval_max_amount !== null && !plan?.riskBasedAutoApproval) {
+        return res.status(403).json({
+          detail: `Risk-based auto-approval is available on the Business and Scale plans. Your current plan is ${plan?.name || org.plan}.`,
+        });
+      }
+      org.autoApprovalMaxAmount = parsed.data.auto_approval_max_amount;
+    }
+
+    if (parsed.data.auto_approval_enabled !== undefined) {
+      if (parsed.data.auto_approval_enabled && !plan?.riskBasedAutoApproval) {
+        return res.status(403).json({
+          detail: `Risk-based auto-approval is available on the Business and Scale plans. Your current plan is ${plan?.name || org.plan}.`,
+        });
+      }
+      org.autoApprovalEnabled = parsed.data.auto_approval_enabled;
+    }
+
+    // Single consistency check covering both ways this invalid combination
+    // could arise (enabling with no ceiling set yet, or clearing the ceiling
+    // while still enabled) -- an org can never end up "enabled" with nothing
+    // actually bounding what gets auto-approved.
+    if (org.autoApprovalEnabled && org.autoApprovalMaxAmount == null) {
+      return res.status(422).json({ detail: "Set a maximum dollar amount before enabling risk-based auto-approval." });
     }
 
     if (parsed.data.org_name !== undefined) {
