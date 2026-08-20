@@ -51,7 +51,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
       - key: RESEND_API_KEY
