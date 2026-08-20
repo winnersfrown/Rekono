@@ -8,6 +8,8 @@ import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
 import { rememberVendorCorrection } from "../vendorAlias.js";
 import { enqueue } from "../jobs.js";
+import { effectiveConfidenceThreshold } from "../pipeline.js";
+import { score as scoreConfidence } from "../confidence.js";
 
 const router = Router();
 
@@ -39,6 +41,21 @@ const SORTABLE_FIELDS = {
   total: "total",
   vendor_name: "vendorName",
   overall_confidence: "overallConfidence",
+};
+
+// Shared by the correction route (PATCH /api/invoices/:id) and the
+// quick-review routes below -- one place both agree on which API field
+// names map to which model attributes.
+const FIELD_TO_ATTR = {
+  vendor_name: "vendorName",
+  invoice_number: "invoiceNumber",
+  invoice_date: "invoiceDate",
+  due_date: "dueDate",
+  currency: "currency",
+  po_reference: "poReference",
+  subtotal: "subtotal",
+  tax: "tax",
+  total: "total",
 };
 
 router.get("/api/invoices", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -136,6 +153,92 @@ router.post("/api/invoices/bulk-action", requireAuth, requireActivePlan, async (
   }
 });
 
+// Fields eligible for quick, one-at-a-time review -- reuses FIELD_TO_ATTR's
+// exact key set (the correction route's own field list below) so both stay
+// in sync automatically.
+const QUICK_REVIEW_FIELDS = Object.keys(FIELD_TO_ATTR);
+const NUMERIC_QUICK_REVIEW_FIELDS = new Set(["subtotal", "tax", "total"]);
+
+// Flat, one-row-per-low-confidence-field queue across every eligible
+// needs_review invoice in the org -- the point is letting a reviewer
+// confirm/correct one field at a time (see the quick-review-field route
+// below) instead of opening a full invoice detail view per invoice.
+// Deliberately excludes invoices flagged for a *structural* reason
+// (duplicate, possible multi-invoice) rather than a low-confidence field --
+// those need real judgment on the whole document, not a quick per-field
+// confirm, and always route through the normal Review Queue instead. An
+// invoice flagged purely by a failed cross-check with no individually
+// low-confidence field (rare, but possible) also won't appear here, for the
+// same reason -- nothing to "confirm" fixes an arithmetic mismatch by
+// itself. Registered above GET /api/invoices/:id -- Express matches routes
+// in registration order, and ":id" would otherwise swallow this literal
+// path first (same reason bulk-action, below, is registered before it too).
+router.get("/api/invoices/quick-review-queue", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const threshold = await effectiveConfidenceThreshold(req.currentUser.orgId);
+    const invoices = await Invoice.findAll({
+      where: {
+        orgId: req.currentUser.orgId,
+        status: "needs_review",
+        duplicateOfInvoiceId: null,
+        possibleMultiInvoice: false,
+      },
+      order: [["createdAt", "ASC"]],
+      limit: 200,
+    });
+
+    const items = [];
+    outer: for (const inv of invoices) {
+      for (const field of QUICK_REVIEW_FIELDS) {
+        const confidence = inv.fieldConfidence?.[field] ?? 0;
+        if (confidence >= threshold) continue;
+        items.push({
+          invoice_id: inv.id,
+          field,
+          value: inv[FIELD_TO_ATTR[field]],
+          confidence,
+          vendor_name: inv.vendorName,
+          original_filename: inv.originalFilename,
+        });
+        if (items.length >= 500) break outer;
+      }
+    }
+
+    res.json(items);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Invoices auto-approved and randomly selected for a retrospective spot
+// check (see pipeline.js's processInvoice), still awaiting one -- a
+// lightweight companion queue to quick-review-queue above, but for a
+// different job: this isn't blocking anything (the invoice is already
+// approved, possibly already pushed to QuickBooks), it's just catching
+// drift in auto-approval decisions nobody looked at, on a sample rather
+// than every one of them. Same registration-order reasoning as above.
+router.get("/api/invoices/qa-sample-queue", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const invoices = await Invoice.findAll({
+      where: { orgId: req.currentUser.orgId, sampledForQa: true, qaReviewedAt: null },
+      order: [["createdAt", "ASC"]],
+      limit: 200,
+    });
+    res.json(
+      invoices.map((inv) => ({
+        invoice_id: inv.id,
+        vendor_name: inv.vendorName,
+        original_filename: inv.originalFilename,
+        total: inv.total,
+        invoice_date: inv.invoiceDate,
+        overall_confidence: inv.overallConfidence,
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/api/invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
@@ -202,18 +305,6 @@ const correctionSchema = z.object({
   line_items: z.array(lineItemSchema).nullable().optional(),
 });
 
-const FIELD_TO_ATTR = {
-  vendor_name: "vendorName",
-  invoice_number: "invoiceNumber",
-  invoice_date: "invoiceDate",
-  due_date: "dueDate",
-  currency: "currency",
-  po_reference: "poReference",
-  subtotal: "subtotal",
-  tax: "tax",
-  total: "total",
-};
-
 router.patch("/api/invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const parsed = correctionSchema.safeParse(req.body);
@@ -271,6 +362,149 @@ router.patch("/api/invoices/:id", requireAuth, requireActivePlan, async (req, re
 
     const fresh = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
     res.json(serializeInvoiceDetail(fresh));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const quickReviewFieldSchema = z.object({
+  field: z.enum(QUICK_REVIEW_FIELDS),
+  value: z.union([z.string(), z.number()]).nullable(),
+});
+
+// Confirms (value left unchanged) or corrects (value edited) exactly one
+// field, treating either case identically -- a human just looked at this
+// specific field and vouched for the value now on it, so it's marked fully
+// confident (1.0) either way, same as a full correction via
+// PATCH /api/invoices/:id. Recomputes overall confidence and the
+// cross-check from the invoice's current state (confidence.js's score)
+// rather than leaving the extraction-time snapshot stale, since the whole
+// point of this route is moving an invoice toward "nothing left to flag."
+// Once nothing does, auto-approves -- a human has now personally vouched
+// for every field that was ever in question, so there's nothing left for a
+// manual Approve click to add.
+router.post("/api/invoices/:id/quick-review-field", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = quickReviewFieldSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (invoice.status !== "needs_review") {
+      return res.status(409).json({ detail: `Cannot quick-review a field on an invoice in status ${invoice.status}` });
+    }
+    if (invoice.duplicateOfInvoiceId || invoice.possibleMultiInvoice) {
+      return res.status(409).json({ detail: "This invoice needs a full review, not quick field review." });
+    }
+
+    const { field } = parsed.data;
+    const attr = FIELD_TO_ATTR[field];
+    let value = parsed.data.value;
+    if (NUMERIC_QUICK_REVIEW_FIELDS.has(field)) {
+      value = value === null || value === "" ? null : Number(value);
+      if (value !== null && !Number.isFinite(value)) {
+        return res.status(422).json({ detail: `${field} must be a number.` });
+      }
+    } else {
+      value = value === null ? "" : String(value);
+    }
+
+    const oldValue = invoice[attr];
+    invoice[attr] = value;
+    invoice.fieldConfidence = { ...invoice.fieldConfidence, [field]: 1.0 };
+
+    const report = scoreConfidence({
+      fields: {
+        vendor_name: invoice.vendorName,
+        invoice_number: invoice.invoiceNumber,
+        invoice_date: invoice.invoiceDate,
+        due_date: invoice.dueDate,
+        po_reference: invoice.poReference,
+        currency: invoice.currency,
+        subtotal: invoice.subtotal,
+        tax: invoice.tax,
+        total: invoice.total,
+      },
+      fieldConfidence: invoice.fieldConfidence,
+      lineItems: (invoice.lineItems || []).map((li) => ({ amount: li.amount, confidence: li.confidence })),
+    });
+    invoice.overallConfidence = report.overallConfidence;
+    invoice.crossCheckPassed = report.crossCheckPassed;
+    invoice.crossCheckDetail = report.crossCheckDetail;
+
+    const threshold = await effectiveConfidenceThreshold(req.currentUser.orgId);
+    const stillFlagged = report.overallConfidence < threshold || !report.crossCheckPassed;
+    if (!stillFlagged) invoice.status = "approved";
+    await invoice.save();
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "quick_review_field",
+      actor: req.currentUser.email,
+      details: { field, old: oldValue, new: value },
+    });
+
+    // Same "only a real change is worth remembering" rule as the full
+    // PATCH route above -- confirming an already-correct vendor name as-is
+    // teaches nothing new.
+    if (field === "vendor_name" && oldValue && String(oldValue) !== String(value)) {
+      await rememberVendorCorrection(req.currentUser.orgId, oldValue, value);
+    }
+
+    if (!stillFlagged) {
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        invoiceId: invoice.id,
+        action: "approved",
+        actor: req.currentUser.email,
+        details: { via: "quick_review" },
+      });
+    }
+
+    res.json({ invoice_status: invoice.status, still_flagged: stillFlagged });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const qaReviewSchema = z.object({
+  outcome: z.enum(["confirmed", "issue_flagged"]),
+  note: z.string().max(1000).optional(),
+});
+
+// Records a human's verdict on a sampled auto-approval -- purely a QA
+// record, same reasoning as the bank-reconciliation confirm route's
+// "Rekono never writes this back" stance: this never changes the invoice's
+// own status or touches QuickBooks. If a real error turns up, that's a
+// signal to revisit the org's auto-approval settings (or handle that one
+// invoice by hand, e.g. a manual correction + a note to whoever pays
+// vendors) -- not something this route tries to undo automatically.
+router.post("/api/invoices/:id/qa-review", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = qaReviewSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId, sampledForQa: true } });
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (invoice.qaReviewedAt) return res.status(409).json({ detail: "This invoice has already been spot-checked." });
+
+    invoice.qaReviewedAt = new Date();
+    invoice.qaOutcome = parsed.data.outcome;
+    await invoice.save();
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "qa_reviewed",
+      actor: req.currentUser.email,
+      details: { outcome: parsed.data.outcome, note: parsed.data.note || "" },
+    });
+
+    res.json({ ok: true, qa_outcome: invoice.qaOutcome, qa_reviewed_at: invoice.qaReviewedAt });
   } catch (err) {
     next(err);
   }

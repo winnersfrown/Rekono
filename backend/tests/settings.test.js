@@ -211,3 +211,77 @@ test("renaming the org does not require also sending a confidence threshold", as
   expect(res.status).toBe(200);
   expect(res.body.confidence_threshold).toBeNull(); // untouched, not reset by omission
 });
+
+test("GET /api/org/settings reports statistical sampling as unavailable on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(res.body.sample_review_enabled).toBe(false);
+  expect(res.body.sample_review_rate).toBeNull();
+});
+
+test("PATCH /api/org/settings rejects enabling sampling on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_enabled: true });
+  expect(res.status).toBe(403);
+});
+
+test("PATCH /api/org/settings rejects setting a sample rate on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_rate: 0.1 });
+  expect(res.status).toBe(403);
+});
+
+test("PATCH /api/org/settings rejects enabling sampling without a rate set", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_enabled: true });
+  expect(res.status).toBe(422);
+});
+
+test("PATCH /api/org/settings rejects an out-of-range sample rate", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_rate: 1.5 });
+  expect(res.status).toBe(422);
+});
+
+test("PATCH /api/org/settings sets and GET reflects sampling on Business", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const patchRes = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_rate: 0.05, sample_review_enabled: true });
+  expect(patchRes.status).toBe(200);
+  expect(patchRes.body.sample_review_enabled).toBe(true);
+  expect(patchRes.body.sample_review_rate).toBe(0.05);
+
+  const getRes = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(getRes.body.sample_review_enabled).toBe(true);
+  expect(getRes.body.sample_review_rate).toBe(0.05);
+});
+
+test("PATCH /api/org/settings allows disabling sampling regardless of plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ sample_review_enabled: false });
+  expect(res.status).toBe(200);
+  expect(res.body.sample_review_enabled).toBe(false);
+});

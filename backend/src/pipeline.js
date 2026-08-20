@@ -66,6 +66,17 @@ export async function shouldAutoApprove(invoice, knownVendor) {
   return invoice.total <= org.autoApprovalMaxAmount;
 }
 
+// Whether an already-auto-approved invoice gets flagged for a retrospective
+// QA spot-check (see processInvoice, below, and routes/invoices.js's
+// qa-sample-queue/qa-review routes). `random` is injectable (defaults to
+// the real Math.random) the same way every network-touching function in
+// this codebase takes an injectable fetchImpl -- so this stays a pure,
+// deterministically testable decision rather than something tests have to
+// reason about statistically.
+export function shouldSampleForQa(org, { random = Math.random } = {}) {
+  return Boolean(org?.sampleReviewEnabled && org.sampleReviewRate && random() < org.sampleReviewRate);
+}
+
 export async function processInvoice(invoiceId) {
   const invoice = await Invoice.findByPk(invoiceId);
   if (!invoice) {
@@ -189,6 +200,27 @@ export async function processInvoice(invoiceId) {
           overall_confidence: report.overallConfidence,
         },
       });
+
+      // Statistical spot-checking: an auto-approved invoice never gets a
+      // human's eyes otherwise, so a random slice of them get flagged for a
+      // retrospective quality check (see routes/invoices.js's
+      // qa-sample-queue/qa-review routes) -- catches drift in the
+      // auto-approval logic itself without reviewing every invoice it
+      // clears. Only rolled here, not on every invoice, since a manually
+      // reviewed or `extracted`-but-pending invoice already gets a human's
+      // attention on its own.
+      const org = await Organization.findByPk(invoice.orgId);
+      if (shouldSampleForQa(org)) {
+        invoice.sampledForQa = true;
+        await invoice.save();
+        await AuditLog.create({
+          orgId: invoice.orgId,
+          invoiceId: invoice.id,
+          action: "qa_sampled",
+          actor: "system",
+          details: { sample_rate: org.sampleReviewRate },
+        });
+      }
     }
   } catch (exc) {
     console.error(`process_invoice failed for ${invoiceId}`, exc);

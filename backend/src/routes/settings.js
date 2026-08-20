@@ -1,8 +1,8 @@
 // Org-level settings that vary by plan: the review-queue confidence
-// threshold and risk-based auto-approval, both Business/Scale-only (see
-// plans.js's customConfidenceThreshold/riskBasedAutoApproval) -- a real
-// place to hang future per-org settings without inventing a new route file
-// each time.
+// threshold, risk-based auto-approval, and statistical sampling of
+// auto-approved invoices, all Business/Scale-only (see plans.js's
+// customConfidenceThreshold/riskBasedAutoApproval) -- a real place to hang
+// future per-org settings without inventing a new route file each time.
 
 import { Router } from "express";
 import { z } from "zod";
@@ -26,6 +26,10 @@ const settingsSchema = z.object({
   // confidence_threshold above.
   auto_approval_enabled: z.boolean().optional(),
   auto_approval_max_amount: z.number().min(0).nullable().optional(),
+  // Same shape again, one more time -- see sample_review_enabled's gating
+  // below. Rate is a fraction (0.05 = 5%), not a percentage.
+  sample_review_enabled: z.boolean().optional(),
+  sample_review_rate: z.number().min(0).max(1).nullable().optional(),
 });
 
 function settingsResponse(org) {
@@ -41,6 +45,8 @@ function settingsResponse(org) {
     auto_approval_enabled: Boolean(org.autoApprovalEnabled),
     auto_approval_max_amount: org.autoApprovalMaxAmount,
     risk_based_auto_approval_available: Boolean(plan?.riskBasedAutoApproval),
+    sample_review_enabled: Boolean(org.sampleReviewEnabled),
+    sample_review_rate: org.sampleReviewRate,
   };
 }
 
@@ -89,6 +95,28 @@ router.patch("/api/org/settings", requireAuth, requireActivePlan, async (req, re
     // actually bounding what gets auto-approved.
     if (org.autoApprovalEnabled && org.autoApprovalMaxAmount == null) {
       return res.status(422).json({ detail: "Set a maximum dollar amount before enabling risk-based auto-approval." });
+    }
+
+    if (parsed.data.sample_review_rate !== undefined) {
+      if (parsed.data.sample_review_rate !== null && !plan?.riskBasedAutoApproval) {
+        return res.status(403).json({
+          detail: `Statistical sampling is available on the Business and Scale plans. Your current plan is ${plan?.name || org.plan}.`,
+        });
+      }
+      org.sampleReviewRate = parsed.data.sample_review_rate;
+    }
+
+    if (parsed.data.sample_review_enabled !== undefined) {
+      if (parsed.data.sample_review_enabled && !plan?.riskBasedAutoApproval) {
+        return res.status(403).json({
+          detail: `Statistical sampling is available on the Business and Scale plans. Your current plan is ${plan?.name || org.plan}.`,
+        });
+      }
+      org.sampleReviewEnabled = parsed.data.sample_review_enabled;
+    }
+
+    if (org.sampleReviewEnabled && org.sampleReviewRate == null) {
+      return res.status(422).json({ detail: "Set a sample rate before enabling statistical sampling." });
     }
 
     if (parsed.data.org_name !== undefined) {

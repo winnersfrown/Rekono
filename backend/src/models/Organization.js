@@ -60,6 +60,18 @@ export const Organization = sequelize.define(
     autoApprovalEnabled: { type: DataTypes.BOOLEAN, allowNull: true },
     autoApprovalMaxAmount: { type: DataTypes.FLOAT, allowNull: true },
 
+    // Statistical spot-checking of auto-approved invoices (see pipeline.js's
+    // processInvoice) -- same Business/Scale gate and off-by-default,
+    // opt-in-per-org shape as autoApprovalEnabled above, and only means
+    // anything alongside it: an org with auto-approval off never generates
+    // anything to sample. sampleReviewRate is a fraction (0.05 = 5%) of
+    // auto-approved invoices randomly flagged for a human to spot-check
+    // after the fact (Invoice.sampledForQa) -- never a gate on approval
+    // itself, since the point is catching drift without slowing anything
+    // down.
+    sampleReviewEnabled: { type: DataTypes.BOOLEAN, allowNull: true },
+    sampleReviewRate: { type: DataTypes.FLOAT, allowNull: true },
+
     // QuickBooks Online (Phase 1: sandbox OAuth connect + manual one-way
     // bill push -- see quickbooks.js and routes/integrations.js). realmId
     // is Intuit's company-file identifier, returned alongside the OAuth
