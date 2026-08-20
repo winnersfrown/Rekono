@@ -255,11 +255,11 @@ describe("pushInvoiceAsBill", () => {
 });
 
 describe("suggestExpenseAccount", () => {
-  // ANTHROPIC_API_KEY is never set in the test environment (jest.setup.js),
+  // GEMINI_API_KEY is never set in the test environment (jest.setup.js),
   // so -- same limitation as extraction.js's LLM path -- this can only be
   // exercised down to its "not configured" no-op here. What matters is that
   // it degrades to "no suggestion" instead of guessing or throwing.
-  test("returns no suggestion without ANTHROPIC_API_KEY configured", async () => {
+  test("returns no suggestion without GEMINI_API_KEY configured", async () => {
     const invoice = fakeInvoice({ lineItems: [{ description: "Compute", amount: 50 }] });
     const accounts = [{ id: "42", name: "Office Supplies" }, { id: "77", name: "Software & Subscriptions" }];
     const result = await suggestExpenseAccount(invoice, accounts);
@@ -334,10 +334,10 @@ describe("findExactAmountCandidates", () => {
 });
 
 describe("suggestBankTransactionMatch", () => {
-  // Same limitation as suggestExpenseAccount's tests -- ANTHROPIC_API_KEY is
+  // Same limitation as suggestExpenseAccount's tests -- GEMINI_API_KEY is
   // never set in the test environment, so this can only be exercised down
   // to its "not configured" no-op here.
-  test("returns no suggestion without ANTHROPIC_API_KEY configured", async () => {
+  test("returns no suggestion without GEMINI_API_KEY configured", async () => {
     const transaction = { date: "2026-01-16", amount: 100, payeeName: "Acme Corp" };
     const candidates = [{ id: "inv1", vendorName: "Acme Corp", total: 100, invoiceDate: "2026-01-01", dueDate: "2026-01-15" }];
     const result = await suggestBankTransactionMatch(transaction, candidates);

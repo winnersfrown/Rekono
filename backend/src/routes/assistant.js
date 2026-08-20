@@ -6,7 +6,7 @@
 // the unpaid ones" work, but nothing is persisted server-side -- there's
 // no stored conversation to clean up, and a page reload starts fresh.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
@@ -33,8 +33,8 @@ const MAX_INVOICES_IN_CONTEXT = 300;
 // context (and per-question token cost) grow unbounded over a long thread.
 const MAX_HISTORY_MESSAGES = 12; // 6 question/answer exchanges
 
-// The Anthropic API requires strict user/assistant alternation starting
-// with "user". The client always sends well-formed history, but this is a
+// The Gemini API requires strict user/model alternation starting with
+// "user". The client always sends well-formed history, but this is a
 // public endpoint behind only auth -- a hand-crafted request with malformed
 // history should degrade to "answer without memory" rather than fail the
 // whole question.
@@ -48,7 +48,7 @@ function sanitizeHistory(history) {
   return trimmed;
 }
 
-// Every question is a real Anthropic API call -- real money, not just server
+// Every question is a real Gemini API call -- real money, not just server
 // load -- so this is bounded more like a cost control than a plain abuse
 // guard. Keyed by org rather than IP: the thing actually worth limiting is
 // how fast one account can run up API spend, and an org sharing an office
@@ -61,7 +61,7 @@ const isAssistantRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max
 // retries), since this one blocks a live HTTP request/response instead of a
 // background job.
 const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_RETRIES = 1;
+const LLM_MAX_ATTEMPTS = 2; // original call + one retry
 
 const SYSTEM_PROMPT = `You are Rekono's in-app assistant, helping an accounts-payable user understand their invoice data. Answer only using the JSON data provided in the user message -- never invent vendors, amounts, dates, or statuses that aren't in it. If the data doesn't contain what's needed to answer, say so plainly rather than guessing. Be concise: a few sentences, or a short list. You can summarize, count, filter, and total the data, but you cannot take any action (approve, reject, export, upload, run matching, etc.) -- if asked to do something rather than answer a question, say which tab/button does that instead of attempting it.`;
 
@@ -76,10 +76,10 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
       return res.status(422).json({ detail: parsed.error.issues });
     }
 
-    if (!settings.anthropicApiKey) {
+    if (!settings.geminiApiKey) {
       return res.status(503).json({
         detail:
-          "The AI assistant needs an Anthropic API key configured on the server. In the meantime, use the Review Queue, Matching, and Export tabs directly.",
+          "The AI assistant needs a Gemini API key configured on the server. In the meantime, use the Review Queue, Matching, and Export tabs directly.",
       });
     }
 
@@ -113,29 +113,36 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
     }));
 
     const truncated = invoices.length === MAX_INVOICES_IN_CONTEXT;
-    const client = new Anthropic({
-      apiKey: settings.anthropicApiKey,
-      timeout: LLM_TIMEOUT_MS,
-      maxRetries: LLM_MAX_RETRIES,
+    const client = new GoogleGenAI({
+      apiKey: settings.geminiApiKey,
+      httpOptions: { timeout: LLM_TIMEOUT_MS, retryOptions: { attempts: LLM_MAX_ATTEMPTS } },
     });
-    const history = sanitizeHistory(parsed.data.history);
-    const response = await client.messages.create({
-      model: settings.anthropicModel,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages: [
+    // Gemini's roles are "user"/"model", not Anthropic's "user"/"assistant" --
+    // sanitizeHistory already guarantees strict user/assistant alternation
+    // starting with "user", so a direct role rename is all that's needed.
+    const history = sanitizeHistory(parsed.data.history).map((entry) => ({
+      role: entry.role === "assistant" ? "model" : "user",
+      parts: [{ text: entry.content }],
+    }));
+    const response = await client.models.generateContent({
+      model: settings.geminiModel,
+      config: { systemInstruction: SYSTEM_PROMPT, maxOutputTokens: 1024 },
+      contents: [
         ...history,
         {
           role: "user",
-          content:
-            `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
-            `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
+          parts: [
+            {
+              text:
+                `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
+                `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
+            },
+          ],
         },
       ],
     });
 
-    const answerBlock = response.content.find((block) => block.type === "text");
-    res.json({ answer: answerBlock ? answerBlock.text : "", invoice_count: invoices.length });
+    res.json({ answer: response.text || "", invoice_count: invoices.length });
   } catch (err) {
     next(err);
   }

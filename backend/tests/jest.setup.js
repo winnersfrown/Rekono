@@ -12,5 +12,5 @@ process.env.DATABASE_URL = `sqlite:${path.join(dir, "test.db")}`;
 process.env.STORAGE_DIR = path.join(dir, "storage");
 fs.mkdirSync(process.env.STORAGE_DIR, { recursive: true });
 
-process.env.ANTHROPIC_API_KEY = "";
+process.env.GEMINI_API_KEY = "";
 process.env.SECRET_KEY = "test-secret-key-not-for-production";

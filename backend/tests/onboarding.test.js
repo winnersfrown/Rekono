@@ -5,7 +5,7 @@ import { authHeader, resetDb, signup } from "./testUtils.js";
 // STRIPE_SECRET_KEY is never set in the test environment (jest.setup.js),
 // so the paid-plan path below can only be exercised up to the point where
 // it would hand off to Stripe -- same "not configured yet" limitation as
-// the Resend/Anthropic-backed routes elsewhere in this suite.
+// the Resend/Gemini-backed routes elsewhere in this suite.
 
 beforeEach(resetDb);
 

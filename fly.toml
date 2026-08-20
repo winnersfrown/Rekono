@@ -7,7 +7,7 @@
 #   fly postgres attach rekono-db                # wires DATABASE_URL into this app automatically
 #   fly volumes create rekono_storage --size 3   # persistent disk for uploaded invoices
 #   fly secrets set SECRET_KEY=<random value>    # see README for how to generate one
-#   fly secrets set ANTHROPIC_API_KEY=<your key> # optional -- omit to run in heuristic/demo mode
+#   fly secrets set GEMINI_API_KEY=<your key>    # optional -- omit to run in heuristic/demo mode
 #   fly secrets set RESEND_API_KEY=<your key>    # optional -- enables the marketing site's contact form
 #   fly secrets set STRIPE_SECRET_KEY=<your key>        # optional -- enables paid plans
 #   fly secrets set STRIPE_WEBHOOK_SECRET=<your secret> # pairs with STRIPE_SECRET_KEY -- see README's "Plans & billing (Stripe)" section
@@ -24,7 +24,7 @@ primary_region = "iad"
 
 [env]
   STORAGE_DIR = "/data/storage"
-  ANTHROPIC_MODEL = "claude-sonnet-5"
+  GEMINI_MODEL = "gemini-2.5-flash"
 
 [http_service]
   internal_port = 8000
