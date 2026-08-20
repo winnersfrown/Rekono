@@ -8,6 +8,8 @@ const state = {
   page: 1,
   askHistory: [],
   quickbooksConnected: false,
+  quickReviewQueue: [],
+  quickReviewTotal: 0,
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
@@ -76,6 +78,7 @@ function switchTab(name) {
   if (navBtn) navBtn.classList.add("active");
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
+  if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
@@ -1009,6 +1012,106 @@ async function dismissBankTransaction(row) {
   }
 }
 
+// ---- Quick Review ----
+// A flat queue of (invoice, low-confidence field) pairs -- see
+// GET /api/invoices/quick-review-queue -- reviewed one field at a time
+// instead of opening a whole invoice's detail view per invoice. Fetched
+// once per tab visit and consumed locally: state.quickReviewQueue[0] is
+// always "up next". Confirming/correcting a field posts it to the server
+// and drops it from the queue; skipping doesn't save anything -- it just
+// cycles that field to the back of the local queue, so it resurfaces later
+// in the same pass instead of needing a full reload to see it again.
+const QUICK_REVIEW_FIELD_LABELS = {
+  vendor_name: "Vendor",
+  invoice_number: "Invoice #",
+  invoice_date: "Invoice Date",
+  due_date: "Due Date",
+  po_reference: "PO Reference",
+  currency: "Currency",
+  subtotal: "Subtotal",
+  tax: "Tax",
+  total: "Total",
+};
+const QUICK_REVIEW_NUMERIC_FIELDS = new Set(["subtotal", "tax", "total"]);
+
+async function loadQuickReviewQueue() {
+  const res = await apiFetch("/api/invoices/quick-review-queue");
+  state.quickReviewQueue = res.ok ? await res.json() : [];
+  state.quickReviewTotal = state.quickReviewQueue.length;
+  renderQuickReviewCard();
+}
+
+function renderQuickReviewCard() {
+  const empty = document.getElementById("quickreview-empty");
+  const card = document.getElementById("quickreview-card");
+  const item = state.quickReviewQueue[0];
+
+  if (!item) {
+    empty.style.display = "flex";
+    card.style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+  card.style.display = "block";
+
+  const doneCount = state.quickReviewTotal - state.quickReviewQueue.length;
+  document.getElementById("quickreview-progress").textContent = `${doneCount + 1} of ${state.quickReviewTotal}`;
+  document.getElementById("quickreview-vendor").textContent = item.vendor_name || "Unknown vendor";
+  document.getElementById("quickreview-filename").textContent = item.original_filename || "";
+  document.getElementById("quickreview-field-label").textContent = QUICK_REVIEW_FIELD_LABELS[item.field] || item.field;
+  document.getElementById("quickreview-confidence").textContent = fmtPct(item.confidence);
+  document.getElementById("quickreview-status").textContent = "";
+
+  const input = document.getElementById("quickreview-value");
+  input.type = QUICK_REVIEW_NUMERIC_FIELDS.has(item.field) ? "number" : item.field.endsWith("date") ? "date" : "text";
+  input.step = QUICK_REVIEW_NUMERIC_FIELDS.has(item.field) ? "0.01" : "";
+  input.value = item.value ?? "";
+  input.focus();
+  input.select();
+}
+
+document.getElementById("quickreview-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const item = state.quickReviewQueue[0];
+  if (!item) return;
+  const statusEl = document.getElementById("quickreview-status");
+  const raw = document.getElementById("quickreview-value").value;
+  const value = QUICK_REVIEW_NUMERIC_FIELDS.has(item.field) ? (raw === "" ? null : Number(raw)) : raw;
+
+  try {
+    const res = await apiFetch(`/api/invoices/${item.invoice_id}/quick-review-field`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field: item.field, value }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not save this field.");
+    state.quickReviewQueue.shift();
+    if (body.invoice_status === "approved") {
+      // Every field this invoice had flagged is now confirmed/corrected --
+      // drop any other queued fields for the same invoice too, since it's
+      // already approved and there's nothing left for them to unblock.
+      state.quickReviewQueue = state.quickReviewQueue.filter((i) => i.invoice_id !== item.invoice_id);
+    }
+    renderQuickReviewCard();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("quickreview-skip").addEventListener("click", () => {
+  const item = state.quickReviewQueue.shift();
+  if (item) state.quickReviewQueue.push(item);
+  renderQuickReviewCard();
+});
+
+document.getElementById("quickreview-open-full").addEventListener("click", () => {
+  const item = state.quickReviewQueue[0];
+  if (!item) return;
+  switchTab("review");
+  selectInvoice(item.invoice_id);
+});
+
 // ---- Ask Rekono ----
 // Builds the thread via DOM methods (textContent), not innerHTML --
 // unlike the rest of this file, this handles raw user input (the
@@ -1121,6 +1224,26 @@ function renderOrgSettings({ settingsRes, me }) {
     autoApprovalForm.style.display = "block";
     document.getElementById("settings-autoapproval-enabled").checked = settingsRes.auto_approval_enabled;
     document.getElementById("settings-autoapproval-max").value = settingsRes.auto_approval_max_amount ?? "";
+  }
+
+  // Statistical sampling of auto-approved invoices -- same plan-gated shape
+  // as auto-approval above.
+  const samplingLocked = document.getElementById("settings-sampling-locked");
+  const samplingForm = document.getElementById("settings-sampling-form");
+  document.getElementById("settings-sampling-status").textContent = "";
+
+  if (!settingsRes.risk_based_auto_approval_available) {
+    samplingLocked.style.display = "block";
+    samplingForm.style.display = "none";
+    document.getElementById("settings-sampling-plan-name").textContent = PLAN_NAMES[me.plan] || me.plan;
+    document.getElementById("settings-qa-queue").innerHTML = "";
+  } else {
+    samplingLocked.style.display = "none";
+    samplingForm.style.display = "block";
+    document.getElementById("settings-sampling-enabled").checked = settingsRes.sample_review_enabled;
+    document.getElementById("settings-sampling-rate").value =
+      settingsRes.sample_review_rate != null ? Math.round(settingsRes.sample_review_rate * 100) : "";
+    loadQaSampleQueue();
   }
 
   // Review queue confidence threshold
@@ -1297,6 +1420,95 @@ document.getElementById("settings-autoapproval-form").addEventListener("submit",
     statusEl.textContent = err.message || String(err);
   }
 });
+
+document.getElementById("settings-sampling-upgrade-btn").addEventListener("click", () => openUpgradeModal());
+
+document.getElementById("settings-sampling-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-sampling-status");
+  const enabled = document.getElementById("settings-sampling-enabled").checked;
+  const pctRaw = document.getElementById("settings-sampling-rate").value;
+  const rate = pctRaw === "" ? null : Number(pctRaw) / 100;
+
+  if (rate !== null && (!Number.isFinite(rate) || rate < 0 || rate > 1)) {
+    statusEl.textContent = "Enter a percentage between 0 and 100.";
+    return;
+  }
+  if (enabled && rate === null) {
+    statusEl.textContent = "Set a sample rate before enabling.";
+    return;
+  }
+
+  try {
+    const res = await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sample_review_enabled: enabled, sample_review_rate: rate }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) invalidateCache("__org_settings__");
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+// Pending spot-checks: auto-approved invoices randomly sampled for a
+// retrospective QA look (see pipeline.js's processInvoice). Lightweight by
+// design -- this isn't blocking anything (the invoice is already approved),
+// so it's a compact list rather than the full Review Queue table.
+async function loadQaSampleQueue() {
+  const res = await apiFetch("/api/invoices/qa-sample-queue");
+  renderQaSampleQueue(res.ok ? await res.json() : []);
+}
+
+function renderQaSampleQueue(items) {
+  const el = document.getElementById("settings-qa-queue");
+  if (!items.length) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML =
+    `<h4 style="margin: 0 0 0.5rem;">Pending spot-checks (${items.length})</h4>` +
+    items
+      .map(
+        (item) => `
+      <div class="qa-sample-row" data-id="${item.invoice_id}">
+        <span class="qa-sample-vendor">${escapeHtml(item.vendor_name || "Unknown vendor")}</span>
+        <span class="hint">${fmtMoney(item.total)} · ${escapeHtml(item.invoice_date || "")} · ${fmtPct(item.overall_confidence)} confidence</span>
+        <div class="qa-sample-actions">
+          <button type="button" class="qa-sample-confirm">Looks good</button>
+          <button type="button" class="qa-sample-flag">Flag issue</button>
+        </div>
+      </div>
+    `
+      )
+      .join("");
+
+  el.querySelectorAll(".qa-sample-confirm").forEach((btn) => {
+    btn.addEventListener("click", () => submitQaReview(btn.closest(".qa-sample-row").dataset.id, "confirmed"));
+  });
+  el.querySelectorAll(".qa-sample-flag").forEach((btn) => {
+    btn.addEventListener("click", () => submitQaReview(btn.closest(".qa-sample-row").dataset.id, "issue_flagged"));
+  });
+}
+
+async function submitQaReview(invoiceId, outcome) {
+  try {
+    const res = await apiFetch(`/api/invoices/${invoiceId}/qa-review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ outcome }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not save this spot-check.");
+    }
+    loadQaSampleQueue();
+  } catch (err) {
+    await alertDialog("Couldn't save spot-check", err.message || String(err));
+  }
+}
 
 // ---- QuickBooks integration ----
 async function loadQuickbooksStatus() {

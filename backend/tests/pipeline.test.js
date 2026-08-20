@@ -1,4 +1,10 @@
-import { effectiveConfidenceThreshold, findDuplicateInvoice, markFailedIfStuck, shouldAutoApprove } from "../src/pipeline.js";
+import {
+  effectiveConfidenceThreshold,
+  findDuplicateInvoice,
+  markFailedIfStuck,
+  shouldAutoApprove,
+  shouldSampleForQa,
+} from "../src/pipeline.js";
 import { Invoice, Organization } from "../src/models/index.js";
 import { settings } from "../src/config.js";
 import { resetDb } from "./testUtils.js";
@@ -194,4 +200,34 @@ test("shouldAutoApprove returns true well under the ceiling, with every other co
 test("shouldAutoApprove returns false for an invoice belonging to a nonexistent org", async () => {
   const invoice = await makeInvoice({ total: 100, orgId: "does-not-exist" });
   expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldSampleForQa returns false when the org hasn't opted in", () => {
+  const org = { sampleReviewEnabled: false, sampleReviewRate: 0.5 };
+  expect(shouldSampleForQa(org, { random: () => 0 })).toBe(false);
+});
+
+test("shouldSampleForQa returns false when no rate is configured, even if enabled", () => {
+  const org = { sampleReviewEnabled: true, sampleReviewRate: null };
+  expect(shouldSampleForQa(org, { random: () => 0 })).toBe(false);
+});
+
+test("shouldSampleForQa returns false for a nonexistent org", () => {
+  expect(shouldSampleForQa(null, { random: () => 0 })).toBe(false);
+});
+
+test("shouldSampleForQa returns true when the roll lands under the configured rate", () => {
+  const org = { sampleReviewEnabled: true, sampleReviewRate: 0.1 };
+  expect(shouldSampleForQa(org, { random: () => 0.05 })).toBe(true);
+});
+
+test("shouldSampleForQa returns false when the roll lands at or above the configured rate", () => {
+  const org = { sampleReviewEnabled: true, sampleReviewRate: 0.1 };
+  expect(shouldSampleForQa(org, { random: () => 0.1 })).toBe(false);
+  expect(shouldSampleForQa(org, { random: () => 0.5 })).toBe(false);
+});
+
+test("shouldSampleForQa uses real randomness by default", () => {
+  const org = { sampleReviewEnabled: true, sampleReviewRate: 1 }; // 100% -- always true regardless of the real roll
+  expect(shouldSampleForQa(org)).toBe(true);
 });

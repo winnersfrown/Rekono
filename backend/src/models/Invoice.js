@@ -89,6 +89,18 @@ export const Invoice = sequelize.define(
     quickbooksPaidAt: { type: DataTypes.DATE, allowNull: true },
     quickbooksPaymentTransactionId: { type: DataTypes.STRING(64), allowNull: true },
     quickbooksPaymentTransactionType: { type: DataTypes.STRING(32), allowNull: true }, // "Purchase" today; room for "Deposit" etc. later
+
+    // Set when this invoice was auto-approved (see pipeline.js's
+    // shouldAutoApprove) and randomly selected for a retrospective human
+    // spot-check (see pipeline.js's processInvoice, gated on
+    // Organization.sampleReviewEnabled/sampleReviewRate) -- catches model
+    // drift on the invoices nobody ever actually looked at, without
+    // reviewing every one of them. Purely a QA record: reviewing it never
+    // changes the invoice's own status (already approved, possibly already
+    // pushed to QuickBooks) -- see routes/invoices.js's qa-review route.
+    sampledForQa: { type: DataTypes.BOOLEAN, allowNull: true },
+    qaReviewedAt: { type: DataTypes.DATE, allowNull: true },
+    qaOutcome: { type: DataTypes.STRING(32), allowNull: true }, // "confirmed" | "issue_flagged"
   },
   {
     tableName: "invoices",
