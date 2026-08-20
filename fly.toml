@@ -24,7 +24,7 @@ primary_region = "iad"
 
 [env]
   STORAGE_DIR = "/data/storage"
-  GEMINI_MODEL = "gemini-2.5-flash"
+  GEMINI_MODEL = "gemini-3.6-flash"
 
 [http_service]
   internal_port = 8000
