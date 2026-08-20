@@ -26,8 +26,8 @@ export const settings = {
   databaseUrl: process.env.DATABASE_URL || `sqlite:${path.resolve("./rekono.db")}`,
   storageDir,
 
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
-  anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
+  geminiApiKey: process.env.GEMINI_API_KEY || "",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash",
 
   reviewConfidenceThreshold: Number(process.env.REVIEW_CONFIDENCE_THRESHOLD ?? 0.85),
 
@@ -49,7 +49,7 @@ export const settings = {
 
   // Billing (Stripe Checkout + webhooks for paid-plan onboarding). Unset
   // STRIPE_SECRET_KEY -> billing routes respond 503 rather than crashing,
-  // same graceful-degradation pattern as Resend/Anthropic above. Prices are
+  // same graceful-degradation pattern as Resend/Gemini above. Prices are
   // built inline at checkout time from plans.js (see routes/billing.js), so
   // no Stripe Product/Price objects need to be pre-created in the dashboard
   // -- only an account and its API/webhook keys.

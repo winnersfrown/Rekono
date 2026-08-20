@@ -255,7 +255,7 @@ router.post(
         }
       }
       // accountsResult.error (transient QuickBooks API issue) or no
-      // suggestion (no ANTHROPIC_API_KEY, or nothing fit) both leave the
+      // suggestion (no GEMINI_API_KEY, or nothing fit) both leave the
       // invoice uncategorized rather than erroring -- pushing still works
       // via the org's default account either way.
 

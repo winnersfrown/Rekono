@@ -1,15 +1,15 @@
 // Structured extraction on top of raw OCR text.
 //
-// Primary path: Claude, forced into a fixed JSON schema via tool-use, with a
-// self-reported confidence per field -- the core IP layer.
+// Primary path: Gemini, forced into a fixed JSON schema via function
+// calling, with a self-reported confidence per field -- the core IP layer.
 //
-// Fallback path: a heuristic regex extractor used when no ANTHROPIC_API_KEY
-// is configured, so the ingestion -> extraction -> review -> export
-// pipeline still runs end to end for local demos, tests, and CI without a
-// live LLM call. Heuristic fields get a flat, low confidence score, which
-// naturally routes them into the human review queue.
+// Fallback path: a heuristic regex extractor used when no GEMINI_API_KEY is
+// configured, so the ingestion -> extraction -> review -> export pipeline
+// still runs end to end for local demos, tests, and CI without a live LLM
+// call. Heuristic fields get a flat, low confidence score, which naturally
+// routes them into the human review queue.
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import { settings } from "./config.js";
 
 // snake_case keys throughout this module (fields, field_confidence) --
@@ -34,7 +34,7 @@ const INVOICE_TOOL = {
   name: "record_invoice",
   description:
     "Record structured data extracted from an invoice, with a self-reported confidence (0.0-1.0) for every field.",
-  input_schema: {
+  parametersJsonSchema: {
     type: "object",
     properties: {
       vendor_name: { type: "string" },
@@ -95,7 +95,7 @@ ${ocrText}
 }
 
 export async function extract(ocrText) {
-  if (settings.anthropicApiKey) {
+  if (settings.geminiApiKey) {
     try {
       return await extractWithLlm(ocrText);
     } catch {
@@ -114,24 +114,24 @@ export async function extract(ocrText) {
 // `extract`, above) rather than leaving the invoice stuck "processing" for
 // minutes with the user watching a spinner.
 const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_RETRIES = 1;
+const LLM_MAX_ATTEMPTS = 2; // original call + one retry
 
 async function extractWithLlm(ocrText) {
-  const client = new Anthropic({
-    apiKey: settings.anthropicApiKey,
-    timeout: LLM_TIMEOUT_MS,
-    maxRetries: LLM_MAX_RETRIES,
+  const client = new GoogleGenAI({
+    apiKey: settings.geminiApiKey,
+    httpOptions: { timeout: LLM_TIMEOUT_MS, retryOptions: { attempts: LLM_MAX_ATTEMPTS } },
   });
-  const response = await client.messages.create({
-    model: settings.anthropicModel,
-    max_tokens: 4096,
-    tools: [INVOICE_TOOL],
-    tool_choice: { type: "tool", name: "record_invoice" },
-    messages: [{ role: "user", content: extractionPrompt(ocrText.slice(0, 15000)) }],
+  const response = await client.models.generateContent({
+    model: settings.geminiModel,
+    contents: [{ role: "user", parts: [{ text: extractionPrompt(ocrText.slice(0, 15000)) }] }],
+    config: {
+      maxOutputTokens: 4096,
+      tools: [{ functionDeclarations: [INVOICE_TOOL] }],
+      toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["record_invoice"] } },
+    },
   });
 
-  const toolUse = response.content.find((block) => block.type === "tool_use");
-  const data = toolUse.input;
+  const data = response.functionCalls[0].args;
 
   const fields = {
     vendor_name: data.vendor_name || "",

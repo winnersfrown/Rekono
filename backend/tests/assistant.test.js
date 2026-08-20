@@ -2,12 +2,12 @@ import request from "supertest";
 import { app } from "../src/app.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
-// ANTHROPIC_API_KEY is never set in the test environment (jest.setup.js),
-// so every request below exercises the "not configured yet" path rather
-// than an actual Claude call -- there's no live key to test the grounded
-// answer against in CI. That path is still worth covering: it's what
-// every visitor sees until the key is configured, and it must never
-// crash or bypass auth/plan gating.
+// GEMINI_API_KEY is never set in the test environment (jest.setup.js), so
+// every request below exercises the "not configured yet" path rather than
+// an actual Gemini call -- there's no live key to test the grounded answer
+// against in CI. That path is still worth covering: it's what every
+// visitor sees until the key is configured, and it must never crash or
+// bypass auth/plan gating.
 
 beforeEach(resetDb);
 
@@ -22,7 +22,7 @@ test("rejects an empty question", async () => {
   expect(res.status).toBe(422);
 });
 
-test("authenticated request without ANTHROPIC_API_KEY returns 503, not a crash", async () => {
+test("authenticated request without GEMINI_API_KEY returns 503, not a crash", async () => {
   const token = await signup(app, request);
   const res = await request(app)
     .post("/api/assistant/ask")

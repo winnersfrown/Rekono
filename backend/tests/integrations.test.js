@@ -211,7 +211,7 @@ describe("POST /api/integrations/quickbooks/invoices/:id/push", () => {
 // here, same boundary the existing GET /accounts tests already draw --
 // "no memory, has to actually fetch+categorize" is covered instead at the
 // quickbooks.js unit level (see quickbooks.test.js's suggestExpenseAccount
-// tests), with an injected fetchImpl standing in for Intuit/Anthropic.
+// tests), with an injected fetchImpl standing in for Intuit/Gemini.
 describe("POST /api/integrations/quickbooks/invoices/:id/suggest-account", () => {
   test("404s for an invoice that doesn't exist", async () => {
     const token = await signup(app, request);

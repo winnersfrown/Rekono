@@ -50,9 +50,9 @@ services:
         value: /tmp/storage # ephemeral on the free plan -- see note above
       - key: SECRET_KEY
         generateValue: true
-      - key: ANTHROPIC_MODEL
-        value: claude-sonnet-5
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
         sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
       - key: RESEND_API_KEY
         sync: false # optional -- enables the marketing site's contact form

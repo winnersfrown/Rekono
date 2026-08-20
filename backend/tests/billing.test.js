@@ -7,7 +7,7 @@ import { authHeader, resetDb, signup } from "./testUtils.js";
 // STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET are never set in the test
 // environment (jest.setup.js), so every request below exercises the "not
 // configured yet" path rather than a real Stripe call -- same limitation
-// as the Resend/Anthropic-backed routes elsewhere in this suite. What's
+// as the Resend/Gemini-backed routes elsewhere in this suite. What's
 // still fully covered here: auth is required, request validation happens
 // before the Stripe-configured check (not after, as middleware would force),
 // and every route fails closed (503) instead of crashing without a key.

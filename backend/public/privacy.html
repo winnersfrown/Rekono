@@ -61,7 +61,7 @@
       <li>To provide the Service: extracting, storing, and letting you review and reconcile your invoices.</li>
       <li>To operate your account: authentication, plan enforcement, billing, and customer support.</li>
       <li>To improve the extraction and matching logic (in aggregate; we don't use your specific documents to train
-      any external model — see Section 4 on our use of Anthropic's API).</li>
+      any external model — see Section 4 on our use of Google's Gemini API).</li>
       <li>To send you service-related email: password resets, billing receipts and failures, and, if you contact us,
       replies to that conversation. We don't send marketing email unless you separately opt in somewhere that says so.</li>
       <li>To detect and prevent fraud, abuse, and security incidents.</li>
@@ -73,10 +73,10 @@
     <ul>
       <li><strong>Stripe</strong> — payment processing and subscription billing.</li>
       <li><strong>Google</strong> — only if you use "Sign in with Google," to authenticate you.</li>
-      <li><strong>Anthropic (Claude API)</strong> — if configured on this deployment, the text of uploaded documents is
-      sent to Anthropic's API to extract structured data. Anthropic's API is not used to train their models on your
-      data by default. If this deployment doesn't have an Anthropic API key configured, extraction falls back to a
-      local, non-AI heuristic and nothing is sent to Anthropic at all.</li>
+      <li><strong>Google (Gemini API)</strong> — if configured on this deployment, the text of uploaded documents is
+      sent to Google's Gemini API to extract structured data. Data sent to the Gemini API is not used to train Google's
+      models by default. If this deployment doesn't have a Gemini API key configured, extraction falls back to a
+      local, non-AI heuristic and nothing is sent to Google's Gemini API at all.</li>
       <li><strong>Resend</strong> — sends transactional email on our behalf (password resets, contact form replies).</li>
       <li><strong>Our hosting/infrastructure provider(s)</strong> — hosts the application and database.</li>
     </ul>

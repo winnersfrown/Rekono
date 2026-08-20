@@ -11,7 +11,7 @@
 // them into a specific status code. Only genuinely unexpected failures
 // (thrown by fetchImpl itself, e.g. a network error) propagate up to the
 // route's try/catch and the app-wide 500 handler.
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import { settings } from "./config.js";
 
 export const QUICKBOOKS_AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
@@ -182,7 +182,7 @@ const CATEGORIZE_TOOL = {
   name: "categorize_expense",
   description:
     "Pick the QuickBooks expense account this invoice's spend belongs under, from the given list, with a confidence (0.0-1.0) and one short reason.",
-  input_schema: {
+  parametersJsonSchema: {
     type: "object",
     properties: {
       account_id: {
@@ -206,11 +206,11 @@ const CATEGORIZE_TIMEOUT_MS = 30_000;
 // wording against an arbitrary, org-specific chart of accounts is exactly
 // the kind of judgment call a fixed pattern can't make. Unlike
 // extraction.js's fields, this has no fallback path -- without
-// ANTHROPIC_API_KEY it simply returns no suggestion, and callers fall back
+// GEMINI_API_KEY it simply returns no suggestion, and callers fall back
 // to the org's default account, i.e. exactly the behavior this app had
 // before this feature existed.
 export async function suggestExpenseAccount(invoice, accounts) {
-  if (!settings.anthropicApiKey || !accounts?.length) return { suggested: false };
+  if (!settings.geminiApiKey || !accounts?.length) return { suggested: false };
 
   const lineItemsText =
     (invoice.lineItems || [])
@@ -230,17 +230,21 @@ ${accountsText}
 Call the categorize_expense tool with your pick. If truly nothing fits, return an empty account_id and a low confidence rather than forcing a bad match.`;
 
   try {
-    const client = new Anthropic({ apiKey: settings.anthropicApiKey, timeout: CATEGORIZE_TIMEOUT_MS, maxRetries: 1 });
-    const response = await client.messages.create({
-      model: settings.anthropicModel,
-      max_tokens: 1024,
-      tools: [CATEGORIZE_TOOL],
-      tool_choice: { type: "tool", name: "categorize_expense" },
-      messages: [{ role: "user", content: prompt }],
+    const client = new GoogleGenAI({
+      apiKey: settings.geminiApiKey,
+      httpOptions: { timeout: CATEGORIZE_TIMEOUT_MS, retryOptions: { attempts: 2 } },
+    });
+    const response = await client.models.generateContent({
+      model: settings.geminiModel,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        maxOutputTokens: 1024,
+        tools: [{ functionDeclarations: [CATEGORIZE_TOOL] }],
+        toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["categorize_expense"] } },
+      },
     });
 
-    const toolUse = response.content.find((block) => block.type === "tool_use");
-    const data = toolUse?.input;
+    const data = response.functionCalls?.[0]?.args;
     const account = accounts.find((a) => a.id === data?.account_id);
     if (!account) return { suggested: false };
 
@@ -299,7 +303,7 @@ export async function fetchBankTransactions(org, { sinceDays = 90, fetchImpl = f
 // cent); the date window absorbs the normal lag between an invoice's due
 // date and when it actually clears the bank. No network, no AI -- this
 // alone is often enough to resolve to a single confident candidate, so
-// reconciliation still works without ANTHROPIC_API_KEY configured. AI
+// reconciliation still works without GEMINI_API_KEY configured. AI
 // (suggestBankTransactionMatch, below) only gets involved when this leaves
 // more than one plausible candidate to choose between.
 export function findExactAmountCandidates(transaction, invoices, { dateWindowDays = 14 } = {}) {
@@ -317,7 +321,7 @@ const MATCH_TOOL = {
   name: "match_bank_transaction",
   description:
     "Pick which (if any) of the given unpaid bills this bank/card transaction is most likely paying, with a confidence (0.0-1.0) and one short reason.",
-  input_schema: {
+  parametersJsonSchema: {
     type: "object",
     properties: {
       invoice_id: {
@@ -339,10 +343,10 @@ const MATCH_TIMEOUT_MS = 30_000;
 // garbled bank/processor string ("SQ *STARBUCKS 4421") rather than a clean
 // vendor name, exactly the kind of free-text judgment call a fixed pattern
 // can't make. Same no-fallback shape as suggestExpenseAccount: without
-// ANTHROPIC_API_KEY this returns no suggestion, and the caller leaves the
+// GEMINI_API_KEY this returns no suggestion, and the caller leaves the
 // transaction for a human to pick between the candidates manually.
 export async function suggestBankTransactionMatch(transaction, candidateInvoices) {
-  if (!settings.anthropicApiKey || !candidateInvoices?.length) return { suggested: false };
+  if (!settings.geminiApiKey || !candidateInvoices?.length) return { suggested: false };
 
   const candidatesText = candidateInvoices
     .map((inv) => `${inv.id}: vendor "${inv.vendorName || "(unknown)"}", amount $${inv.total}, invoice date ${inv.invoiceDate || "?"}, due ${inv.dueDate || "?"}`)
@@ -358,17 +362,21 @@ ${candidatesText}
 Call match_bank_transaction with your pick. Bank/card transaction descriptions are often abbreviated or garbled (e.g. "SQ *STARBUCKS 4421" for "Starbucks Corp") -- weigh that against a clean vendor name mismatch. If truly nothing plausibly matches, return an empty invoice_id and a low confidence rather than forcing a bad match.`;
 
   try {
-    const client = new Anthropic({ apiKey: settings.anthropicApiKey, timeout: MATCH_TIMEOUT_MS, maxRetries: 1 });
-    const response = await client.messages.create({
-      model: settings.anthropicModel,
-      max_tokens: 1024,
-      tools: [MATCH_TOOL],
-      tool_choice: { type: "tool", name: "match_bank_transaction" },
-      messages: [{ role: "user", content: prompt }],
+    const client = new GoogleGenAI({
+      apiKey: settings.geminiApiKey,
+      httpOptions: { timeout: MATCH_TIMEOUT_MS, retryOptions: { attempts: 2 } },
+    });
+    const response = await client.models.generateContent({
+      model: settings.geminiModel,
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        maxOutputTokens: 1024,
+        tools: [{ functionDeclarations: [MATCH_TOOL] }],
+        toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["match_bank_transaction"] } },
+      },
     });
 
-    const toolUse = response.content.find((block) => block.type === "tool_use");
-    const data = toolUse?.input;
+    const data = response.functionCalls?.[0]?.args;
     const invoice = candidateInvoices.find((inv) => inv.id === data?.invoice_id);
     if (!invoice) return { suggested: false };
 
