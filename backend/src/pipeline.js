@@ -5,7 +5,6 @@ import { Op } from "sequelize";
 import * as confidenceModule from "./confidence.js";
 import * as extractionModule from "./extraction.js";
 import * as ocrModule from "./ocr.js";
-import * as objectStorage from "./objectStorage.js";
 import { settings } from "./config.js";
 import { PLANS } from "./plans.js";
 import { AuditLog, Invoice, LineItem, Organization } from "./models/index.js";
@@ -90,12 +89,7 @@ export async function processInvoice(invoiceId) {
 
   let ocrText;
   try {
-    // withLocalFile downloads to a throwaway temp file first when the
-    // invoice's source lives in Supabase Storage (objectStorage.js) --
-    // OCR's real tesseract/pdftoppm binaries need an actual local path
-    // either way. A locally-stored invoice's own storagePath already is
-    // one, so this is a no-op wrapper for it.
-    ocrText = await objectStorage.withLocalFile(invoice, (localPath) => ocrModule.extractText(localPath, invoice.contentType));
+    ocrText = await ocrModule.extractText(invoice.storagePath, invoice.contentType);
   } catch (exc) {
     if (exc instanceof ocrModule.OcrError) {
       // exc.message from a failed pdftoppm/tesseract call includes the full
@@ -112,14 +106,6 @@ export async function processInvoice(invoiceId) {
         ? "The uploaded file is no longer available on the server (this can happen after a restart or redeploy on ephemeral hosting). Please re-upload this document."
         : "OCR failed: the document couldn't be processed. It may be corrupted, password-protected, or not a valid file of its type.";
       await fail(invoice, message);
-      return;
-    }
-    if (invoice.storageBackend === "supabase") {
-      // Same "actionable, not scary" treatment as the local "File not
-      // found" case above -- withLocalFile's own error message already
-      // names the file and the underlying Supabase error.
-      console.error(`Could not read source file for invoice ${invoiceId}:`, exc.message);
-      await fail(invoice, "The uploaded file could not be read from storage. Please try again, or re-upload this document.");
       return;
     }
     throw exc;

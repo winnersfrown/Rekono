@@ -18,16 +18,7 @@ export const Invoice = sequelize.define(
     id: { type: DataTypes.STRING(32), primaryKey: true, defaultValue: newId },
     orgId: { type: DataTypes.STRING(32), allowNull: false },
     originalFilename: { type: DataTypes.STRING(512), allowNull: false },
-    // Local disk path (default) or, when storageBackend is "supabase", the
-    // object's key within SUPABASE_STORAGE_BUCKET -- see objectStorage.js.
-    // Same column either way rather than a second one: it's always "the
-    // identifier this backend needs to find the file," just interpreted
-    // differently depending on storageBackend.
     storagePath: { type: DataTypes.STRING(1024), allowNull: false },
-    // Null/absent means local disk, exactly how every invoice was stored
-    // before this feature existed -- nullable with no default like every
-    // column added after this session's schema-drift incidents.
-    storageBackend: { type: DataTypes.STRING(16), allowNull: true }, // "supabase" | null
     contentType: { type: DataTypes.STRING(128), allowNull: false, defaultValue: "" },
     status: { type: DataTypes.ENUM(...INVOICE_STATUSES), allowNull: false, defaultValue: "queued" },
     errorMessage: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },

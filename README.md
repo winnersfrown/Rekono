@@ -219,7 +219,7 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 
 ### Secrets & API keys
 
-Every secret this app uses (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
+Every secret this app uses (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
 
 - They're never sent to the browser. `backend/public/` is plain static HTML/JS with no build/bundling step, so there's no risk of a secret accidentally getting compiled into client-side code the way there can be in a bundled frontend -- the server-side `config.js` module is never loaded there in the first place.
 - They're never echoed back in an API response, including error responses -- an unexpected server error (a DB failure, a bug) logs its full detail server-side but only ever returns a generic `"Internal server error"` to the caller (`app.js`'s `handleUnexpectedError`), so a stray internal error message can't leak connection strings or other detail. Every deliberate error response (validation, auth, plan gating) is written by hand in its own route and never includes secret material.
@@ -284,15 +284,6 @@ The Matching tab also surfaces **bank reconciliation** once connected: QuickBook
 3. Under **Redirect URIs**, add `https://<your-deployed-url>/api/integrations/quickbooks/callback` (and `http://localhost:8000/api/integrations/quickbooks/callback` for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/integrations/quickbooks/callback`.
 4. The Developer Portal also provides a free Sandbox company file (**Sandbox** tab) to connect against and inspect pushed Bills in.
 5. Connecting stores tokens per-org on `Organization` (`quickbooksAccessToken`/`quickbooksRefreshToken`, both nullable so a disconnected org just has `null`s -- see `models/Organization.js`); access tokens auto-refresh on use (`ensureFreshToken` in `quickbooks.js`). Going to Production later means switching `QUICKBOOKS_ENVIRONMENT=production`, swapping in Production keys, and passing Intuit's app-assessment review (token storage/data retention, roughly 2-3 weeks) -- Sandbox needs none of that.
-
-### Persistent file storage (Supabase)
-
-Uploaded invoice files live on local disk (`STORAGE_DIR`) by default -- fine for local dev or a host with a real persistent volume (Fly, or Render's paid tiers), but Render's **free** tier has no persistent disk, so those files are lost on every restart/redeploy/spin-down (see `render.yaml`'s comment for the full tradeoff). Setting `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` moves new uploads to [Supabase Storage](https://supabase.com/storage) instead, which persists regardless of what's happening to the app container. This is independent of which host runs the app -- it's a storage backend, not a hosting platform. Without it, uploads stay on local disk exactly as Rekono always worked.
-
-1. Create a free project at [supabase.com](https://supabase.com) (no credit card required; the free tier includes 1GB of storage).
-2. In the project dashboard, go to **Storage** and create a new bucket (default name Rekono expects is `invoices` -- set `SUPABASE_STORAGE_BUCKET` if you name it something else). Leave it **private** -- Rekono never generates public URLs, it always downloads server-side through the service role key and streams the bytes back through `GET /api/invoices/:id/file`.
-3. In **Project Settings → API**, copy the **Project URL** into `SUPABASE_URL` and the **`service_role` secret** (not the `anon`/public key) into `SUPABASE_SERVICE_ROLE_KEY` (Render/Fly dashboard, or `.env` locally). The service role key bypasses Row Level Security, which is what's needed here since uploads/downloads happen server-side with no end-user Supabase session -- treat it exactly like any other secret in this app (never sent to the browser, see "Secrets & API keys" above).
-4. That's it -- no schema/policy setup needed. New uploads made after this is configured go to Supabase (`Invoice.storageBackend` is set to `"supabase"` for them, and the object's key is stored as that invoice's `storagePath`); invoices already on local disk before this was configured keep working from disk unchanged, since the backend is recorded per-invoice, not globally. If a Supabase upload fails (e.g. a misconfigured bucket name), the upload request itself fails with a clear error rather than silently falling back to local disk, since a silent fallback would defeat the point of turning this on in the first place.
 
 ## Roadmap (beyond this MVP)
 

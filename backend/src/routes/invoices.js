@@ -10,7 +10,6 @@ import { rememberVendorCorrection } from "../vendorAlias.js";
 import { enqueue } from "../jobs.js";
 import { effectiveConfidenceThreshold } from "../pipeline.js";
 import { score as scoreConfidence } from "../confidence.js";
-import * as objectStorage from "../objectStorage.js";
 
 const router = Router();
 
@@ -254,19 +253,6 @@ router.get("/api/invoices/:id/file", requireAuth, requireActivePlan, async (req,
   try {
     const invoice = await Invoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
-
-    if (invoice.storageBackend === "supabase") {
-      const result = await objectStorage.downloadToBuffer(invoice.storagePath);
-      if (result.error) {
-        // Same friendly treatment as a missing local file below -- a
-        // Supabase-backed invoice's object can be gone (bucket cleared,
-        // never uploaded successfully) just like a local file can.
-        return res.status(404).json({ detail: "This document's source file is no longer available on the server." });
-      }
-      res.set("Content-Type", invoice.contentType || "application/octet-stream");
-      return res.send(result.buffer);
-    }
-
     res.sendFile(
       invoice.storagePath,
       { headers: { "Content-Type": invoice.contentType || "application/octet-stream" } },
@@ -622,10 +608,7 @@ router.delete("/api/invoices/:id", requireAuth, requireActivePlan, async (req, r
       details: { original_filename: invoice.originalFilename, status: invoice.status },
     });
 
-    if (invoice.storagePath && invoice.storageBackend === "supabase") {
-      const result = await objectStorage.remove(invoice.storagePath);
-      if (result.error) console.error(`Failed to remove Supabase object for deleted invoice ${invoice.id}:`, result.detail || result.error);
-    } else if (invoice.storagePath) {
+    if (invoice.storagePath) {
       await fs.unlink(invoice.storagePath).catch((err) => {
         if (err.code !== "ENOENT") console.error(`Failed to remove file for deleted invoice ${invoice.id}:`, err.message);
       });
