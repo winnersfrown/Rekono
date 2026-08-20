@@ -20,7 +20,11 @@
 #      resolves it -- normally if the file happened to survive, otherwise
 #      failed with a clear "please re-upload this document" message -- so it
 #      never sits stuck on "processing" forever, but the source file/preview
-#      for anything uploaded before a restart is still gone for good.
+#      for anything uploaded before a restart is still gone for good. Set
+#      SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY below to avoid this entirely --
+#      uploads move to Supabase Storage's free tier instead, which persists
+#      across restarts. See README.md's "Persistent file storage (Supabase)"
+#      section.
 #   3. Free web services spin down after 15 minutes of no requests and
 #      cold-start (10-30s) on the next one. A request that lands right as
 #      the service is spinning down mid-extraction gets recovered on the
@@ -68,3 +72,9 @@ services:
         sync: false # optional -- enables the Settings tab's QuickBooks integration
       - key: QUICKBOOKS_CLIENT_SECRET
         sync: false # optional, pairs with QUICKBOOKS_CLIENT_ID -- see README's "QuickBooks Online (Phase 1)" section
+      - key: SUPABASE_URL
+        sync: false # optional -- enables persistent invoice file storage, see note on point 2 above
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false # optional, pairs with SUPABASE_URL -- see README's "Persistent file storage (Supabase)" section
+      - key: SUPABASE_STORAGE_BUCKET
+        value: invoices

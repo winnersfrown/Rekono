@@ -1,10 +1,13 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import multer from "multer";
 import { Router } from "express";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import * as jobs from "../jobs.js";
+import * as objectStorage from "../objectStorage.js";
 import { MAX_UPLOAD_BYTES, canonicalContentType, upload } from "../storage.js";
 import { AuditLog, Invoice } from "../models/index.js";
 import { serializeInvoiceDetail } from "../serializers.js";
@@ -64,10 +67,29 @@ router.post("/api/invoices/upload", requireAuth, requireActivePlan, handleUpload
       });
     }
 
+    // Uploads move to Supabase Storage instead of local disk once it's
+    // configured (objectStorage.js) -- local disk is never the canonical
+    // location in that case, so the temp copy multer wrote is removed
+    // either way, success or failure, rather than left behind.
+    let storagePath = req.file.path;
+    let storageBackend = null;
+    if (objectStorage.isConfigured()) {
+      const ext = path.extname(req.file.originalname || req.file.path || "");
+      const key = `${req.currentUser.orgId}/${crypto.randomUUID().replace(/-/g, "")}${ext}`;
+      const result = await objectStorage.uploadLocalFile(req.file.path, key, contentType);
+      await fs.rm(req.file.path, { force: true });
+      if (result.error) {
+        return res.status(502).json({ detail: "Could not upload to persistent storage. Please try again." });
+      }
+      storagePath = key;
+      storageBackend = "supabase";
+    }
+
     const invoice = await Invoice.create({
       orgId: req.currentUser.orgId,
       originalFilename: req.file.originalname || "upload",
-      storagePath: req.file.path,
+      storagePath,
+      storageBackend,
       contentType,
       status: "queued",
     });
