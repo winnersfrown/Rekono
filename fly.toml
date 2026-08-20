@@ -13,6 +13,8 @@
 #   fly secrets set STRIPE_WEBHOOK_SECRET=<your secret> # pairs with STRIPE_SECRET_KEY -- see README's "Plans & billing (Stripe)" section
 #   fly secrets set GOOGLE_CLIENT_ID=<your client id>         # optional -- enables "Sign in with Google"
 #   fly secrets set GOOGLE_CLIENT_SECRET=<your client secret> # pairs with GOOGLE_CLIENT_ID -- see README's "Sign in with Google" section
+#   fly secrets set SUPABASE_URL=<your project url>              # optional -- the rekono_storage volume above already persists uploads, so this is only useful if you'd rather not manage a volume
+#   fly secrets set SUPABASE_SERVICE_ROLE_KEY=<your service role key> # pairs with SUPABASE_URL -- see README's "Persistent file storage (Supabase)" section
 #   fly deploy
 #
 # See README.md "Deploying a live instance (Fly.io)" for the full walkthrough.
@@ -25,6 +27,7 @@ primary_region = "iad"
 [env]
   STORAGE_DIR = "/data/storage"
   GEMINI_MODEL = "gemini-3.6-flash"
+  SUPABASE_STORAGE_BUCKET = "invoices"
 
 [http_service]
   internal_port = 8000

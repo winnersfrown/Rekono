@@ -71,4 +71,17 @@ export const settings = {
   quickbooksClientId: process.env.QUICKBOOKS_CLIENT_ID || "",
   quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || "",
   quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || "sandbox",
+
+  // Optional persistent object storage for uploaded invoice files
+  // (objectStorage.js). Unset SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY ->
+  // uploads stay on local disk exactly as this app always worked -- same
+  // graceful-degradation pattern as every integration above. Configured,
+  // new uploads move to Supabase Storage instead, which actually persists
+  // across restarts/redeploys on ephemeral hosting (Render's free tier)
+  // instead of being lost. The service role key (not the anon key) is
+  // required -- uploads/downloads happen server-side with no end-user
+  // Supabase session to scope an anon key's RLS policies to.
+  supabaseUrl: process.env.SUPABASE_URL || "",
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  supabaseStorageBucket: process.env.SUPABASE_STORAGE_BUCKET || "invoices",
 };
