@@ -124,25 +124,50 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
       role: entry.role === "assistant" ? "model" : "user",
       parts: [{ text: entry.content }],
     }));
-    const response = await client.models.generateContent({
-      model: settings.geminiModel,
-      config: { systemInstruction: SYSTEM_PROMPT, maxOutputTokens: 1024 },
-      contents: [
-        ...history,
-        {
-          role: "user",
-          parts: [
-            {
-              text:
-                `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
-                `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
-            },
-          ],
-        },
-      ],
-    });
 
-    res.json({ answer: response.text || "", invoice_count: invoices.length });
+    // Own try/catch around just the Gemini call (unlike extraction.js/
+    // quickbooks.js's LLM calls, there's no heuristic fallback for open-
+    // ended Q&A -- a failure here IS the failure) so a real API error (rate
+    // limit, an unavailable model, a safety block, ...) surfaces as a clear,
+    // logged 502 instead of an opaque 500 with nothing in the server logs to
+    // diagnose from.
+    let response;
+    try {
+      response = await client.models.generateContent({
+        model: settings.geminiModel,
+        config: { systemInstruction: SYSTEM_PROMPT, maxOutputTokens: 1024 },
+        contents: [
+          ...history,
+          {
+            role: "user",
+            parts: [
+              {
+                text:
+                  `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
+                  `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
+              },
+            ],
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Ask Rekono: Gemini call failed:", err.message);
+      return res.status(502).json({ detail: "Couldn't get an answer just now. Please try again in a moment." });
+    }
+
+    // response.text is a getter that can throw (not just return undefined)
+    // when the response has no candidates at all -- e.g. the prompt itself
+    // got blocked by a safety filter -- so this stays inside the same
+    // try/catch as the call above rather than being read afterward.
+    let answer;
+    try {
+      answer = response.text || "";
+    } catch (err) {
+      console.error("Ask Rekono: Gemini returned no usable response:", err.message);
+      return res.status(502).json({ detail: "Couldn't get an answer to that question. Try rephrasing it." });
+    }
+
+    res.json({ answer, invoice_count: invoices.length });
   } catch (err) {
     next(err);
   }
