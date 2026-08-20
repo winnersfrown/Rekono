@@ -16,12 +16,15 @@ import { lookupVendorAlias } from "./vendorAlias.js";
 // mapping once, so this isn't a fresh guess. Runs on the raw extraction
 // result before confidence scoring, so the boosted confidence feeds into
 // the same needs_review decision as everything else, instead of being a
-// separate override layered on top.
+// separate override layered on top. The boolean return value doubles as
+// processInvoice's "is this a known vendor" signal for shouldAutoApprove,
+// below -- a brand-new vendor never auto-approves regardless of confidence.
 export async function applyVendorAlias(orgId, result) {
   const alias = await lookupVendorAlias(orgId, result.fields.vendor_name);
-  if (!alias) return;
+  if (!alias) return false;
   result.fields.vendor_name = alias.canonicalVendorName;
   result.fieldConfidence.vendor_name = Math.max(result.fieldConfidence.vendor_name ?? 0, 0.95);
+  return true;
 }
 
 // An org's own confidenceThreshold only applies while its plan actually
@@ -35,6 +38,32 @@ export async function effectiveConfidenceThreshold(orgId) {
     return org.confidenceThreshold;
   }
   return settings.reviewConfidenceThreshold;
+}
+
+// Skips the manual "click Approve" step for an invoice that would already
+// have been fast-tracked as `extracted` -- this NEVER overrides a
+// needs_review flag (see processInvoice, below, which only calls this once
+// `flagged` is already false), it only removes a redundant human click for
+// spend that's already both confidently extracted AND low business risk.
+// "Low risk" requires every one of: the org has explicitly opted in (never
+// on by default, even on a qualifying plan -- see Organization.js's comment
+// on autoApprovalEnabled), its plan includes riskBasedAutoApproval
+// (Business/Scale, see plans.js -- this is exactly the kind of thing that
+// only matters at real volume), the total is at or under org's own
+// configured ceiling, and the vendor has a known alias (a human has
+// corrected/confirmed this exact vendor before -- a brand-new vendor always
+// gets a human's eyes on its first invoice, regardless of confidence or
+// amount).
+export async function shouldAutoApprove(invoice, knownVendor) {
+  if (!knownVendor || invoice.total == null) return false;
+
+  const org = await Organization.findByPk(invoice.orgId);
+  if (!org?.autoApprovalEnabled || org.autoApprovalMaxAmount == null) return false;
+
+  const plan = PLANS[org.plan];
+  if (!plan?.riskBasedAutoApproval) return false;
+
+  return invoice.total <= org.autoApprovalMaxAmount;
 }
 
 export async function processInvoice(invoiceId) {
@@ -79,7 +108,7 @@ export async function processInvoice(invoiceId) {
 
   try {
     const result = await extractionModule.extract(ocrText);
-    await applyVendorAlias(invoice.orgId, result);
+    const knownVendor = await applyVendorAlias(invoice.orgId, result);
     const report = confidenceModule.score(result);
 
     invoice.vendorName = result.fields.vendor_name || "";
@@ -110,7 +139,8 @@ export async function processInvoice(invoiceId) {
     const threshold = await effectiveConfidenceThreshold(invoice.orgId);
     const flagged =
       Boolean(duplicateOf) || invoice.possibleMultiInvoice || report.overallConfidence < threshold || !report.crossCheckPassed;
-    invoice.status = flagged ? "needs_review" : "extracted";
+    const autoApproved = !flagged && (await shouldAutoApprove(invoice, knownVendor));
+    invoice.status = flagged ? "needs_review" : autoApproved ? "approved" : "extracted";
     await invoice.save();
 
     await LineItem.destroy({ where: { invoiceId: invoice.id } });
@@ -140,6 +170,26 @@ export async function processInvoice(invoiceId) {
         possible_multi_invoice: invoice.possibleMultiInvoice,
       },
     });
+
+    // Kept as its own audit entry (rather than folded into
+    // extraction_completed's details above) so it reads clearly in the
+    // audit trail as a real approval decision, same "system" actor
+    // treatment auto-populated fields already get -- this is real money
+    // that a human never looked at, and that needs to be legible on its own
+    // line for the finance/compliance conversations this trail exists for.
+    if (autoApproved) {
+      await AuditLog.create({
+        orgId: invoice.orgId,
+        invoiceId: invoice.id,
+        action: "auto_approved",
+        actor: "system",
+        details: {
+          reason: "known vendor, within the org's configured amount ceiling, high-confidence extraction",
+          total: invoice.total,
+          overall_confidence: report.overallConfidence,
+        },
+      });
+    }
   } catch (exc) {
     console.error(`process_invoice failed for ${invoiceId}`, exc);
     await fail(invoice, `Unexpected error: ${exc.message}`);
@@ -196,7 +246,10 @@ async function fail(invoice, message) {
 // clobber a result that actually completed before the error was thrown.
 export async function markFailedIfStuck(invoiceId, exc) {
   const invoice = await Invoice.findByPk(invoiceId);
-  if (!invoice || invoice.status === "failed" || invoice.status === "extracted" || invoice.status === "needs_review") {
+  if (
+    !invoice ||
+    ["failed", "extracted", "needs_review", "approved"].includes(invoice.status)
+  ) {
     return;
   }
   await fail(invoice, `Unexpected error while processing this document: ${exc.message}`);

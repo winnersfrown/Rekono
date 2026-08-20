@@ -12,6 +12,7 @@ export const PLANS = {
     monthlyPriceUsd: 0,
     annualPriceUsd: 0,
     customConfidenceThreshold: false,
+    riskBasedAutoApproval: false,
   },
   starter: {
     name: "Starter",
@@ -20,6 +21,7 @@ export const PLANS = {
     monthlyPriceUsd: 99,
     annualPriceUsd: 79,
     customConfidenceThreshold: false,
+    riskBasedAutoApproval: false,
   },
   growth: {
     name: "Growth",
@@ -28,6 +30,7 @@ export const PLANS = {
     monthlyPriceUsd: 249,
     annualPriceUsd: 199,
     customConfidenceThreshold: false,
+    riskBasedAutoApproval: false,
   },
   business: {
     name: "Business",
@@ -36,6 +39,7 @@ export const PLANS = {
     monthlyPriceUsd: 499,
     annualPriceUsd: 399,
     customConfidenceThreshold: true, // matches marketing copy's "Custom confidence thresholds" bullet
+    riskBasedAutoApproval: true, // matches marketing copy's "Risk-based auto-approval" bullet
   },
   scale: {
     name: "Scale",
@@ -44,6 +48,7 @@ export const PLANS = {
     monthlyPriceUsd: 1499,
     annualPriceUsd: 1199,
     customConfidenceThreshold: true,
+    riskBasedAutoApproval: true,
   },
 };
 

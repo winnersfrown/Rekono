@@ -499,6 +499,23 @@
             </form>
             <div id="settings-confidence-status" class="hint"></div>
           </div>
+
+          <div class="panel">
+            <h3>Risk-based auto-approval</h3>
+            <p class="hint">Skip the manual approve click for invoices that are already confidently extracted, from a vendor you've corrected or confirmed before, and at or under the amount below. Never overrides a flagged review -- it only removes a redundant click on invoices that would already have sailed through.</p>
+            <div id="settings-autoapproval-locked" class="hint" style="display: none;">
+              Risk-based auto-approval is a Business/Scale feature. You're on the <span id="settings-autoapproval-plan-name"></span> plan.
+              <button type="button" class="btn-upgrade" id="settings-autoapproval-upgrade-btn">Upgrade plan</button>
+            </div>
+            <form id="settings-autoapproval-form" style="display: none;">
+              <label>
+                <input type="checkbox" id="settings-autoapproval-enabled" />
+                Auto-approve invoices at or under $<input type="number" id="settings-autoapproval-max" min="0" step="0.01" style="width: 7rem" />
+              </label>
+              <button type="submit">Save</button>
+            </form>
+            <div id="settings-autoapproval-status" class="hint"></div>
+          </div>
         </section>
       </main>
     </div>

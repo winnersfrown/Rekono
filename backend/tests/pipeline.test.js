@@ -1,4 +1,4 @@
-import { effectiveConfidenceThreshold, findDuplicateInvoice, markFailedIfStuck } from "../src/pipeline.js";
+import { effectiveConfidenceThreshold, findDuplicateInvoice, markFailedIfStuck, shouldAutoApprove } from "../src/pipeline.js";
 import { Invoice, Organization } from "../src/models/index.js";
 import { settings } from "../src/config.js";
 import { resetDb } from "./testUtils.js";
@@ -130,4 +130,68 @@ test("effectiveConfidenceThreshold ignores a stale override after downgrading of
 
 test("effectiveConfidenceThreshold falls back to the default for a nonexistent org", async () => {
   expect(await effectiveConfidenceThreshold("does-not-exist")).toBe(settings.reviewConfidenceThreshold);
+});
+
+async function makeAutoApprovalOrg(overrides = {}) {
+  return Organization.create({
+    id: ORG_ID,
+    name: "Org",
+    plan: "business",
+    autoApprovalEnabled: true,
+    autoApprovalMaxAmount: 500,
+    ...overrides,
+  });
+}
+
+test("shouldAutoApprove returns false for an unknown vendor, regardless of everything else", async () => {
+  await makeAutoApprovalOrg();
+  const invoice = await makeInvoice({ total: 100 });
+  expect(await shouldAutoApprove(invoice, false)).toBe(false);
+});
+
+test("shouldAutoApprove returns false when the invoice has no total", async () => {
+  await makeAutoApprovalOrg();
+  const invoice = await makeInvoice({ total: null });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldAutoApprove returns false when the org hasn't opted in", async () => {
+  await makeAutoApprovalOrg({ autoApprovalEnabled: false });
+  const invoice = await makeInvoice({ total: 100 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldAutoApprove returns false when no ceiling is configured, even if enabled", async () => {
+  await makeAutoApprovalOrg({ autoApprovalMaxAmount: null });
+  const invoice = await makeInvoice({ total: 100 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldAutoApprove returns false on a plan without the feature", async () => {
+  await makeAutoApprovalOrg({ plan: "free" });
+  const invoice = await makeInvoice({ total: 100 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldAutoApprove returns false when the total exceeds the configured ceiling", async () => {
+  await makeAutoApprovalOrg({ autoApprovalMaxAmount: 500 });
+  const invoice = await makeInvoice({ total: 500.01 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
+});
+
+test("shouldAutoApprove returns true at exactly the ceiling, with every other condition met", async () => {
+  await makeAutoApprovalOrg({ autoApprovalMaxAmount: 500 });
+  const invoice = await makeInvoice({ total: 500 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(true);
+});
+
+test("shouldAutoApprove returns true well under the ceiling, with every other condition met", async () => {
+  await makeAutoApprovalOrg({ plan: "scale", autoApprovalMaxAmount: 1000 });
+  const invoice = await makeInvoice({ total: 12.5 });
+  expect(await shouldAutoApprove(invoice, true)).toBe(true);
+});
+
+test("shouldAutoApprove returns false for an invoice belonging to a nonexistent org", async () => {
+  const invoice = await makeInvoice({ total: 100, orgId: "does-not-exist" });
+  expect(await shouldAutoApprove(invoice, true)).toBe(false);
 });

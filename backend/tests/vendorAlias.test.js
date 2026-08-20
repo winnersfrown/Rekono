@@ -31,26 +31,28 @@ test("lookupVendorAlias never crosses organizations", async () => {
   expect(await lookupVendorAlias("22222222-2222-2222-2222-222222222222", "ACME SUPPLYS INC")).toBeNull();
 });
 
-test("applyVendorAlias rewrites the field and boosts confidence on a known alias", async () => {
+test("applyVendorAlias rewrites the field, boosts confidence, and reports a known vendor on a known alias", async () => {
   await rememberVendorCorrection(ORG_ID, "ACME SUPPLYS INC", "Acme Supplies Inc.");
 
   const result = {
     fields: { vendor_name: "ACME SUPPLYS INC" },
     fieldConfidence: { vendor_name: 0.4 },
   };
-  await applyVendorAlias(ORG_ID, result);
+  const knownVendor = await applyVendorAlias(ORG_ID, result);
 
   expect(result.fields.vendor_name).toBe("Acme Supplies Inc.");
   expect(result.fieldConfidence.vendor_name).toBe(0.95);
+  expect(knownVendor).toBe(true);
 });
 
-test("applyVendorAlias leaves an unrecognized vendor name untouched", async () => {
+test("applyVendorAlias leaves an unrecognized vendor name untouched and reports it as unknown", async () => {
   const result = {
     fields: { vendor_name: "Some Other Vendor" },
     fieldConfidence: { vendor_name: 0.4 },
   };
-  await applyVendorAlias(ORG_ID, result);
+  const knownVendor = await applyVendorAlias(ORG_ID, result);
 
   expect(result.fields.vendor_name).toBe("Some Other Vendor");
   expect(result.fieldConfidence.vendor_name).toBe(0.4);
+  expect(knownVendor).toBe(false);
 });

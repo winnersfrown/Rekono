@@ -70,6 +70,101 @@ test("PATCH /api/org/settings rejects an out-of-range threshold", async () => {
   expect(res.status).toBe(422);
 });
 
+test("GET /api/org/settings reports risk-based auto-approval as unavailable on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(res.body.risk_based_auto_approval_available).toBe(false);
+  expect(res.body.auto_approval_enabled).toBe(false);
+  expect(res.body.auto_approval_max_amount).toBeNull();
+});
+
+test("PATCH /api/org/settings rejects enabling auto-approval on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_enabled: true });
+  expect(res.status).toBe(403);
+});
+
+test("PATCH /api/org/settings rejects setting a max amount on the free plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_max_amount: 500 });
+  expect(res.status).toBe(403);
+});
+
+test("PATCH /api/org/settings rejects enabling auto-approval without a max amount set", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_enabled: true });
+  expect(res.status).toBe(422);
+});
+
+test("PATCH /api/org/settings rejects a negative max amount", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_max_amount: -1 });
+  expect(res.status).toBe(422);
+});
+
+test("PATCH /api/org/settings sets and GET reflects auto-approval on Business", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  await upgradeToBusiness();
+
+  const patchRes = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_max_amount: 500, auto_approval_enabled: true });
+  expect(patchRes.status).toBe(200);
+  expect(patchRes.body.auto_approval_enabled).toBe(true);
+  expect(patchRes.body.auto_approval_max_amount).toBe(500);
+  expect(patchRes.body.risk_based_auto_approval_available).toBe(true);
+
+  const getRes = await request(app).get("/api/org/settings").set(authHeader(token));
+  expect(getRes.body.auto_approval_enabled).toBe(true);
+  expect(getRes.body.auto_approval_max_amount).toBe(500);
+});
+
+test("PATCH /api/org/settings allows disabling auto-approval regardless of plan", async () => {
+  const token = await signup(app, request);
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_enabled: false });
+  expect(res.status).toBe(200);
+  expect(res.body.auto_approval_enabled).toBe(false);
+});
+
+test("PATCH /api/org/settings allows clearing a max amount that predates a downgrade off Business", async () => {
+  const token = await signup(app, request, { skipOnboarding: true });
+  const org = await upgradeToBusiness();
+  await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_max_amount: 500, auto_approval_enabled: true });
+
+  org.plan = "free";
+  await org.save();
+
+  const res = await request(app)
+    .patch("/api/org/settings")
+    .set(authHeader(token))
+    .send({ auto_approval_max_amount: null, auto_approval_enabled: false });
+  expect(res.status).toBe(200);
+  expect(res.body.auto_approval_max_amount).toBeNull();
+});
+
 test("GET /api/org/settings includes the org name", async () => {
   const token = await signup(app, request, { orgName: "Acme Co" });
   const res = await request(app).get("/api/org/settings").set(authHeader(token));

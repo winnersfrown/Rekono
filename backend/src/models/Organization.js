@@ -48,6 +48,18 @@ export const Organization = sequelize.define(
     // without the feature, and orgs that never touch it, are unaffected.
     confidenceThreshold: { type: DataTypes.FLOAT, allowNull: true },
 
+    // Business/Scale-only (see plans.js's riskBasedAutoApproval): when an
+    // invoice would already have been fast-tracked as `extracted` (passes
+    // the confidence bar, cross-check, not a duplicate/possible-multi), skip
+    // the manual "click Approve" step too if it's also low business risk --
+    // see pipeline.js's shouldAutoApprove. Off (null/false) by default on
+    // every org, even ones on a qualifying plan: this changes real money
+    // moving without a human looking at it, so it's opt-in, never a silent
+    // default. autoApprovalMaxAmount is the dollar ceiling; enabling without
+    // one set is rejected by routes/settings.js.
+    autoApprovalEnabled: { type: DataTypes.BOOLEAN, allowNull: true },
+    autoApprovalMaxAmount: { type: DataTypes.FLOAT, allowNull: true },
+
     // QuickBooks Online (Phase 1: sandbox OAuth connect + manual one-way
     // bill push -- see quickbooks.js and routes/integrations.js). realmId
     // is Intuit's company-file identifier, returned alongside the OAuth
