@@ -56,6 +56,21 @@
   --shadow-md: 0 2px 6px -2px rgba(16, 26, 51, 0.06), 0 12px 28px -12px rgba(16, 26, 51, 0.14);
   --shadow-lg: 0 8px 16px -8px rgba(16, 26, 51, 0.10), 0 24px 56px -20px rgba(16, 26, 51, 0.20);
   --shadow-glow: 0 8px 24px -6px rgba(75, 134, 247, 0.35);
+
+  /* Liquid-glass material -- same recipe as the marketing site (see
+     website/index.html): a translucent, blurred surface that lets the
+     colored blobs in body::before show through, with a bright top edge
+     standing in for a specular highlight. --glass-bg-strong is for
+     anything dense with text/data (the invoice table, pricing cards) where
+     legibility matters more than transparency; --glass-bg is for
+     everything else. */
+  --glass-bg: rgba(255, 255, 255, 0.6);
+  --glass-bg-strong: rgba(255, 255, 255, 0.8);
+  --glass-tint: linear-gradient(180deg, rgba(219, 232, 255, 0.75), rgba(255, 255, 255, 0.7));
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-blur: blur(22px) saturate(180%);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  --glass-shadow: var(--glass-highlight), 0 1px 1px rgba(16, 26, 51, 0.03), var(--shadow-md);
 }
 
 * { box-sizing: border-box; }
@@ -71,7 +86,10 @@ body {
   position: relative;
 }
 
-/* faint blueprint grid ground, matching the marketing site */
+/* Fixed color field the glass surfaces (sidebar, panels, cards, modals --
+   see below) refract, matching the marketing site's same treatment: three
+   soft static blobs in the palette's own accent trio, fixed so each panel
+   shows a different, shifting part of it rather than a flat tint. */
 body::before {
   content: "";
   position: fixed;
@@ -79,11 +97,23 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(to right, rgba(75, 134, 247, 0.07) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(75, 134, 247, 0.07) 1px, transparent 1px);
+    radial-gradient(ellipse 55% 46% at 4% 6%, rgba(75, 134, 247, 0.24), transparent 68%),
+    radial-gradient(ellipse 48% 40% at 96% 22%, rgba(150, 101, 15, 0.14), transparent 68%),
+    radial-gradient(ellipse 52% 44% at 30% 96%, rgba(23, 128, 72, 0.12), transparent 68%);
+}
+/* Blueprint grid, layered above the blobs -- same texture as before, just
+   no longer masked to fade out past the top, so it grounds the glass the
+   whole way down the page. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(75, 134, 247, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(75, 134, 247, 0.06) 1px, transparent 1px);
   background-size: 56px 56px;
-  -webkit-mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, transparent 75%);
-          mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 0%, transparent 75%);
 }
 
 .app-layout, #auth-gate, #billing-required, #onboarding-gate { position: relative; z-index: 1; }
@@ -228,11 +258,13 @@ select {
    Team/Settings used to float raw form rows directly on the blueprint-grid
    background, which reads as unfinished next to the carded Review Queue. */
 .panel {
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
   padding: 1.4rem 1.5rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--glass-shadow);
   margin-bottom: 1.25rem;
   max-width: 720px;
 }
@@ -244,10 +276,13 @@ select {
 table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
   overflow: hidden;
+  box-shadow: var(--glass-shadow);
 }
 
 th, td {
@@ -319,12 +354,14 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .queue-pagination button:disabled { opacity: 0.4; cursor: default; }
 
 .queue-detail {
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
   padding: 1.4rem;
   min-height: 300px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow);
 }
 
 .queue-detail:has(> .empty-state) {
@@ -341,14 +378,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .export-options { display: flex; gap: 1rem; flex-wrap: wrap; max-width: 720px; }
 .export-card {
   flex: 1 1 260px;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
   padding: 1.6rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--glass-shadow);
   transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
 }
-.export-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.export-card:hover { box-shadow: var(--glass-highlight), var(--shadow-md); transform: translateY(-2px); }
 .export-card svg { color: var(--blue); }
 .export-card h3 { margin: 0.75rem 0 0.35rem; }
 .export-card .hint { margin-bottom: 1.1rem; }
@@ -480,11 +519,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .auth-card {
   width: 100%;
   max-width: 400px;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
   padding: 2.1rem;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
 }
 
 .auth-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.4rem; }
@@ -633,11 +674,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   margin-left: 10px;
   width: 210px;
   z-index: 5;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
   padding: 0.75rem 0.85rem;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow);
 }
 .plan-badge-wrap:hover .plan-tooltip { display: block; animation: fade-in 0.12s ease; }
 
@@ -771,11 +814,14 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  background: var(--ink-850);
-  border: 1px solid var(--line);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: 999px;
   padding: 4px;
   margin-bottom: 1.2rem;
+  box-shadow: var(--glass-shadow);
 }
 .billing-toggle-btn {
   display: inline-flex;
@@ -873,8 +919,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(15, 23, 55, 0.5);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 55, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .modal-card { position: relative; width: 100%; }
@@ -899,11 +946,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .confirm-modal-card {
   width: 100%;
   max-width: 420px;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
   padding: 1.6rem;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
 }
 .confirm-modal-card h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
 .confirm-modal-card p { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin: 0; }
@@ -927,9 +976,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   flex: none;
   display: flex;
   flex-direction: column;
-  background: var(--ink-900);
-  border-right: 1px solid var(--line-soft);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-border);
   padding: 1.1rem 0.8rem;
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-brand { padding: 0.4rem 0.5rem 1.1rem; }
@@ -1082,10 +1135,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 /* ---------- Quick Review ---------- */
 .quickreview-card {
   max-width: 32rem;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
   padding: 1.6rem;
+  box-shadow: var(--glass-shadow);
 }
 
 .quickreview-progress {
@@ -1274,13 +1330,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 
 .ask-answer {
   align-self: flex-start;
-  background: var(--ink-900);
-  border: 1px solid var(--line);
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   padding: 0.7rem 0.95rem;
   border-radius: 13px 13px 13px 3px;
   font-size: 0.9rem;
   max-width: 85%;
   white-space: pre-wrap;
+  box-shadow: var(--glass-highlight);
 }
 
 .ask-answer-loading { color: var(--muted); font-style: italic; }
