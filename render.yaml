@@ -8,10 +8,7 @@
 # nothing here requires credentials from anyone but you.
 #
 # Free tier, on purpose. Two tradeoffs that come with it:
-#   1. The database is Render's free Postgres, which auto-deletes after 30
-#      days of the *plan*, not of inactivity -- you'll need to recreate it
-#      (or upgrade to "starter") before then if you want to keep the data.
-#   2. Free web services can't attach a persistent disk, so uploaded
+#   1. Free web services can't attach a persistent disk, so uploaded
 #      invoice files live in the container's ephemeral filesystem and are
 #      lost on every restart/redeploy/spin-down. The database (extracted
 #      data, audit trail) is unaffected -- only the original source files
@@ -21,17 +18,19 @@
 #      failed with a clear "please re-upload this document" message -- so it
 #      never sits stuck on "processing" forever, but the source file/preview
 #      for anything uploaded before a restart is still gone for good.
-#   3. Free web services spin down after 15 minutes of no requests and
+#   2. Free web services spin down after 15 minutes of no requests and
 #      cold-start (10-30s) on the next one. A request that lands right as
 #      the service is spinning down mid-extraction gets recovered on the
-#      next boot per point 2 above, rather than lost.
-# Bump both `plan:` values below to `starter` if these stop being
-# acceptable tradeoffs.
-databases:
-  - name: rekono-db
-    plan: free
-    databaseName: rekono
-    user: rekono
+#      next boot per point 1 above, rather than lost.
+# Bump `plan:` below to `starter` if these stop being acceptable tradeoffs.
+#
+# Database: this Blueprint does NOT provision Render's own Postgres --
+# Render's free Postgres auto-deletes after 30 days of the *plan*, not of
+# inactivity. DATABASE_URL instead points at an external Postgres, e.g. a
+# free Neon project (neon.tech), which persists indefinitely (idle databases
+# scale to zero, not delete). Create a Neon project, copy its connection
+# string, and set DATABASE_URL manually in the Render dashboard after this
+# Blueprint deploys. See README.md's "Database (Neon)" section.
 
 services:
   - type: web
@@ -43,9 +42,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: rekono-db
-          property: connectionString
+        sync: false # set manually in the Render dashboard after deploy -- your Neon (or other Postgres) connection string, see note above
       - key: STORAGE_DIR
         value: /tmp/storage # ephemeral on the free plan -- see note above
       - key: SECRET_KEY
