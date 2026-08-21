@@ -25,12 +25,20 @@ const state = {
   vendordocSortOrder: "desc",
   vendordocPage: 1,
   vendorDocumentTypes: [],
+  leaseStatusFilter: "",
+  leaseExpiringOnly: false,
+  selectedLeaseId: null,
+  leaseSearchQuery: "",
+  leaseSortField: "created_at",
+  leaseSortOrder: "desc",
+  leasePage: 1,
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
 let docPreviewObjectUrl = null;
 let expenseDocPreviewObjectUrl = null;
 let vendordocDocPreviewObjectUrl = null;
+let leaseDocPreviewObjectUrl = null;
 
 function debounce(fn, delayMs) {
   let timer = null;
@@ -97,6 +105,7 @@ function switchTab(name) {
   if (name === "review") loadInvoices();
   if (name === "expenses") loadExpenses();
   if (name === "vendordocs") loadVendorDocs();
+  if (name === "leases") loadLeases();
   if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
@@ -1548,6 +1557,402 @@ async function deleteVendorDoc(id) {
   }
   invalidateCache("/api/vendor-documents?");
   loadVendorDocs();
+}
+
+// ---- Leases ----
+// Same shape as the Vendor Docs queue above (upload/list/detail/correct/
+// approve/reject/retry/delete), applied to /api/leases instead of
+// /api/vendor-documents. A lease has two dates worth flagging instead of
+// one -- its own expiration, and the (often much earlier) deadline to
+// notify the landlord in order to exercise a renewal option -- so the
+// table shows whichever of the two comes first, and the detail view shows
+// both with their own badges. Uses a 90-day "soon" window rather than
+// vendor docs' 30 -- lease decisions have a longer lead time than an
+// insurance certificate's.
+document.getElementById("lease-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("lease-file-input");
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+
+  const statusEl = document.getElementById("lease-upload-status");
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/leases/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
+    }
+  }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} leases — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  if (uploaded) {
+    invalidateCache("/api/leases?");
+    loadLeases();
+    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+  }
+});
+
+document.querySelectorAll(".lease-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".lease-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (btn.dataset.status === "expiring_soon") {
+      state.leaseExpiringOnly = true;
+      state.leaseStatusFilter = "";
+    } else {
+      state.leaseExpiringOnly = false;
+      state.leaseStatusFilter = btn.dataset.status;
+    }
+    state.leasePage = 1;
+    loadLeases();
+  });
+});
+
+const LEASE_EXPIRING_SOON_DAYS = 90;
+
+async function loadLeases() {
+  const params = new URLSearchParams();
+  if (state.leaseExpiringOnly) {
+    params.set("expiring_within_days", LEASE_EXPIRING_SOON_DAYS);
+  } else if (state.leaseStatusFilter) {
+    params.set("status", state.leaseStatusFilter);
+  }
+  if (state.leaseSearchQuery) params.set("q", state.leaseSearchQuery);
+  params.set("sort", state.leaseSortField);
+  params.set("order", state.leaseSortOrder);
+  params.set("page", state.leasePage);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+  const url = `/api/leases?${params}`;
+
+  await cachedLoad(
+    url,
+    async () => (await apiFetch(url)).json(),
+    renderLeases
+  );
+}
+
+// Whichever of the two flagged dates comes first is the more urgent one to
+// show at a glance in the table -- the detail view shows both separately.
+function leaseCriticalDate(l) {
+  const dates = [l.expiration_date, l.renewal_notice_deadline].filter(Boolean);
+  if (!dates.length) return null;
+  return dates.sort()[0]; // ISO YYYY-MM-DD strings sort chronologically as strings
+}
+
+// Same shape as vendor docs' expiryBadge, with a 90-day window instead of
+// 30 -- see the section comment above for why.
+function leaseExpiryBadge(dateStr) {
+  if (!dateStr) return { cls: "expiry-none", label: "—" };
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const target = new Date(`${dateStr}T00:00:00Z`);
+  const daysLeft = Math.round((target - today) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return { cls: "expiry-expired", label: `Past due ${dateStr}` };
+  if (daysLeft <= LEASE_EXPIRING_SOON_DAYS) return { cls: "expiry-soon", label: dateStr };
+  return { cls: "expiry-ok", label: dateStr };
+}
+
+function renderLeases({ items: leases, total }) {
+  const tbody = document.querySelector("#lease-table tbody");
+  tbody.innerHTML = leases.map((l) => {
+    const badge = leaseExpiryBadge(leaseCriticalDate(l));
+    return `
+    <tr data-id="${l.id}">
+      <td>${l.landlord_name ? escapeHtml(l.landlord_name) : "(unknown)"}</td>
+      <td>${l.property_address ? escapeHtml(l.property_address) : "—"}</td>
+      <td><span class="badge ${badge.cls}">${escapeHtml(badge.label)}</span></td>
+      <td><span class="badge status-${l.status}">${l.status}</span></td>
+      <td>${fmtPct(l.overall_confidence)}</td>
+    </tr>
+  `;
+  }).join("") || "<tr><td colspan='5' class='table-empty-row'>No leases.</td></tr>";
+
+  tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+    row.addEventListener("click", () => selectLease(row.dataset.id));
+  });
+
+  document.querySelectorAll("#lease-table th.lease-sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.leaseSortField);
+    th.dataset.order = th.dataset.sort === state.leaseSortField ? state.leaseSortOrder : "";
+  });
+
+  const start = total === 0 ? 0 : (state.leasePage - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.leasePage * QUEUE_PAGE_SIZE);
+  document.getElementById("lease-queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("lease-queue-prev-page").disabled = state.leasePage <= 1;
+  document.getElementById("lease-queue-next-page").disabled = end >= total;
+}
+
+document.getElementById("lease-search").addEventListener("input", debounce(() => {
+  state.leaseSearchQuery = document.getElementById("lease-search").value.trim();
+  state.leasePage = 1;
+  loadLeases();
+}, 300));
+
+document.querySelectorAll("#lease-table th.lease-sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    if (state.leaseSortField === th.dataset.sort) {
+      state.leaseSortOrder = state.leaseSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.leaseSortField = th.dataset.sort;
+      state.leaseSortOrder = "asc";
+    }
+    state.leasePage = 1;
+    loadLeases();
+  });
+});
+
+document.getElementById("lease-queue-prev-page").addEventListener("click", () => {
+  if (state.leasePage <= 1) return;
+  state.leasePage -= 1;
+  loadLeases();
+});
+document.getElementById("lease-queue-next-page").addEventListener("click", () => {
+  state.leasePage += 1;
+  loadLeases();
+});
+
+async function selectLease(id) {
+  state.selectedLeaseId = id;
+  const res = await apiFetch(`/api/leases/${id}`);
+  const lease = await res.json();
+  renderLeaseDetail(lease);
+}
+
+function leaseFieldConf(l, name) {
+  return (l.field_confidence && l.field_confidence[name]) ?? 0;
+}
+
+const LEASE_EMPTY_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+    <p class="hint">Select a lease from the list to review it.</p>
+  </div>
+`;
+
+function renderLeaseDetail(l) {
+  const el = document.getElementById("lease-queue-detail");
+
+  if (l.status === "queued" || l.status === "processing") {
+    const isPdf = (l.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this lease — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="lease-doc-preview-media"></iframe>` : `<img id="lease-doc-preview-media" />`}
+        </div>
+      </div>
+    `;
+    loadLeasePreview(l);
+    pollLeaseWhileProcessing(l.id);
+    return;
+  }
+
+  const lowConf = (name) => leaseFieldConf(l, name) < 0.85 ? "low-confidence" : "";
+  const isPdf = (l.content_type || "").includes("pdf");
+  const preview = isPdf ? `<iframe id="lease-doc-preview-media"></iframe>` : `<img id="lease-doc-preview-media" />`;
+
+  const statusBanner = l.status === "failed"
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(l.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    : `<div class="cross-check pass">✓ extraction method: ${l.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(l.overall_confidence)}</div>`;
+
+  const expiryB = leaseExpiryBadge(l.expiration_date);
+  const noticeB = leaseExpiryBadge(l.renewal_notice_deadline);
+  const expiryBanner = expiryB.cls === "expiry-expired"
+    ? `<div class="cross-check fail">⚠ This lease expired on ${escapeHtml(l.expiration_date)}.</div>`
+    : expiryB.cls === "expiry-soon"
+    ? `<div class="cross-check warn">⚠ This lease expires on ${escapeHtml(l.expiration_date)} — within the next ${LEASE_EXPIRING_SOON_DAYS} days.</div>`
+    : "";
+  const noticeBanner = noticeB.cls === "expiry-expired"
+    ? `<div class="cross-check fail">⚠ The renewal-option notice deadline (${escapeHtml(l.renewal_notice_deadline)}) has passed.</div>`
+    : noticeB.cls === "expiry-soon"
+    ? `<div class="cross-check warn">⚠ The renewal-option notice deadline is ${escapeHtml(l.renewal_notice_deadline)} — within the next ${LEASE_EXPIRING_SOON_DAYS} days. Miss it and the option lapses even though the lease hasn't ended yet.</div>`
+    : "";
+
+  el.innerHTML = `
+    ${expiryBanner}
+    ${noticeBanner}
+    ${statusBanner}
+
+    <div class="detail-grid">
+      <div class="field ${lowConf("landlord_name")}"><label>Landlord</label><input id="lf-landlord_name" value="${escapeHtml(l.landlord_name)}" /></div>
+      <div class="field ${lowConf("property_address")}"><label>Property Address</label><input id="lf-property_address" value="${escapeHtml(l.property_address)}" /></div>
+      <div class="field ${lowConf("commencement_date")}"><label>Commencement Date</label><input id="lf-commencement_date" type="date" value="${l.commencement_date || ""}" /></div>
+      <div class="field ${lowConf("expiration_date")}"><label>Expiration Date</label><input id="lf-expiration_date" type="date" value="${l.expiration_date || ""}" /></div>
+      <div class="field ${lowConf("renewal_notice_deadline")}"><label>Renewal Notice Deadline</label><input id="lf-renewal_notice_deadline" type="date" value="${l.renewal_notice_deadline || ""}" /></div>
+      <div class="field ${lowConf("monthly_rent")}"><label>Monthly Rent</label><input id="lf-monthly_rent" value="${l.monthly_rent ?? ""}" /></div>
+      <div class="field ${lowConf("annual_escalation_pct")}"><label>Annual Escalation %</label><input id="lf-annual_escalation_pct" value="${l.annual_escalation_pct ?? ""}" /></div>
+      <div class="field"><label>Note</label><input id="lf-note" value="${escapeHtml(l.note)}" /></div>
+    </div>
+
+    <div class="actions">
+      <button class="save" id="lbtn-save">Save Corrections</button>
+      <button class="approve" id="lbtn-approve">Approve</button>
+      <button class="reject" id="lbtn-reject">Reject</button>
+      ${l.status !== "approved" ? `<button class="retry" id="lbtn-retry">Retry Extraction</button>` : ""}
+      <button class="delete" id="lbtn-delete">Delete</button>
+    </div>
+
+    <div class="doc-preview">
+      <h3>Source document</h3>
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("lbtn-save").addEventListener("click", () => saveLeaseCorrections(l.id));
+  document.getElementById("lbtn-approve").addEventListener("click", () => approveLease(l.id));
+  document.getElementById("lbtn-reject").addEventListener("click", () => rejectLease(l.id));
+  document.getElementById("lbtn-retry")?.addEventListener("click", () => retryLease(l.id));
+  document.getElementById("lbtn-delete").addEventListener("click", () => deleteLease(l.id));
+
+  loadLeasePreview(l);
+}
+
+const LEASE_POLL_MAX_ATTEMPTS = 120;
+
+function pollLeaseWhileProcessing(id, attempt = 0) {
+  if (attempt >= LEASE_POLL_MAX_ATTEMPTS) {
+    if (state.selectedLeaseId === id) {
+      const banner = document.querySelector("#lease-queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
+  setTimeout(async () => {
+    if (state.selectedLeaseId !== id) return;
+    const res = await apiFetch(`/api/leases/${id}`);
+    const l = await res.json();
+    if (state.selectedLeaseId !== id) return;
+    if (l.status === "queued" || l.status === "processing") {
+      pollLeaseWhileProcessing(id, attempt + 1);
+    } else {
+      renderLeaseDetail(l);
+      invalidateCache("/api/leases?");
+      loadLeases();
+    }
+  }, 3000);
+}
+
+async function loadLeasePreview(l) {
+  const media = document.getElementById("lease-doc-preview-media");
+  if (!media) return;
+  if (leaseDocPreviewObjectUrl) {
+    URL.revokeObjectURL(leaseDocPreviewObjectUrl);
+    leaseDocPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/leases/${l.id}/file`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
+    const blob = await res.blob();
+    leaseDocPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = leaseDocPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) }));
+  }
+}
+
+async function saveLeaseCorrections(id) {
+  const payload = {
+    landlord_name: document.getElementById("lf-landlord_name").value,
+    property_address: document.getElementById("lf-property_address").value,
+    commencement_date: document.getElementById("lf-commencement_date").value || null,
+    expiration_date: document.getElementById("lf-expiration_date").value || null,
+    renewal_notice_deadline: document.getElementById("lf-renewal_notice_deadline").value || null,
+    monthly_rent: numOrNull(document.getElementById("lf-monthly_rent").value),
+    annual_escalation_pct: numOrNull(document.getElementById("lf-annual_escalation_pct").value),
+    note: document.getElementById("lf-note").value,
+  };
+
+  const res = await apiFetch(`/api/leases/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const l = await res.json();
+  renderLeaseDetail(l);
+  invalidateCache("/api/leases?");
+  loadLeases();
+}
+
+async function approveLease(id) {
+  const res = await apiFetch(`/api/leases/${id}/approve`, { method: "POST" });
+  const l = await res.json();
+  renderLeaseDetail(l);
+  invalidateCache("/api/leases?");
+  loadLeases();
+}
+
+async function rejectLease(id) {
+  const res = await apiFetch(`/api/leases/${id}/reject`, { method: "POST" });
+  const l = await res.json();
+  renderLeaseDetail(l);
+  invalidateCache("/api/leases?");
+  loadLeases();
+}
+
+async function retryLease(id) {
+  const res = await apiFetch(`/api/leases/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't retry extraction", body.detail || "Could not retry this document.");
+    return;
+  }
+  renderLeaseDetail(body);
+  invalidateCache("/api/leases?");
+  loadLeases();
+}
+
+async function deleteLease(id) {
+  const ok = await confirmDialog("Delete this lease?", "This can't be undone from the review UI.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const res = await apiFetch(`/api/leases/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't delete lease", body.detail || "Could not delete this lease.");
+    return;
+  }
+
+  if (state.selectedLeaseId === id) {
+    state.selectedLeaseId = null;
+    document.getElementById("lease-queue-detail").innerHTML = LEASE_EMPTY_DETAIL;
+  }
+  invalidateCache("/api/leases?");
+  loadLeases();
 }
 
 // ---- Matching ----
