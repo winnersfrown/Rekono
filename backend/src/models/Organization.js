@@ -1,6 +1,7 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../db.js";
 import { newId } from "./idDefault.js";
+import * as secretBox from "../secretBox.js";
 
 export const Organization = sequelize.define(
   "Organization",
@@ -82,8 +83,32 @@ export const Organization = sequelize.define(
     // All nullable with no default: a disconnected org simply has all of
     // these null, and "connected" is defined as realmId !== null.
     quickbooksRealmId: { type: DataTypes.STRING(64), allowNull: true },
-    quickbooksAccessToken: { type: DataTypes.TEXT, allowNull: true },
-    quickbooksRefreshToken: { type: DataTypes.TEXT, allowNull: true },
+    // Encrypted at rest (secretBox.js) -- transparent to every other read/
+    // write in the app (quickbooks.js, routes/integrations.js), which all
+    // go through `org.quickbooksAccessToken`/`org.quickbooksRefreshToken`
+    // directly, never a raw query. A database compromise alone shouldn't
+    // also hand over a live credential into a customer's real QuickBooks
+    // company file.
+    quickbooksAccessToken: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        return secretBox.decrypt(this.getDataValue("quickbooksAccessToken"));
+      },
+      set(value) {
+        this.setDataValue("quickbooksAccessToken", secretBox.encrypt(value));
+      },
+    },
+    quickbooksRefreshToken: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        return secretBox.decrypt(this.getDataValue("quickbooksRefreshToken"));
+      },
+      set(value) {
+        this.setDataValue("quickbooksRefreshToken", secretBox.encrypt(value));
+      },
+    },
     quickbooksAccessTokenExpiresAt: { type: DataTypes.DATE, allowNull: true },
     quickbooksRefreshTokenExpiresAt: { type: DataTypes.DATE, allowNull: true },
     // Expense account an org picks (from GET /api/integrations/quickbooks/accounts)

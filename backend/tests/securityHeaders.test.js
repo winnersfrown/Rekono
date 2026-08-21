@@ -13,3 +13,25 @@ test("does not set Strict-Transport-Security over plain HTTP (supertest's defaul
   const res = await request(app).get("/api/health");
   expect(res.headers["strict-transport-security"]).toBeUndefined();
 });
+
+describe("CORS allowlist", () => {
+  test("echoes back an allowed origin (the marketing site)", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://winnersfrown.github.io");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://winnersfrown.github.io");
+  });
+
+  test("echoes back the app's own deployed origin", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://rekono-crv7.onrender.com");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://rekono-crv7.onrender.com");
+  });
+
+  test("does not grant CORS access to an arbitrary third-party origin", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://evil.example.com");
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  test("a request with no Origin header (server-to-server, curl) is unaffected", async () => {
+    const res = await request(app).get("/api/health");
+    expect(res.status).toBe(200);
+  });
+});
