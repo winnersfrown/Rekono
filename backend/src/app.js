@@ -48,23 +48,49 @@ app.use(
   })
 );
 
-// Baseline browser-security headers on every response. Deliberately not
-// including a Content-Security-Policy here: the review UI is hand-rolled
-// vanilla JS/HTML with inline styles and no nonce/hash build step, so a
-// real CSP would need that infrastructure first or it'd either break the
-// UI or be too loose to matter -- tracked as a follow-up, not skipped by
-// oversight.
+// The review UI's actual script/style/resource footprint (verified by
+// grepping backend/public/ rather than guessed): no inline <script> blocks
+// and no inline event-handler attributes anywhere, only <script src="/*.js">
+// -- so script-src can be 'self' with no 'unsafe-inline'/nonce needed at
+// all. Inline style="..." attributes are used throughout (no build step to
+// generate nonces/hashes for them), so style-src alone needs 'unsafe-inline'
+// -- a much smaller trade than script-src would be, since CSS injection
+// alone can't run arbitrary JS. fonts.googleapis.com/fonts.gstatic.com serve
+// the Google Fonts in index.html's <head>. blob: is required for img-src and
+// frame-src: the document preview never points an <iframe>/<img> straight at
+// GET /api/invoices/:id/file (that request needs the bearer token, which a
+// src="..." attribute can't carry), so app.js fetches it with the token and
+// hands the element a URL.createObjectURL(blob) blob: URL instead (see
+// public/app.js's own comment above loadDocPreview).
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob:",
+  "frame-src 'self' blob:",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join("; ");
+
+// Baseline browser-security headers on every response.
 app.use((req, res, next) => {
   // Stops browsers from MIME-sniffing a response into a different type
   // than its declared Content-Type (e.g. treating an uploaded file as
   // HTML/JS instead of the type we set).
   res.set("X-Content-Type-Options", "nosniff");
   // The review UI is never meant to be embedded in another site's frame;
-  // this blocks clickjacking attempts that try anyway.
+  // this blocks clickjacking attempts that try anyway. frame-ancestors
+  // 'none' above is the modern CSP equivalent -- kept both since older
+  // browsers only honor this one.
   res.set("X-Frame-Options", "DENY");
   // Avoids leaking full internal URLs (invoice IDs, etc.) to third-party
   // sites via the Referer header when a link is followed off-site.
   res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.set("Content-Security-Policy", CONTENT_SECURITY_POLICY);
   // Only meaningful over HTTPS -- Render terminates TLS in front of this
   // app, so req.protocol reflects the original scheme via trust proxy.
   if (req.protocol === "https") {
