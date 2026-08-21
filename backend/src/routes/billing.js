@@ -85,8 +85,8 @@ export async function createCheckoutSession({ org, email, planId, billingPeriod,
       },
     ],
     ...(trialDays ? { subscription_data: { trial_period_days: trialDays } } : {}),
-    success_url: `${baseUrl}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${baseUrl}/?checkout=cancelled`,
+    success_url: `${baseUrl}/app/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${baseUrl}/app/?checkout=cancelled`,
     // Read back on the success redirect (/api/billing/confirm) and by the
     // webhook -- this is how we know which org and which plan a given
     // Checkout Session was for, since Stripe has no idea about either.
@@ -191,7 +191,7 @@ router.get("/api/billing/portal", requireAuth, requireStripeConfigured, async (r
     const baseUrl = `${req.protocol}://${req.get("host")}`;
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: org.stripeCustomerId,
-      return_url: `${baseUrl}/`,
+      return_url: `${baseUrl}/app/`,
     });
     res.json({ url: portalSession.url });
   } catch (err) {
