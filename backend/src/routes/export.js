@@ -2,7 +2,7 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { Invoice, LineItem, MatchResult } from "../models/index.js";
+import { ExpenseReceipt, Invoice, LineItem, MatchResult } from "../models/index.js";
 
 const router = Router();
 
@@ -120,6 +120,78 @@ router.get("/api/export/xlsx", requireAuth, requireActivePlan, async (req, res, 
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.set("Content-Disposition", "attachment; filename=rekono_invoices.xlsx");
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+const EXPENSE_COLUMNS = [
+  "receipt_id",
+  "status",
+  "merchant_name",
+  "receipt_date",
+  "category",
+  "currency",
+  "tax",
+  "amount",
+  "extraction_method",
+  "overall_confidence",
+  "original_filename",
+  "created_at",
+];
+
+async function buildExpenseRows(orgId) {
+  const receipts = await ExpenseReceipt.findAll({
+    where: { orgId },
+    order: [["createdAt", "DESC"]],
+  });
+
+  return receipts.map((r) => ({
+    receipt_id: r.id,
+    status: r.status,
+    merchant_name: sanitizeSpreadsheetCell(r.merchantName),
+    receipt_date: r.receiptDate,
+    category: r.category,
+    currency: r.currency,
+    tax: r.tax,
+    amount: r.amount,
+    extraction_method: r.extractionMethod,
+    overall_confidence: r.overallConfidence,
+    original_filename: sanitizeSpreadsheetCell(r.originalFilename),
+    created_at: r.createdAt.toISOString(),
+  }));
+}
+
+router.get("/api/export/expenses/csv", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildExpenseRows(req.currentUser.orgId);
+    const lines = [EXPENSE_COLUMNS.join(",")];
+    for (const row of rows) {
+      lines.push(EXPENSE_COLUMNS.map((c) => toCsvValue(row[c])).join(","));
+    }
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", "attachment; filename=rekono_expenses.csv");
+    res.send(lines.join("\n") + (rows.length ? "\n" : ""));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/export/expenses/xlsx", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildExpenseRows(req.currentUser.orgId);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Expenses");
+    sheet.columns = EXPENSE_COLUMNS.map((c) => ({ header: c, key: c }));
+    sheet.addRows(rows);
+
+    res.set(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.set("Content-Disposition", "attachment; filename=rekono_expenses.xlsx");
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {

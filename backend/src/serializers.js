@@ -85,6 +85,45 @@ export function serializeInvoiceListItem(inv) {
   };
 }
 
+export function serializeExpenseReceiptDetail(r) {
+  return {
+    id: r.id,
+    original_filename: r.originalFilename,
+    content_type: r.contentType,
+    status: r.status,
+    error_message: r.errorMessage,
+
+    merchant_name: r.merchantName,
+    receipt_date: r.receiptDate,
+    category: r.category,
+    currency: r.currency,
+    tax: r.tax,
+    amount: r.amount,
+    note: r.note,
+
+    extraction_method: r.extractionMethod,
+    field_confidence: r.fieldConfidence,
+    overall_confidence: r.overallConfidence,
+
+    created_at: r.createdAt,
+    updated_at: r.updatedAt,
+  };
+}
+
+export function serializeExpenseReceiptListItem(r) {
+  return {
+    id: r.id,
+    original_filename: r.originalFilename,
+    status: r.status,
+    merchant_name: r.merchantName,
+    category: r.category,
+    receipt_date: r.receiptDate,
+    amount: r.amount,
+    overall_confidence: r.overallConfidence,
+    created_at: r.createdAt,
+  };
+}
+
 export function serializeAuditLog(entry) {
   return {
     id: entry.id,
