@@ -2,7 +2,7 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { ExpenseReceipt, Invoice, LineItem, MatchResult } from "../models/index.js";
+import { ExpenseReceipt, Invoice, LineItem, MatchResult, VendorDocument } from "../models/index.js";
 
 const router = Router();
 
@@ -192,6 +192,78 @@ router.get("/api/export/expenses/xlsx", requireAuth, requireActivePlan, async (r
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.set("Content-Disposition", "attachment; filename=rekono_expenses.xlsx");
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+const VENDOR_DOCUMENT_COLUMNS = [
+  "document_id",
+  "status",
+  "vendor_name",
+  "document_type",
+  "effective_date",
+  "expiration_date",
+  "reference_number",
+  "amount",
+  "extraction_method",
+  "overall_confidence",
+  "original_filename",
+  "created_at",
+];
+
+async function buildVendorDocumentRows(orgId) {
+  const docs = await VendorDocument.findAll({
+    where: { orgId },
+    order: [["createdAt", "DESC"]],
+  });
+
+  return docs.map((d) => ({
+    document_id: d.id,
+    status: d.status,
+    vendor_name: sanitizeSpreadsheetCell(d.vendorName),
+    document_type: d.documentType,
+    effective_date: d.effectiveDate,
+    expiration_date: d.expirationDate,
+    reference_number: sanitizeSpreadsheetCell(d.referenceNumber),
+    amount: d.amount,
+    extraction_method: d.extractionMethod,
+    overall_confidence: d.overallConfidence,
+    original_filename: sanitizeSpreadsheetCell(d.originalFilename),
+    created_at: d.createdAt.toISOString(),
+  }));
+}
+
+router.get("/api/export/vendor-documents/csv", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildVendorDocumentRows(req.currentUser.orgId);
+    const lines = [VENDOR_DOCUMENT_COLUMNS.join(",")];
+    for (const row of rows) {
+      lines.push(VENDOR_DOCUMENT_COLUMNS.map((c) => toCsvValue(row[c])).join(","));
+    }
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", "attachment; filename=rekono_vendor_documents.csv");
+    res.send(lines.join("\n") + (rows.length ? "\n" : ""));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/export/vendor-documents/xlsx", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildVendorDocumentRows(req.currentUser.orgId);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Vendor Documents");
+    sheet.columns = VENDOR_DOCUMENT_COLUMNS.map((c) => ({ header: c, key: c }));
+    sheet.addRows(rows);
+
+    res.set(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.set("Content-Disposition", "attachment; filename=rekono_vendor_documents.xlsx");
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {

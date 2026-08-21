@@ -1,4 +1,4 @@
-import { ExpenseReceipt, Invoice } from "../src/models/index.js";
+import { ExpenseReceipt, Invoice, VendorDocument } from "../src/models/index.js";
 import { recoverOrphanedJobs, queueDepth } from "../src/jobs.js";
 import { resetDb } from "./testUtils.js";
 
@@ -79,7 +79,25 @@ test("recoverOrphanedJobs also re-enqueues expense receipts left mid-pipeline", 
   expect(receipt.errorMessage).toMatch(/no longer available/i);
 });
 
-test("recoverOrphanedJobs counts invoices and receipts together in one recovered total", async () => {
+test("recoverOrphanedJobs also re-enqueues vendor documents left mid-pipeline", async () => {
+  const doc = await VendorDocument.create({
+    orgId: "11111111-1111-1111-1111-111111111111",
+    originalFilename: "coi.pdf",
+    storagePath: "/tmp/rekono-test-vendordoc-that-does-not-exist.pdf",
+    contentType: "application/pdf",
+    status: "processing",
+  });
+
+  const recoveredCount = await recoverOrphanedJobs();
+  expect(recoveredCount).toBe(1);
+
+  await waitForQueueToDrain();
+  await doc.reload();
+  expect(doc.status).toBe("failed");
+  expect(doc.errorMessage).toMatch(/no longer available/i);
+});
+
+test("recoverOrphanedJobs counts invoices, receipts, and vendor documents together in one recovered total", async () => {
   await Invoice.create({
     orgId: "11111111-1111-1111-1111-111111111111",
     originalFilename: "test.pdf",
@@ -94,8 +112,15 @@ test("recoverOrphanedJobs counts invoices and receipts together in one recovered
     contentType: "application/pdf",
     status: "queued",
   });
+  await VendorDocument.create({
+    orgId: "11111111-1111-1111-1111-111111111111",
+    originalFilename: "coi.pdf",
+    storagePath: "/tmp/rekono-test-vendordoc-that-does-not-exist-2.pdf",
+    contentType: "application/pdf",
+    status: "queued",
+  });
 
   const recoveredCount = await recoverOrphanedJobs();
-  expect(recoveredCount).toBe(2);
+  expect(recoveredCount).toBe(3);
   await waitForQueueToDrain();
 });

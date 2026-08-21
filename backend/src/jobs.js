@@ -4,19 +4,22 @@
 // this for a real broker (BullMQ/Redis, SQS) later is a drop-in
 // replacement behind `enqueue`.
 //
-// One queue, two document kinds: `kind` picks which pipeline processes a
-// given id (invoices vs. expense receipts, see pipeline.js/
-// expensePipeline.js). Kept as one shared queue/drain loop rather than two
-// separate ones -- there's nothing kind-specific about ordering or
-// concurrency here, just which processor a given id's job hands off to.
+// One queue, three document kinds: `kind` picks which pipeline processes a
+// given id (invoices, expense receipts, vendor documents -- see pipeline.js/
+// expensePipeline.js/vendorDocPipeline.js). Kept as one shared queue/drain
+// loop rather than separate ones per kind -- there's nothing kind-specific
+// about ordering or concurrency here, just which processor a given id's job
+// hands off to.
 
 import { processInvoice, markFailedIfStuck as markInvoiceFailedIfStuck } from "./pipeline.js";
 import { processExpense, markFailedIfStuck as markExpenseFailedIfStuck } from "./expensePipeline.js";
-import { Invoice, ExpenseReceipt } from "./models/index.js";
+import { processVendorDocument, markFailedIfStuck as markVendorDocFailedIfStuck } from "./vendorDocPipeline.js";
+import { Invoice, ExpenseReceipt, VendorDocument } from "./models/index.js";
 
 const PROCESSORS = {
   invoice: { process: processInvoice, markFailedIfStuck: markInvoiceFailedIfStuck },
   expense: { process: processExpense, markFailedIfStuck: markExpenseFailedIfStuck },
+  vendor_document: { process: processVendorDocument, markFailedIfStuck: markVendorDocFailedIfStuck },
 };
 
 const queue = [];
@@ -76,5 +79,11 @@ export async function recoverOrphanedJobs() {
     enqueue(receipt.id, "expense");
   }
 
-  return stuckInvoices.length + stuckReceipts.length;
+  const stuckVendorDocs = await VendorDocument.findAll({ where: { status: ["queued", "processing"] } });
+  for (const doc of stuckVendorDocs) {
+    console.warn(`Recovering orphaned vendor document ${doc.id} (was "${doc.status}" from a previous process)`);
+    enqueue(doc.id, "vendor_document");
+  }
+
+  return stuckInvoices.length + stuckReceipts.length + stuckVendorDocs.length;
 }
