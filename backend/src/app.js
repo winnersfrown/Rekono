@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
+import { settings } from "./config.js";
 import authRoutes from "./routes/auth.js";
 import onboardingRoutes from "./routes/onboarding.js";
 import billingRoutes, { webhookRouter as billingWebhookRoutes } from "./routes/billing.js";
@@ -30,8 +31,22 @@ app.set("trust proxy", 1);
 
 // The marketing site (GitHub Pages) and the app (wherever it's deployed) are
 // different origins, so the browser needs CORS to let the marketing site's
-// login/signup calls reach this API.
-app.use(cors());
+// login/signup calls reach this API. Restricted to settings.allowedOrigins
+// rather than wide open -- an open policy would let any website make
+// authenticated fetch/XHR calls using a token if one ever leaked via XSS
+// elsewhere. A request with no Origin header at all (server-to-server
+// calls, curl, the test suite's supertest requests) isn't something CORS
+// applies to in the first place -- only a browser sends that header, to
+// enforce its own same-origin policy client-side -- so those are let
+// through unconditionally rather than rejected.
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || settings.allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error("Not allowed by CORS"));
+    },
+  })
+);
 
 // Baseline browser-security headers on every response. Deliberately not
 // including a Content-Security-Policy here: the review UI is hand-rolled

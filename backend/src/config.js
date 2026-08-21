@@ -71,4 +71,20 @@ export const settings = {
   quickbooksClientId: process.env.QUICKBOOKS_CLIENT_ID || "",
   quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || "",
   quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || "sandbox",
+
+  // Origins allowed to make cross-origin browser requests (app.js's CORS
+  // setup) -- the marketing site's own origin (its login/signup calls) and
+  // the app's own deployed origin (the review UI's own fetch calls
+  // include an Origin header on state-changing requests same as any other
+  // origin's would). Comma-separated so a self-hosted deployment can add
+  // its own origin without a code change. Deliberately NOT wide open
+  // (`cors()` with no restriction): any website could otherwise make
+  // authenticated fetch/XHR calls using a token if one ever leaked via XSS
+  // elsewhere.
+  allowedOrigins: (
+    process.env.ALLOWED_ORIGINS || "https://winnersfrown.github.io,https://rekono-crv7.onrender.com,http://localhost:8000"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 };
