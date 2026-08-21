@@ -87,6 +87,21 @@
     --shadow-lg: 0 8px 16px -8px rgba(16, 26, 51, 0.10), 0 24px 56px -20px rgba(16, 26, 51, 0.20);
     --shadow-glow: 0 8px 24px -6px rgba(75, 134, 247, 0.35);
 
+    /* Liquid-glass material: a translucent, blurred surface that lets the
+       colored blobs in body::before show through and shift as they scroll
+       underneath it, with a bright top edge standing in for a specular
+       highlight (real liquid glass catches light along one edge) and a
+       soft outer shadow for lift. --glass-tint is the featured/accent
+       variant (pricing's featured card, the primary CTA-adjacent hero
+       card) -- same recipe, warmed with a touch more blue. */
+    --glass-bg: rgba(255, 255, 255, 0.6);
+    --glass-bg-strong: rgba(255, 255, 255, 0.78);
+    --glass-tint: linear-gradient(180deg, rgba(219, 232, 255, 0.75), rgba(255, 255, 255, 0.7));
+    --glass-border: rgba(255, 255, 255, 0.7);
+    --glass-blur: blur(22px) saturate(180%);
+    --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    --glass-shadow: var(--glass-highlight), 0 1px 1px rgba(16, 26, 51, 0.03), var(--shadow-md);
+
     --font-display: 'Bitter', Georgia, serif;
     --font-body: 'IBM Plex Sans', -apple-system, sans-serif;
     --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
@@ -112,7 +127,13 @@
     position: relative;
   }
 
-  /* faint blueprint grid ground, fixed behind all content */
+  /* Fixed color field the glass surfaces refract -- three soft, static
+     blobs (blue/amber/green, the palette's own accent trio, so this reads
+     as "the brand's colors, blurred" rather than a generic gradient) sit
+     behind the blueprint grid. Fixed rather than scrolling with the page:
+     each glass panel passes over a different part of it as you scroll, the
+     way frosted glass shows a shifting, softened version of whatever is
+     behind it rather than a static tint. */
   body::before {
     content: "";
     position: fixed;
@@ -120,11 +141,24 @@
     z-index: 0;
     pointer-events: none;
     background-image:
-      linear-gradient(to right, rgba(75, 134, 247, 0.07) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(75, 134, 247, 0.07) 1px, transparent 1px);
+      radial-gradient(ellipse 60% 46% at 12% 8%, rgba(75, 134, 247, 0.28), transparent 68%),
+      radial-gradient(ellipse 52% 42% at 88% 28%, rgba(150, 101, 15, 0.16), transparent 68%),
+      radial-gradient(ellipse 58% 48% at 22% 82%, rgba(23, 128, 72, 0.14), transparent 68%),
+      radial-gradient(ellipse 46% 40% at 92% 92%, rgba(75, 134, 247, 0.2), transparent 68%);
+  }
+  /* Blueprint grid, layered above the blobs -- unmasked now (was faded out
+     past the hero before) so it reads as ground texture the glass sits on
+     the whole way down, not just up top. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgba(16, 26, 51, 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(16, 26, 51, 0.05) 1px, transparent 1px);
     background-size: 56px 56px;
-    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 0%, transparent 75%);
-            mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 0%, transparent 75%);
   }
 
   main, header, footer { position: relative; z-index: 1; }
@@ -159,9 +193,11 @@
     position: sticky;
     top: 0;
     z-index: 40;
-    background: rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line-soft);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: var(--glass-highlight);
   }
   .site-header .wrap {
     display: flex;
@@ -244,7 +280,7 @@
 
   /* ---------- hero ---------- */
   .hero {
-    padding: 96px 0 88px;
+    padding: 68px 0 60px;
     border-bottom: 1px solid var(--line-soft);
   }
   .hero .wrap {
@@ -285,11 +321,13 @@
   /* ---------- document mock ---------- */
   .doc-mock {
     position: relative;
-    background: var(--ink-850);
-    border: 1px solid var(--line);
-    border-radius: 10px;
+    background: var(--glass-tint);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
     padding: 26px 26px 22px;
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--glass-highlight), var(--shadow-lg);
     overflow: hidden;
   }
   /* Soft ambient glow behind the hero card -- sits behind everything (the
@@ -381,11 +419,20 @@
   .doc-mock-foot .total-value { font-family: var(--font-mono); font-weight: 500; font-size: 1.3rem; color: var(--paper); font-variant-numeric: tabular-nums; }
 
   /* ---------- proof strip ---------- */
-  .proof-strip { padding: 52px 0; border-bottom: 1px solid var(--line-soft); }
+  .proof-strip { padding: 40px 0; border-bottom: 1px solid var(--line-soft); }
   .proof-strip .wrap {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 40px;
+    gap: 16px;
+  }
+  .proof-item {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: var(--glass-shadow);
   }
   .proof-item .proof-num {
     font-family: var(--font-mono);
@@ -403,9 +450,9 @@
   }
 
   /* ---------- section shell ---------- */
-  section.block { padding: 96px 0; border-bottom: 1px solid var(--line-soft); }
+  section.block { padding: 64px 0; border-bottom: 1px solid var(--line-soft); }
   section.block:last-of-type { border-bottom: none; }
-  .block-head { max-width: 640px; margin-bottom: 56px; }
+  .block-head { max-width: 640px; margin-bottom: 40px; }
   .block-head h2 { font-size: clamp(1.7rem, 3vw, 2.3rem); margin: 14px 0 12px; }
   .block-head .sub { color: var(--paper-dim); font-size: 1.02rem; line-height: 1.6; }
 
@@ -444,7 +491,7 @@
     margin: 6px 0;
   }
   .step:last-child .step-rail { display: none; }
-  .step-body { padding-bottom: 46px; }
+  .step-body { padding-bottom: 26px; }
   .step:last-child .step-body { padding-bottom: 0; }
   .step-body h3 { font-size: 1.18rem; font-family: var(--font-body); font-weight: 700; margin-bottom: 8px; }
   .step-body p { color: var(--paper-dim); max-width: 62ch; }
@@ -464,19 +511,20 @@
   .feature-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    background: var(--line-soft);
-    border: 1px solid var(--line-soft);
-    border-radius: 12px;
-    overflow: hidden;
+    gap: 14px;
   }
   .feature-card {
-    background: var(--ink-900);
-    padding: 30px 26px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    padding: 26px 24px;
     position: relative;
-    transition: background 0.2s var(--ease);
+    box-shadow: var(--glass-shadow);
+    transition: transform 0.2s var(--ease), background 0.2s var(--ease);
   }
-  .feature-card:hover { background: var(--ink-950); }
+  .feature-card:hover { background: var(--glass-bg-strong); transform: translateY(-2px); }
   .feature-card .f-tag {
     font-family: var(--font-mono);
     font-size: 0.68rem;
@@ -495,41 +543,6 @@
     .feature-grid { grid-template-columns: 1fr; }
   }
 
-  /* ---------- compare ---------- */
-  .compare-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--line-soft);
-    border: 1px solid var(--line-soft);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  .compare-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    background: var(--line-soft);
-  }
-  .compare-col { background: var(--ink-900); padding: 26px 30px; }
-  .compare-label {
-    display: block;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
-  .compare-elsewhere .compare-label { color: var(--muted); }
-  .compare-rekono .compare-label { color: var(--green); }
-  .compare-col p { font-size: 0.94rem; line-height: 1.55; }
-  .compare-elsewhere p { color: var(--muted); }
-  .compare-rekono p { color: var(--paper-dim); }
-  .compare-rekono p strong { color: var(--paper); font-weight: 600; }
-  @media (max-width: 700px) {
-    .compare-row { grid-template-columns: 1fr; }
-  }
-
   /* ---------- pricing ---------- */
   .pricing-grid {
     display: grid;
@@ -537,22 +550,25 @@
     gap: 18px;
   }
   .price-card {
-    background: var(--ink-900);
-    border: 1px solid var(--line);
-    border-radius: 12px;
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
     padding: 26px 22px 24px;
     display: flex;
     flex-direction: column;
+    box-shadow: var(--glass-shadow);
     transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
   }
-  .price-card:hover { border-color: var(--blue); box-shadow: var(--shadow-md); transform: translateY(-3px); }
+  .price-card:hover { border-color: var(--blue); box-shadow: var(--glass-highlight), var(--shadow-md); transform: translateY(-3px); }
   .price-card.featured {
     border-color: var(--blue);
-    background: linear-gradient(180deg, rgba(75,134,247,0.09), var(--ink-900) 45%);
-    box-shadow: 0 20px 50px -24px rgba(75,134,247,0.28);
+    background: var(--glass-tint);
+    box-shadow: var(--glass-highlight), 0 20px 50px -24px rgba(75,134,247,0.28);
     transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
   }
-  .price-card.featured:hover { box-shadow: 0 24px 60px -20px rgba(75,134,247,0.4); transform: translateY(-3px); }
+  .price-card.featured:hover { box-shadow: var(--glass-highlight), 0 24px 60px -20px rgba(75,134,247,0.4); transform: translateY(-3px); }
   .price-card .plan-tag {
     font-family: var(--font-mono);
     font-size: 0.68rem;
@@ -616,11 +632,14 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    background: var(--ink-900);
-    border: 1px solid var(--line);
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
     border-radius: 999px;
     padding: 4px;
-    margin-bottom: 32px;
+    margin-bottom: 24px;
+    box-shadow: var(--glass-shadow);
   }
   .billing-toggle-btn {
     display: inline-flex;
@@ -679,15 +698,22 @@
   /* ---------- faq ---------- */
   .faq-list {
     max-width: 820px;
-    border-top: 1px solid var(--line-soft);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    box-shadow: var(--glass-shadow);
+    padding: 0 20px;
   }
   .faq-item {
     border-bottom: 1px solid var(--line-soft);
   }
+  .faq-item:last-child { border-bottom: none; }
   .faq-item summary {
     cursor: pointer;
     list-style: none;
-    padding: 22px 4px;
+    padding: 20px 4px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -716,7 +742,7 @@
 
   /* ---------- final cta ---------- */
   .final-cta {
-    padding: 100px 0;
+    padding: 72px 0;
     text-align: center;
   }
   .final-cta h2 {
@@ -770,10 +796,6 @@
   .pricing-grid .price-card:nth-child(2) { --reveal-delay: 0.07s; }
   .pricing-grid .price-card:nth-child(3) { --reveal-delay: 0.14s; }
   .pricing-grid .price-card:nth-child(4) { --reveal-delay: 0.21s; }
-  .compare-list .compare-row:nth-child(1) { --reveal-delay: 0s; }
-  .compare-list .compare-row:nth-child(2) { --reveal-delay: 0.07s; }
-  .compare-list .compare-row:nth-child(3) { --reveal-delay: 0.14s; }
-  .compare-list .compare-row:nth-child(4) { --reveal-delay: 0.21s; }
   @media (prefers-reduced-motion: reduce) {
     .reveal { transition-delay: 0s !important; }
   }
@@ -792,19 +814,22 @@
   .contact-modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(15, 23, 55, 0.5);
-    backdrop-filter: blur(3px);
+    background: rgba(15, 23, 55, 0.28);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
   }
   .contact-modal-card {
     position: relative;
     z-index: 1;
     width: 100%;
     max-width: 440px;
-    background: var(--ink-900);
-    border: 1px solid var(--line);
-    border-radius: 12px;
+    background: var(--glass-bg-strong);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
     padding: 30px 28px 26px;
-    box-shadow: 0 40px 90px -30px rgba(30,41,82,0.18);
+    box-shadow: var(--glass-highlight), 0 40px 90px -30px rgba(30,41,82,0.28);
   }
   .contact-modal-card h2 { font-size: 1.3rem; margin-bottom: 8px; }
   .contact-modal-card .hint { margin-bottom: 20px; }
@@ -873,10 +898,11 @@
       left: 0; right: 0; bottom: 0;
       z-index: 50;
       padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-      background: rgba(244, 247, 253, 0.94);
-      backdrop-filter: blur(10px);
-      border-top: 1px solid var(--line);
-      box-shadow: var(--shadow-lg);
+      background: var(--glass-bg-strong);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: var(--glass-highlight), var(--shadow-lg);
     }
     .mobile-sticky-cta .btn { width: 100%; justify-content: center; }
   }
@@ -893,7 +919,6 @@
       <nav class="primary-nav">
         <a href="#how-it-works">How It Works</a>
         <a href="#features">Features</a>
-        <a href="#compare">Why Rekono</a>
         <a href="#pricing">Pricing</a>
         <a href="#faq">FAQ</a>
       </nav>
@@ -1079,60 +1104,6 @@
     </div>
   </section>
 
-  <!-- COMPARE -->
-  <section class="block" id="compare">
-    <div class="wrap">
-      <div class="block-head reveal">
-        <span class="eyebrow">Why Rekono</span>
-        <h2>What's actually different, not just the pitch.</h2>
-        <p class="sub">Most tools in this category say "AI-powered invoice processing." Here's what that phrase usually hides — and what Rekono does instead.</p>
-      </div>
-
-      <div class="compare-list">
-        <div class="compare-row reveal">
-          <div class="compare-col compare-elsewhere">
-            <span class="compare-label">Elsewhere</span>
-            <p>One blended confidence score for the whole document — you re-check everything, or nothing.</p>
-          </div>
-          <div class="compare-col compare-rekono">
-            <span class="compare-label">Rekono</span>
-            <p>A confidence score on <strong>every field</strong>, self-reported by the model. Only the fields that are actually shaky get flagged.</p>
-          </div>
-        </div>
-        <div class="compare-row reveal">
-          <div class="compare-col compare-elsewhere">
-            <span class="compare-label">Elsewhere</span>
-            <p>No AI key configured, or the API has a bad day? Extraction just stops.</p>
-          </div>
-          <div class="compare-col compare-rekono">
-            <span class="compare-label">Rekono</span>
-            <p>Falls back to a heuristic extractor automatically. Upload, review, and export keep running end to end either way.</p>
-          </div>
-        </div>
-        <div class="compare-row reveal">
-          <div class="compare-col compare-elsewhere">
-            <span class="compare-label">Elsewhere</span>
-            <p>Your invoices live on someone else's cloud. That's the only option on offer.</p>
-          </div>
-          <div class="compare-col compare-rekono">
-            <span class="compare-label">Rekono</span>
-            <p>Self-hostable on your own Postgres or SQLite — Docker Compose, Render, and Fly.io configs all ship in the repo.</p>
-          </div>
-        </div>
-        <div class="compare-row reveal">
-          <div class="compare-col compare-elsewhere">
-            <span class="compare-label">Elsewhere</span>
-            <p>Go over your plan and get billed a per-document overage rate you find out about after the fact.</p>
-          </div>
-          <div class="compare-col compare-rekono">
-            <span class="compare-label">Rekono</span>
-            <p>Flat monthly plans. Hit your document cap and you're shown the upgrade — never billed a surprise.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- PRICING -->
   <section class="block" id="pricing">
     <div class="wrap">
@@ -1244,14 +1215,6 @@
           <div class="a">Rekono fuzzy-matches vendor name, amount (within a tolerance you set — percentage or flat dollar), and a date window against an uploaded PO list or bank statement, plus an exact PO/reference check when one is present on the invoice.</div>
         </details>
         <details class="faq-item reveal">
-          <summary>Can I try it without an API key?<span class="q-mark">+</span></summary>
-          <div class="a">Yes. Without a key, Rekono falls back to a heuristic extractor so you can run the full pipeline end to end. Production-grade extraction runs on a Claude API key you provide.</div>
-        </details>
-        <details class="faq-item reveal">
-          <summary>Is there an audit trail?<span class="q-mark">+</span></summary>
-          <div class="a">Every extraction, human correction, approval, rejection, and match decision is written to an audit log with a timestamp and who did it — the record accounting and compliance conversations ask for.</div>
-        </details>
-        <details class="faq-item reveal">
           <summary>Do you integrate with QuickBooks, Xero, or NetSuite?<span class="q-mark">+</span></summary>
           <div class="a">QuickBooks Online is live — connect your account and push an approved invoice to QuickBooks as a Bill in one click. Xero and NetSuite are next on the roadmap, along with deeper QuickBooks automation (bulk push, sync-back).</div>
         </details>
@@ -1291,7 +1254,6 @@
     <nav>
       <a href="#how-it-works">How It Works</a>
       <a href="#features">Features</a>
-      <a href="#compare">Why Rekono</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
       <a href="https://rekono-crv7.onrender.com/privacy.html">Privacy</a>
