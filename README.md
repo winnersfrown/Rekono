@@ -312,3 +312,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.
 - **Compliance**: audit logging exists from day one; formal data retention policy and SOC 2 groundwork come with the first real customer conversations.
+
+## License
+
+Proprietary -- all rights reserved. See [`LICENSE`](LICENSE). This repository being visible on GitHub does not grant permission to use, copy, modify, host, or distribute this software; contact the owner for a license, including for self-hosting.
