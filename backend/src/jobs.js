@@ -4,22 +4,24 @@
 // this for a real broker (BullMQ/Redis, SQS) later is a drop-in
 // replacement behind `enqueue`.
 //
-// One queue, three document kinds: `kind` picks which pipeline processes a
-// given id (invoices, expense receipts, vendor documents -- see pipeline.js/
-// expensePipeline.js/vendorDocPipeline.js). Kept as one shared queue/drain
-// loop rather than separate ones per kind -- there's nothing kind-specific
-// about ordering or concurrency here, just which processor a given id's job
-// hands off to.
+// One queue, four document kinds: `kind` picks which pipeline processes a
+// given id (invoices, expense receipts, vendor documents, leases -- see
+// pipeline.js/expensePipeline.js/vendorDocPipeline.js/leasePipeline.js).
+// Kept as one shared queue/drain loop rather than separate ones per kind --
+// there's nothing kind-specific about ordering or concurrency here, just
+// which processor a given id's job hands off to.
 
 import { processInvoice, markFailedIfStuck as markInvoiceFailedIfStuck } from "./pipeline.js";
 import { processExpense, markFailedIfStuck as markExpenseFailedIfStuck } from "./expensePipeline.js";
 import { processVendorDocument, markFailedIfStuck as markVendorDocFailedIfStuck } from "./vendorDocPipeline.js";
-import { Invoice, ExpenseReceipt, VendorDocument } from "./models/index.js";
+import { processLease, markFailedIfStuck as markLeaseFailedIfStuck } from "./leasePipeline.js";
+import { Invoice, ExpenseReceipt, VendorDocument, Lease } from "./models/index.js";
 
 const PROCESSORS = {
   invoice: { process: processInvoice, markFailedIfStuck: markInvoiceFailedIfStuck },
   expense: { process: processExpense, markFailedIfStuck: markExpenseFailedIfStuck },
   vendor_document: { process: processVendorDocument, markFailedIfStuck: markVendorDocFailedIfStuck },
+  lease: { process: processLease, markFailedIfStuck: markLeaseFailedIfStuck },
 };
 
 const queue = [];
@@ -85,5 +87,11 @@ export async function recoverOrphanedJobs() {
     enqueue(doc.id, "vendor_document");
   }
 
-  return stuckInvoices.length + stuckReceipts.length + stuckVendorDocs.length;
+  const stuckLeases = await Lease.findAll({ where: { status: ["queued", "processing"] } });
+  for (const lease of stuckLeases) {
+    console.warn(`Recovering orphaned lease ${lease.id} (was "${lease.status}" from a previous process)`);
+    enqueue(lease.id, "lease");
+  }
+
+  return stuckInvoices.length + stuckReceipts.length + stuckVendorDocs.length + stuckLeases.length;
 }

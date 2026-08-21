@@ -10,6 +10,7 @@ export const AuditLog = sequelize.define(
     invoiceId: { type: DataTypes.STRING(32), allowNull: true },
     receiptId: { type: DataTypes.STRING(32), allowNull: true },
     vendorDocumentId: { type: DataTypes.STRING(32), allowNull: true },
+    leaseId: { type: DataTypes.STRING(32), allowNull: true },
     userId: { type: DataTypes.STRING(32), allowNull: true },
     action: { type: DataTypes.STRING(128), allowNull: false },
     actor: { type: DataTypes.STRING(256), allowNull: false, defaultValue: "system" },
@@ -19,6 +20,12 @@ export const AuditLog = sequelize.define(
     tableName: "audit_logs",
     updatedAt: false,
     createdAt: "createdAt",
-    indexes: [{ fields: ["orgId"] }, { fields: ["invoiceId"] }, { fields: ["receiptId"] }, { fields: ["vendorDocumentId"] }],
+    indexes: [
+      { fields: ["orgId"] },
+      { fields: ["invoiceId"] },
+      { fields: ["receiptId"] },
+      { fields: ["vendorDocumentId"] },
+      { fields: ["leaseId"] },
+    ],
   }
 );

@@ -13,6 +13,7 @@ import { DismissedBankTransaction } from "./DismissedBankTransaction.js";
 import { Invite } from "./Invite.js";
 import { ExpenseReceipt } from "./ExpenseReceipt.js";
 import { VendorDocument } from "./VendorDocument.js";
+import { Lease } from "./Lease.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -36,6 +37,9 @@ AuditLog.belongsTo(ExpenseReceipt, { foreignKey: "receiptId" });
 
 VendorDocument.hasMany(AuditLog, { foreignKey: "vendorDocumentId", as: "auditLogs", onDelete: "CASCADE", hooks: true });
 AuditLog.belongsTo(VendorDocument, { foreignKey: "vendorDocumentId" });
+
+Lease.hasMany(AuditLog, { foreignKey: "leaseId", as: "auditLogs", onDelete: "CASCADE", hooks: true });
+AuditLog.belongsTo(Lease, { foreignKey: "leaseId" });
 
 Invoice.hasMany(MatchResult, {
   foreignKey: "invoiceId",
@@ -138,4 +142,5 @@ export {
   Invite,
   ExpenseReceipt,
   VendorDocument,
+  Lease,
 };

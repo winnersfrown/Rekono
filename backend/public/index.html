@@ -231,6 +231,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M9 16h6M9 8h1"/><circle cx="12" cy="12" r="10"/></svg>
             Vendor Docs
           </button>
+          <button class="tab-btn" data-tab="leases">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+            Leases
+          </button>
           <button class="tab-btn" data-tab="quickreview">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>
             Quick Review
@@ -449,6 +453,56 @@
           </div>
         </section>
 
+        <section id="tab-leases" class="tab-panel">
+          <h1>Leases</h1>
+          <p class="hint">Upload a commercial lease — landlord, property, rent, escalation, expiration, and the renewal-option notice deadline are extracted automatically, so you never miss the window to renew.</p>
+          <div class="panel">
+            <form id="lease-upload-form">
+              <input type="file" id="lease-file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple required />
+              <button type="submit">Upload</button>
+            </form>
+            <div id="lease-upload-status" class="hint"></div>
+          </div>
+
+          <div class="queue-layout">
+            <div class="queue-list">
+              <div class="queue-filters">
+                <button class="lease-filter-btn active" data-status="">All</button>
+                <button class="lease-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="lease-filter-btn" data-status="extracted">Extracted</button>
+                <button class="lease-filter-btn" data-status="approved">Approved</button>
+                <button class="lease-filter-btn" data-status="queued">Queued</button>
+                <button class="lease-filter-btn" data-status="failed">Failed</button>
+                <button class="lease-filter-btn" data-status="expiring_soon">Expiring or renewal notice due within 90 days</button>
+              </div>
+              <input type="search" id="lease-search" class="queue-search" placeholder="Search landlord…" aria-label="Search leases" />
+              <table id="lease-table">
+                <thead>
+                  <tr>
+                    <th class="lease-sortable" data-sort="landlord_name">Landlord</th>
+                    <th>Property</th>
+                    <th class="lease-sortable" data-sort="expiration_date">Key Date</th>
+                    <th>Status</th>
+                    <th class="lease-sortable" data-sort="overall_confidence">Conf.</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class="queue-pagination" id="lease-queue-pagination">
+                <button type="button" id="lease-queue-prev-page" class="btn-logout">Prev</button>
+                <span id="lease-queue-page-info" class="hint"></span>
+                <button type="button" id="lease-queue-next-page" class="btn-logout">Next</button>
+              </div>
+            </div>
+            <div class="queue-detail" id="lease-queue-detail">
+              <div class="empty-state">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+                <p class="hint">Select a lease from the list to review it.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="tab-quickreview" class="tab-panel">
           <h1>Quick Review</h1>
           <p class="hint">One uncertain field at a time -- confirm or correct it, then Enter moves you straight to the next. Once every flagged field on an invoice is cleared, it's approved automatically.</p>
@@ -553,6 +607,23 @@
               <h3>Excel</h3>
               <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
               <a href="/api/export/vendor-documents/xlsx"><button>Download Excel</button></a>
+            </div>
+          </div>
+
+          <h1 style="margin-top: 2rem;">Leases</h1>
+          <p class="hint">Export all leases to CSV or Excel.</p>
+          <div class="export-options">
+            <div class="export-card">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
+              <h3>CSV</h3>
+              <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
+              <a href="/api/export/leases/csv"><button>Download CSV</button></a>
+            </div>
+            <div class="export-card">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
+              <h3>Excel</h3>
+              <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
+              <a href="/api/export/leases/xlsx"><button>Download Excel</button></a>
             </div>
           </div>
         </section>

@@ -2,7 +2,7 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { ExpenseReceipt, Invoice, LineItem, MatchResult, VendorDocument } from "../models/index.js";
+import { ExpenseReceipt, Invoice, Lease, LineItem, MatchResult, VendorDocument } from "../models/index.js";
 
 const router = Router();
 
@@ -264,6 +264,80 @@ router.get("/api/export/vendor-documents/xlsx", requireAuth, requireActivePlan, 
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.set("Content-Disposition", "attachment; filename=rekono_vendor_documents.xlsx");
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+const LEASE_COLUMNS = [
+  "lease_id",
+  "status",
+  "landlord_name",
+  "property_address",
+  "commencement_date",
+  "expiration_date",
+  "renewal_notice_deadline",
+  "monthly_rent",
+  "annual_escalation_pct",
+  "extraction_method",
+  "overall_confidence",
+  "original_filename",
+  "created_at",
+];
+
+async function buildLeaseRows(orgId) {
+  const leases = await Lease.findAll({
+    where: { orgId },
+    order: [["createdAt", "DESC"]],
+  });
+
+  return leases.map((l) => ({
+    lease_id: l.id,
+    status: l.status,
+    landlord_name: sanitizeSpreadsheetCell(l.landlordName),
+    property_address: sanitizeSpreadsheetCell(l.propertyAddress),
+    commencement_date: l.commencementDate,
+    expiration_date: l.expirationDate,
+    renewal_notice_deadline: l.renewalNoticeDeadline,
+    monthly_rent: l.monthlyRent,
+    annual_escalation_pct: l.annualEscalationPct,
+    extraction_method: l.extractionMethod,
+    overall_confidence: l.overallConfidence,
+    original_filename: sanitizeSpreadsheetCell(l.originalFilename),
+    created_at: l.createdAt.toISOString(),
+  }));
+}
+
+router.get("/api/export/leases/csv", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildLeaseRows(req.currentUser.orgId);
+    const lines = [LEASE_COLUMNS.join(",")];
+    for (const row of rows) {
+      lines.push(LEASE_COLUMNS.map((c) => toCsvValue(row[c])).join(","));
+    }
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", "attachment; filename=rekono_leases.csv");
+    res.send(lines.join("\n") + (rows.length ? "\n" : ""));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/export/leases/xlsx", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildLeaseRows(req.currentUser.orgId);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Leases");
+    sheet.columns = LEASE_COLUMNS.map((c) => ({ header: c, key: c }));
+    sheet.addRows(rows);
+
+    res.set(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.set("Content-Disposition", "attachment; filename=rekono_leases.xlsx");
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {

@@ -162,6 +162,47 @@ export function serializeVendorDocumentListItem(d) {
   };
 }
 
+export function serializeLeaseDetail(l) {
+  return {
+    id: l.id,
+    original_filename: l.originalFilename,
+    content_type: l.contentType,
+    status: l.status,
+    error_message: l.errorMessage,
+
+    landlord_name: l.landlordName,
+    property_address: l.propertyAddress,
+    commencement_date: l.commencementDate,
+    expiration_date: l.expirationDate,
+    renewal_notice_deadline: l.renewalNoticeDeadline,
+    monthly_rent: l.monthlyRent,
+    annual_escalation_pct: l.annualEscalationPct,
+    note: l.note,
+
+    extraction_method: l.extractionMethod,
+    field_confidence: l.fieldConfidence,
+    overall_confidence: l.overallConfidence,
+
+    created_at: l.createdAt,
+    updated_at: l.updatedAt,
+  };
+}
+
+export function serializeLeaseListItem(l) {
+  return {
+    id: l.id,
+    original_filename: l.originalFilename,
+    status: l.status,
+    landlord_name: l.landlordName,
+    property_address: l.propertyAddress,
+    expiration_date: l.expirationDate,
+    renewal_notice_deadline: l.renewalNoticeDeadline,
+    monthly_rent: l.monthlyRent,
+    overall_confidence: l.overallConfidence,
+    created_at: l.createdAt,
+  };
+}
+
 export function serializeAuditLog(entry) {
   return {
     id: entry.id,

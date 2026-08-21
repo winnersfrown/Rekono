@@ -4,7 +4,7 @@
 // what counts and which window, rather than risking copies of this logic
 // drifting apart.
 import { Op } from "sequelize";
-import { ExpenseReceipt, Invoice, VendorDocument } from "./models/index.js";
+import { ExpenseReceipt, Invoice, Lease, VendorDocument } from "./models/index.js";
 
 export function startOfCurrentMonthUtc() {
   const now = new Date();
@@ -24,10 +24,11 @@ export async function documentsUsedThisMonth(orgId) {
   // deletes afterward still consumed that budget, so it must keep counting
   // or "delete and re-upload" would be a free way around the plan's
   // monthly cap.
-  const [invoiceCount, receiptCount, vendorDocCount] = await Promise.all([
+  const [invoiceCount, receiptCount, vendorDocCount, leaseCount] = await Promise.all([
     Invoice.count({ where, paranoid: false }),
     ExpenseReceipt.count({ where, paranoid: false }),
     VendorDocument.count({ where, paranoid: false }),
+    Lease.count({ where, paranoid: false }),
   ]);
-  return invoiceCount + receiptCount + vendorDocCount;
+  return invoiceCount + receiptCount + vendorDocCount + leaseCount;
 }

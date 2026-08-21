@@ -6,7 +6,7 @@
 
 import request from "supertest";
 import { app } from "../src/app.js";
-import { ExpenseReceipt, Invoice, VendorDocument } from "../src/models/index.js";
+import { ExpenseReceipt, Invoice, Lease, VendorDocument } from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -52,6 +52,19 @@ async function makeVendorDocument(orgId, overrides = {}) {
     contentType: "application/pdf",
     status: "extracted",
     vendorName: "Acme Contracting LLC",
+    overallConfidence: 0.95,
+    ...overrides,
+  });
+}
+
+async function makeLease(orgId, overrides = {}) {
+  return Lease.create({
+    orgId,
+    originalFilename: "lease.pdf",
+    storagePath: "/tmp/does-not-matter.pdf",
+    contentType: "application/pdf",
+    status: "extracted",
+    landlordName: "Meridian Properties LLC",
     overallConfidence: 0.95,
     ...overrides,
   });
@@ -245,6 +258,62 @@ test("the expiring_within_days filter never surfaces another org's document", as
   await makeVendorDocument(orgA, { expirationDate: soon.toISOString().slice(0, 10) });
 
   const res = await request(app).get("/api/vendor-documents?expiring_within_days=30").set(authHeader(tokenB));
+  expect(res.status).toBe(200);
+  expect(res.body.items).toEqual([]);
+});
+
+test("a lease's detail, file, audit log, correction, approve, and reject routes all 404 for another org", async () => {
+  const { tokenB, orgA } = await twoOrgs();
+  const lease = await makeLease(orgA);
+
+  const detail = await request(app).get(`/api/leases/${lease.id}`).set(authHeader(tokenB));
+  expect(detail.status).toBe(404);
+
+  const file = await request(app).get(`/api/leases/${lease.id}/file`).set(authHeader(tokenB));
+  expect(file.status).toBe(404);
+
+  const auditLog = await request(app).get(`/api/leases/${lease.id}/audit-log`).set(authHeader(tokenB));
+  expect(auditLog.status).toBe(404);
+
+  const patch = await request(app)
+    .patch(`/api/leases/${lease.id}`)
+    .set(authHeader(tokenB))
+    .send({ landlord_name: "Hijacked" });
+  expect(patch.status).toBe(404);
+
+  const approve = await request(app).post(`/api/leases/${lease.id}/approve`).set(authHeader(tokenB));
+  expect(approve.status).toBe(404);
+
+  const reject = await request(app).post(`/api/leases/${lease.id}/reject`).set(authHeader(tokenB));
+  expect(reject.status).toBe(404);
+
+  // untouched by any of the above
+  await lease.reload();
+  expect(lease.landlordName).toBe("Meridian Properties LLC");
+  expect(lease.status).toBe("extracted");
+});
+
+test("lease CSV and Excel export only ever include the caller's own org's leases", async () => {
+  const { tokenA, orgA, orgB } = await twoOrgs();
+  await makeLease(orgA, { landlordName: "Org A Landlord" });
+  await makeLease(orgB, { landlordName: "Org B Landlord" });
+
+  const csv = await request(app).get("/api/export/leases/csv").set(authHeader(tokenA));
+  expect(csv.status).toBe(200);
+  expect(csv.text).toContain("Org A Landlord");
+  expect(csv.text).not.toContain("Org B Landlord");
+
+  const xlsx = await request(app).get("/api/export/leases/xlsx").set(authHeader(tokenA));
+  expect(xlsx.status).toBe(200);
+});
+
+test("the lease expiring_within_days filter never surfaces another org's lease", async () => {
+  const { tokenB, orgA } = await twoOrgs();
+  const soon = new Date();
+  soon.setUTCDate(soon.getUTCDate() + 5);
+  await makeLease(orgA, { renewalNoticeDeadline: soon.toISOString().slice(0, 10) });
+
+  const res = await request(app).get("/api/leases?expiring_within_days=90").set(authHeader(tokenB));
   expect(res.status).toBe(200);
   expect(res.body.items).toEqual([]);
 });
