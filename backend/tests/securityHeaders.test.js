@@ -14,6 +14,31 @@ test("does not set Strict-Transport-Security over plain HTTP (supertest's defaul
   expect(res.headers["strict-transport-security"]).toBeUndefined();
 });
 
+describe("Content-Security-Policy", () => {
+  // The review UI (backend/public/) was audited before writing this policy:
+  // no inline <script> blocks or inline event-handler attributes anywhere
+  // (only <script src="/*.js">), so script-src can be a bare 'self' with no
+  // 'unsafe-inline'/nonce. Verified against a real headless browser too --
+  // signup, the authenticated dashboard, and opening an invoice's document
+  // preview (which uses a blob: URL, see app.js's loadDocPreview comment)
+  // all produced zero CSP violations.
+  test("is set on every response with the expected directives", async () => {
+    const res = await request(app).get("/api/health");
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toBeDefined();
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).not.toContain("unsafe-eval");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com");
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
+    expect(csp).toContain("img-src 'self' data: blob:");
+    expect(csp).toContain("frame-src 'self' blob:");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("object-src 'none'");
+  });
+});
+
 describe("CORS allowlist", () => {
   test("echoes back an allowed origin (the marketing site)", async () => {
     const res = await request(app).get("/api/health").set("Origin", "https://winnersfrown.github.io");
