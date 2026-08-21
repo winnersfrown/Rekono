@@ -17,11 +17,20 @@ const state = {
   expenseSortOrder: "desc",
   expensePage: 1,
   expenseCategories: [],
+  vendordocStatusFilter: "",
+  vendordocExpiringOnly: false,
+  selectedVendorDocId: null,
+  vendordocSearchQuery: "",
+  vendordocSortField: "created_at",
+  vendordocSortOrder: "desc",
+  vendordocPage: 1,
+  vendorDocumentTypes: [],
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
 let docPreviewObjectUrl = null;
 let expenseDocPreviewObjectUrl = null;
+let vendordocDocPreviewObjectUrl = null;
 
 function debounce(fn, delayMs) {
   let timer = null;
@@ -87,6 +96,7 @@ function switchTab(name) {
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
   if (name === "expenses") loadExpenses();
+  if (name === "vendordocs") loadVendorDocs();
   if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
@@ -1155,6 +1165,389 @@ async function deleteExpense(id) {
   }
   invalidateCache("/api/expenses?");
   loadExpenses();
+}
+
+// ---- Vendor Docs ----
+// Same shape as the Expenses queue above (upload/list/detail/correct/
+// approve/reject/retry/delete), applied to /api/vendor-documents instead
+// of /api/expenses. The one thing unique to this tab: an "Expiring within
+// 30 days" filter (expiring_within_days on the list endpoint) and an
+// expiration badge in both the table and detail view, since surfacing
+// what's about to lapse is this module's whole reason to exist.
+document.getElementById("vendordoc-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("vendordoc-file-input");
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+
+  const statusEl = document.getElementById("vendordoc-upload-status");
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/vendor-documents/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
+    }
+  }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} documents — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  if (uploaded) {
+    invalidateCache("/api/vendor-documents?");
+    loadVendorDocs();
+    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+  }
+});
+
+document.querySelectorAll(".vendordoc-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".vendordoc-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (btn.dataset.status === "expiring_soon") {
+      state.vendordocExpiringOnly = true;
+      state.vendordocStatusFilter = "";
+    } else {
+      state.vendordocExpiringOnly = false;
+      state.vendordocStatusFilter = btn.dataset.status;
+    }
+    state.vendordocPage = 1;
+    loadVendorDocs();
+  });
+});
+
+const VENDORDOC_EXPIRING_SOON_DAYS = 30;
+
+async function loadVendorDocs() {
+  const params = new URLSearchParams();
+  if (state.vendordocExpiringOnly) {
+    params.set("expiring_within_days", VENDORDOC_EXPIRING_SOON_DAYS);
+  } else if (state.vendordocStatusFilter) {
+    params.set("status", state.vendordocStatusFilter);
+  }
+  if (state.vendordocSearchQuery) params.set("q", state.vendordocSearchQuery);
+  params.set("sort", state.vendordocSortField);
+  params.set("order", state.vendordocSortOrder);
+  params.set("page", state.vendordocPage);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+  const url = `/api/vendor-documents?${params}`;
+
+  await cachedLoad(
+    url,
+    async () => (await apiFetch(url)).json(),
+    renderVendorDocs
+  );
+}
+
+// Returns { cls, label } for the expiration badge -- shared by the table
+// row and the detail view so the two never disagree about what "soon"
+// means. `null` (no expiration date at all, e.g. a W-9) is its own state,
+// not lumped in with "ok".
+function expiryBadge(dateStr) {
+  if (!dateStr) return { cls: "expiry-none", label: "—" };
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const expiry = new Date(`${dateStr}T00:00:00Z`);
+  const daysLeft = Math.round((expiry - today) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return { cls: "expiry-expired", label: `Expired ${dateStr}` };
+  if (daysLeft <= VENDORDOC_EXPIRING_SOON_DAYS) return { cls: "expiry-soon", label: `Expires ${dateStr}` };
+  return { cls: "expiry-ok", label: dateStr };
+}
+
+function renderVendorDocs({ items: docs, total, document_types }) {
+  if (document_types) state.vendorDocumentTypes = document_types;
+  const tbody = document.querySelector("#vendordoc-table tbody");
+  tbody.innerHTML = docs.map((d) => {
+    const expiry = expiryBadge(d.expiration_date);
+    return `
+    <tr data-id="${d.id}">
+      <td>${d.vendor_name ? escapeHtml(d.vendor_name) : "(unknown)"}</td>
+      <td>${d.document_type ? escapeHtml(d.document_type) : "—"}</td>
+      <td><span class="badge ${expiry.cls}">${escapeHtml(expiry.label)}</span></td>
+      <td><span class="badge status-${d.status}">${d.status}</span></td>
+      <td>${fmtPct(d.overall_confidence)}</td>
+    </tr>
+  `;
+  }).join("") || "<tr><td colspan='5' class='table-empty-row'>No vendor documents.</td></tr>";
+
+  tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+    row.addEventListener("click", () => selectVendorDoc(row.dataset.id));
+  });
+
+  document.querySelectorAll("#vendordoc-table th.vendordoc-sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.vendordocSortField);
+    th.dataset.order = th.dataset.sort === state.vendordocSortField ? state.vendordocSortOrder : "";
+  });
+
+  const start = total === 0 ? 0 : (state.vendordocPage - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.vendordocPage * QUEUE_PAGE_SIZE);
+  document.getElementById("vendordoc-queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("vendordoc-queue-prev-page").disabled = state.vendordocPage <= 1;
+  document.getElementById("vendordoc-queue-next-page").disabled = end >= total;
+}
+
+document.getElementById("vendordoc-search").addEventListener("input", debounce(() => {
+  state.vendordocSearchQuery = document.getElementById("vendordoc-search").value.trim();
+  state.vendordocPage = 1;
+  loadVendorDocs();
+}, 300));
+
+document.querySelectorAll("#vendordoc-table th.vendordoc-sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    if (state.vendordocSortField === th.dataset.sort) {
+      state.vendordocSortOrder = state.vendordocSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.vendordocSortField = th.dataset.sort;
+      state.vendordocSortOrder = "asc";
+    }
+    state.vendordocPage = 1;
+    loadVendorDocs();
+  });
+});
+
+document.getElementById("vendordoc-queue-prev-page").addEventListener("click", () => {
+  if (state.vendordocPage <= 1) return;
+  state.vendordocPage -= 1;
+  loadVendorDocs();
+});
+document.getElementById("vendordoc-queue-next-page").addEventListener("click", () => {
+  state.vendordocPage += 1;
+  loadVendorDocs();
+});
+
+async function selectVendorDoc(id) {
+  state.selectedVendorDocId = id;
+  const res = await apiFetch(`/api/vendor-documents/${id}`);
+  const doc = await res.json();
+  renderVendorDocDetail(doc);
+}
+
+function vendordocFieldConf(d, name) {
+  return (d.field_confidence && d.field_confidence[name]) ?? 0;
+}
+
+const VENDORDOC_EMPTY_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M9 16h6M9 8h1"/><circle cx="12" cy="12" r="10"/></svg>
+    <p class="hint">Select a document from the list to review it.</p>
+  </div>
+`;
+
+function renderVendorDocDetail(d) {
+  const el = document.getElementById("vendordoc-queue-detail");
+
+  if (d.status === "queued" || d.status === "processing") {
+    const isPdf = (d.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this document — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="vendordoc-doc-preview-media"></iframe>` : `<img id="vendordoc-doc-preview-media" />`}
+        </div>
+      </div>
+    `;
+    loadVendorDocPreview(d);
+    pollVendorDocWhileProcessing(d.id);
+    return;
+  }
+
+  const lowConf = (name) => vendordocFieldConf(d, name) < 0.85 ? "low-confidence" : "";
+  const isPdf = (d.content_type || "").includes("pdf");
+  const preview = isPdf ? `<iframe id="vendordoc-doc-preview-media"></iframe>` : `<img id="vendordoc-doc-preview-media" />`;
+
+  const typeOptions = state.vendorDocumentTypes.map(
+    (t) => `<option value="${escapeHtml(t)}" ${d.document_type === t ? "selected" : ""}>${escapeHtml(t)}</option>`
+  ).join("");
+
+  const statusBanner = d.status === "failed"
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(d.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    : `<div class="cross-check pass">✓ extraction method: ${d.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(d.overall_confidence)}</div>`;
+
+  const expiry = expiryBadge(d.expiration_date);
+  const expiryBanner = expiry.cls === "expiry-expired"
+    ? `<div class="cross-check fail">⚠ This document expired on ${escapeHtml(d.expiration_date)}.</div>`
+    : expiry.cls === "expiry-soon"
+    ? `<div class="cross-check warn">⚠ This document expires on ${escapeHtml(d.expiration_date)} — within the next ${VENDORDOC_EXPIRING_SOON_DAYS} days.</div>`
+    : "";
+
+  el.innerHTML = `
+    ${expiryBanner}
+    ${statusBanner}
+
+    <div class="detail-grid">
+      <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="vf-vendor_name" value="${escapeHtml(d.vendor_name)}" /></div>
+      <div class="field ${lowConf("document_type")}"><label>Document Type</label><select id="vf-document_type"><option value="">Choose…</option>${typeOptions}</select></div>
+      <div class="field ${lowConf("effective_date")}"><label>Effective Date</label><input id="vf-effective_date" type="date" value="${d.effective_date || ""}" /></div>
+      <div class="field ${lowConf("expiration_date")}"><label>Expiration Date</label><input id="vf-expiration_date" type="date" value="${d.expiration_date || ""}" /></div>
+      <div class="field ${lowConf("reference_number")}"><label>Reference #</label><input id="vf-reference_number" value="${escapeHtml(d.reference_number)}" /></div>
+      <div class="field ${lowConf("amount")}"><label>Amount</label><input id="vf-amount" value="${d.amount ?? ""}" /></div>
+      <div class="field"><label>Note</label><input id="vf-note" value="${escapeHtml(d.note)}" /></div>
+    </div>
+
+    <div class="actions">
+      <button class="save" id="vbtn-save">Save Corrections</button>
+      <button class="approve" id="vbtn-approve">Approve</button>
+      <button class="reject" id="vbtn-reject">Reject</button>
+      ${d.status !== "approved" ? `<button class="retry" id="vbtn-retry">Retry Extraction</button>` : ""}
+      <button class="delete" id="vbtn-delete">Delete</button>
+    </div>
+
+    <div class="doc-preview">
+      <h3>Source document</h3>
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("vbtn-save").addEventListener("click", () => saveVendorDocCorrections(d.id));
+  document.getElementById("vbtn-approve").addEventListener("click", () => approveVendorDoc(d.id));
+  document.getElementById("vbtn-reject").addEventListener("click", () => rejectVendorDoc(d.id));
+  document.getElementById("vbtn-retry")?.addEventListener("click", () => retryVendorDoc(d.id));
+  document.getElementById("vbtn-delete").addEventListener("click", () => deleteVendorDoc(d.id));
+
+  loadVendorDocPreview(d);
+}
+
+const VENDORDOC_POLL_MAX_ATTEMPTS = 120;
+
+function pollVendorDocWhileProcessing(id, attempt = 0) {
+  if (attempt >= VENDORDOC_POLL_MAX_ATTEMPTS) {
+    if (state.selectedVendorDocId === id) {
+      const banner = document.querySelector("#vendordoc-queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
+  setTimeout(async () => {
+    if (state.selectedVendorDocId !== id) return;
+    const res = await apiFetch(`/api/vendor-documents/${id}`);
+    const d = await res.json();
+    if (state.selectedVendorDocId !== id) return;
+    if (d.status === "queued" || d.status === "processing") {
+      pollVendorDocWhileProcessing(id, attempt + 1);
+    } else {
+      renderVendorDocDetail(d);
+      invalidateCache("/api/vendor-documents?");
+      loadVendorDocs();
+    }
+  }, 3000);
+}
+
+async function loadVendorDocPreview(d) {
+  const media = document.getElementById("vendordoc-doc-preview-media");
+  if (!media) return;
+  if (vendordocDocPreviewObjectUrl) {
+    URL.revokeObjectURL(vendordocDocPreviewObjectUrl);
+    vendordocDocPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/vendor-documents/${d.id}/file`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
+    const blob = await res.blob();
+    vendordocDocPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = vendordocDocPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) }));
+  }
+}
+
+async function saveVendorDocCorrections(id) {
+  const payload = {
+    vendor_name: document.getElementById("vf-vendor_name").value,
+    document_type: document.getElementById("vf-document_type").value,
+    effective_date: document.getElementById("vf-effective_date").value || null,
+    expiration_date: document.getElementById("vf-expiration_date").value || null,
+    reference_number: document.getElementById("vf-reference_number").value,
+    amount: numOrNull(document.getElementById("vf-amount").value),
+    note: document.getElementById("vf-note").value,
+  };
+
+  const res = await apiFetch(`/api/vendor-documents/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const d = await res.json();
+  renderVendorDocDetail(d);
+  invalidateCache("/api/vendor-documents?");
+  loadVendorDocs();
+}
+
+async function approveVendorDoc(id) {
+  const res = await apiFetch(`/api/vendor-documents/${id}/approve`, { method: "POST" });
+  const d = await res.json();
+  renderVendorDocDetail(d);
+  invalidateCache("/api/vendor-documents?");
+  loadVendorDocs();
+}
+
+async function rejectVendorDoc(id) {
+  const res = await apiFetch(`/api/vendor-documents/${id}/reject`, { method: "POST" });
+  const d = await res.json();
+  renderVendorDocDetail(d);
+  invalidateCache("/api/vendor-documents?");
+  loadVendorDocs();
+}
+
+async function retryVendorDoc(id) {
+  const res = await apiFetch(`/api/vendor-documents/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't retry extraction", body.detail || "Could not retry this document.");
+    return;
+  }
+  renderVendorDocDetail(body);
+  invalidateCache("/api/vendor-documents?");
+  loadVendorDocs();
+}
+
+async function deleteVendorDoc(id) {
+  const ok = await confirmDialog("Delete this document?", "This can't be undone from the review UI.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const res = await apiFetch(`/api/vendor-documents/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't delete document", body.detail || "Could not delete this document.");
+    return;
+  }
+
+  if (state.selectedVendorDocId === id) {
+    state.selectedVendorDocId = null;
+    document.getElementById("vendordoc-queue-detail").innerHTML = VENDORDOC_EMPTY_DETAIL;
+  }
+  invalidateCache("/api/vendor-documents?");
+  loadVendorDocs();
 }
 
 // ---- Matching ----

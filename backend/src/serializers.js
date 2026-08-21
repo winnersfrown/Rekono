@@ -124,6 +124,44 @@ export function serializeExpenseReceiptListItem(r) {
   };
 }
 
+export function serializeVendorDocumentDetail(d) {
+  return {
+    id: d.id,
+    original_filename: d.originalFilename,
+    content_type: d.contentType,
+    status: d.status,
+    error_message: d.errorMessage,
+
+    vendor_name: d.vendorName,
+    document_type: d.documentType,
+    effective_date: d.effectiveDate,
+    expiration_date: d.expirationDate,
+    reference_number: d.referenceNumber,
+    amount: d.amount,
+    note: d.note,
+
+    extraction_method: d.extractionMethod,
+    field_confidence: d.fieldConfidence,
+    overall_confidence: d.overallConfidence,
+
+    created_at: d.createdAt,
+    updated_at: d.updatedAt,
+  };
+}
+
+export function serializeVendorDocumentListItem(d) {
+  return {
+    id: d.id,
+    original_filename: d.originalFilename,
+    status: d.status,
+    vendor_name: d.vendorName,
+    document_type: d.documentType,
+    expiration_date: d.expirationDate,
+    overall_confidence: d.overallConfidence,
+    created_at: d.createdAt,
+  };
+}
+
 export function serializeAuditLog(entry) {
   return {
     id: entry.id,

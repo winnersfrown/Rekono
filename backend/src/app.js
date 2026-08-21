@@ -9,6 +9,7 @@ import billingRoutes, { webhookRouter as billingWebhookRoutes } from "./routes/b
 import ingestionRoutes from "./routes/ingestion.js";
 import invoicesRoutes from "./routes/invoices.js";
 import expensesRoutes from "./routes/expenses.js";
+import vendorDocumentsRoutes from "./routes/vendorDocuments.js";
 import matchingRoutes from "./routes/matching.js";
 import exportRoutes from "./routes/export.js";
 import contactRoutes from "./routes/contact.js";
@@ -122,6 +123,7 @@ app.use(billingWebhookRoutes);
 app.use(ingestionRoutes);
 app.use(invoicesRoutes);
 app.use(expensesRoutes);
+app.use(vendorDocumentsRoutes);
 app.use(matchingRoutes);
 app.use(exportRoutes);
 app.use(contactRoutes);

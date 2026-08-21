@@ -6,7 +6,7 @@
 
 import request from "supertest";
 import { app } from "../src/app.js";
-import { ExpenseReceipt, Invoice } from "../src/models/index.js";
+import { ExpenseReceipt, Invoice, VendorDocument } from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -39,6 +39,19 @@ async function makeReceipt(orgId, overrides = {}) {
     contentType: "application/pdf",
     status: "extracted",
     merchantName: "Blue Bottle Coffee",
+    overallConfidence: 0.95,
+    ...overrides,
+  });
+}
+
+async function makeVendorDocument(orgId, overrides = {}) {
+  return VendorDocument.create({
+    orgId,
+    originalFilename: "coi.pdf",
+    storagePath: "/tmp/does-not-matter.pdf",
+    contentType: "application/pdf",
+    status: "extracted",
+    vendorName: "Acme Contracting LLC",
     overallConfidence: 0.95,
     ...overrides,
   });
@@ -178,4 +191,60 @@ test("expense CSV and Excel export only ever include the caller's own org's rece
 
   const xlsx = await request(app).get("/api/export/expenses/xlsx").set(authHeader(tokenA));
   expect(xlsx.status).toBe(200);
+});
+
+test("a vendor document's detail, file, audit log, correction, approve, and reject routes all 404 for another org", async () => {
+  const { tokenB, orgA } = await twoOrgs();
+  const doc = await makeVendorDocument(orgA);
+
+  const detail = await request(app).get(`/api/vendor-documents/${doc.id}`).set(authHeader(tokenB));
+  expect(detail.status).toBe(404);
+
+  const file = await request(app).get(`/api/vendor-documents/${doc.id}/file`).set(authHeader(tokenB));
+  expect(file.status).toBe(404);
+
+  const auditLog = await request(app).get(`/api/vendor-documents/${doc.id}/audit-log`).set(authHeader(tokenB));
+  expect(auditLog.status).toBe(404);
+
+  const patch = await request(app)
+    .patch(`/api/vendor-documents/${doc.id}`)
+    .set(authHeader(tokenB))
+    .send({ vendor_name: "Hijacked" });
+  expect(patch.status).toBe(404);
+
+  const approve = await request(app).post(`/api/vendor-documents/${doc.id}/approve`).set(authHeader(tokenB));
+  expect(approve.status).toBe(404);
+
+  const reject = await request(app).post(`/api/vendor-documents/${doc.id}/reject`).set(authHeader(tokenB));
+  expect(reject.status).toBe(404);
+
+  // untouched by any of the above
+  await doc.reload();
+  expect(doc.vendorName).toBe("Acme Contracting LLC");
+  expect(doc.status).toBe("extracted");
+});
+
+test("vendor document CSV and Excel export only ever include the caller's own org's documents", async () => {
+  const { tokenA, orgA, orgB } = await twoOrgs();
+  await makeVendorDocument(orgA, { vendorName: "Org A Vendor" });
+  await makeVendorDocument(orgB, { vendorName: "Org B Vendor" });
+
+  const csv = await request(app).get("/api/export/vendor-documents/csv").set(authHeader(tokenA));
+  expect(csv.status).toBe(200);
+  expect(csv.text).toContain("Org A Vendor");
+  expect(csv.text).not.toContain("Org B Vendor");
+
+  const xlsx = await request(app).get("/api/export/vendor-documents/xlsx").set(authHeader(tokenA));
+  expect(xlsx.status).toBe(200);
+});
+
+test("the expiring_within_days filter never surfaces another org's document", async () => {
+  const { tokenB, orgA } = await twoOrgs();
+  const soon = new Date();
+  soon.setUTCDate(soon.getUTCDate() + 5);
+  await makeVendorDocument(orgA, { expirationDate: soon.toISOString().slice(0, 10) });
+
+  const res = await request(app).get("/api/vendor-documents?expiring_within_days=30").set(authHeader(tokenB));
+  expect(res.status).toBe(200);
+  expect(res.body.items).toEqual([]);
 });
