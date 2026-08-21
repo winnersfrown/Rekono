@@ -131,14 +131,26 @@ Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.f
 
 #### Render (free tier)
 
-`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions a web service + managed Postgres in one step, both on Render's **free** plan:
+`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions the web service on Render's **free** plan. It deliberately does **not** provision Render's own Postgres — see "Database (Neon)" below for why — so you'll need a Postgres connection string from elsewhere (Neon's free tier is the recommended option) before deploying.
 
-1. Push/fork this repo to your own GitHub.
-2. In Render: **New → Blueprint**, point it at the repo. (If you don't see "Blueprint" as an option, your account may only show the per-resource flow — create a **Postgres** instance first, then a **Web Service** pointed at this repo's `Dockerfile`, and set its env vars to match `render.yaml`: `DATABASE_URL` from the Postgres instance's internal connection string, `STORAGE_DIR=/tmp/storage`, a random `SECRET_KEY`, and optionally `GEMINI_API_KEY`.)
-3. Once deployed, set `GEMINI_API_KEY`, `RESEND_API_KEY`, and/or `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in the web service's environment variables (Render dashboard) to enable LLM extraction, the contact form, and paid plans respectively — all optional, all degrade to a clear error instead of crashing when unset. `DATABASE_URL` and `SECRET_KEY` are wired up automatically by the Blueprint.
-4. Your app is live at `https://<service-name>.onrender.com`.
+1. Create a free Neon project (see "Database (Neon)" below) and copy its connection string.
+2. Push/fork this repo to your own GitHub.
+3. In Render: **New → Blueprint**, point it at the repo. (If you don't see "Blueprint" as an option, your account may only show the per-resource flow — create a **Web Service** pointed at this repo's `Dockerfile` instead, and set its env vars to match `render.yaml`: `DATABASE_URL` set to your Neon connection string, `STORAGE_DIR=/tmp/storage`, a random `SECRET_KEY`, and optionally `GEMINI_API_KEY`.)
+4. Once deployed, set `DATABASE_URL` to your Neon connection string, plus optionally `GEMINI_API_KEY`, `RESEND_API_KEY`, and/or `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` in the web service's environment variables (Render dashboard) to enable LLM extraction, the contact form, and paid plans respectively — all optional, all degrade to a clear error instead of crashing when unset. `SECRET_KEY` is wired up automatically by the Blueprint.
+5. Your app is live at `https://<service-name>.onrender.com`.
 
-Two tradeoffs that come with staying on free: Render's free Postgres plan auto-deletes after 30 days (recreate it, or upgrade to `starter` in `render.yaml`, before then if you want to keep data), and free web services can't attach a persistent disk, so uploaded invoice files live in the container's ephemeral storage and don't survive a restart/redeploy — the extracted data and audit trail in Postgres are unaffected, only the original source files (used for the review UI's document preview) aren't. Free web services also spin down after 15 minutes idle and cold-start on the next request.
+One tradeoff that comes with staying on free: web services can't attach a persistent disk, so uploaded invoice files live in the container's ephemeral storage and don't survive a restart/redeploy — the extracted data and audit trail in the database are unaffected, only the original source files (used for the review UI's document preview) aren't. Free web services also spin down after 15 minutes idle and cold-start on the next request.
+
+### Database (Neon)
+
+`DATABASE_URL` needs to point at a real Postgres instance for any deployed environment (SQLite, the local default, is fine for dev but isn't meant for concurrent production traffic). [Neon](https://neon.tech) is the recommended option for Render specifically: Render's own free Postgres plan auto-deletes the whole database after 30 days of the *plan*, not of inactivity, whereas Neon's free tier persists indefinitely (an idle project scales its compute to zero, but the data itself is never deleted).
+
+1. Sign up at [neon.tech](https://neon.tech) (free tier, no credit card required) and create a project.
+2. From the project dashboard, copy the **connection string** (**Connect** → the pooled connection string is fine for this app's connection volume).
+3. Set `DATABASE_URL` to that connection string wherever the backend runs (Render/Fly dashboard, or `.env` locally) — no other code or config changes needed, since this app already talks to Postgres through Sequelize via `DATABASE_URL` alone.
+4. On first boot against a fresh database, `initDb()` creates every table automatically (see `models/index.js`) — no manual migration step.
+
+Fly.io's own `fly postgres create` (see below) doesn't have this 30-day deletion problem, so Neon is optional there — only worth it if you'd rather not manage a separate Fly Postgres app.
 
 **If the deployed database ever gets into a broken schema state** that `initDb()`'s normal additive-only sync can't recover from on its own (its console logs will say so explicitly if this happens), there's a deliberately scary, explicitly-gated escape hatch: set `DANGEROUSLY_RESET_DB=true` in the web service's environment variables and redeploy. On boot, the app drops and recreates the entire `public` schema, then rebuilds every table fresh from the current models — **this permanently deletes all data**. Remove the env var again immediately after confirming it worked; it stays set across restarts otherwise, and every future boot would wipe the database again. This is meant for the "app is broken and there's nothing worth recovering" case (e.g. still in development), not a substitute for real backups or a real migration once there's data worth keeping.
 
