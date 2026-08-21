@@ -572,7 +572,10 @@ async function loadDocPreview(inv) {
   }
   try {
     const res = await apiFetch(`/api/invoices/${inv.id}/file`);
-    if (!res.ok) throw new Error("Could not load the source document.");
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
     const blob = await res.blob();
     docPreviewObjectUrl = URL.createObjectURL(blob);
     media.src = docPreviewObjectUrl;
