@@ -10,10 +10,18 @@ const state = {
   quickbooksConnected: false,
   quickReviewQueue: [],
   quickReviewTotal: 0,
+  expenseStatusFilter: "",
+  selectedExpenseId: null,
+  expenseSearchQuery: "",
+  expenseSortField: "created_at",
+  expenseSortOrder: "desc",
+  expensePage: 1,
+  expenseCategories: [],
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
 let docPreviewObjectUrl = null;
+let expenseDocPreviewObjectUrl = null;
 
 function debounce(fn, delayMs) {
   let timer = null;
@@ -78,6 +86,7 @@ function switchTab(name) {
   if (navBtn) navBtn.classList.add("active");
   document.getElementById(`tab-${name}`).classList.add("active");
   if (name === "review") loadInvoices();
+  if (name === "expenses") loadExpenses();
   if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
@@ -803,6 +812,349 @@ async function deleteInvoice(id) {
   invalidateCache("/api/invoices?");
   loadInvoices();
   loadRecentUploads();
+}
+
+// ---- Expenses ----
+// Same shape as the invoice Review Queue above (upload/list/detail/correct/
+// approve/reject/retry/delete), applied to /api/expenses instead of
+// /api/invoices. Deliberately without the invoice queue's bulk actions/
+// row-select checkboxes -- not part of the expense pipeline's v1 scope (see
+// expensePipeline.js's comment) -- so this is a plain click-to-select list.
+document.getElementById("expense-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("expense-file-input");
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+
+  const statusEl = document.getElementById("expense-upload-status");
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/expenses/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
+    }
+  }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} receipts — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  if (uploaded) {
+    invalidateCache("/api/expenses?");
+    loadExpenses();
+    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+  }
+});
+
+document.querySelectorAll(".expense-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".expense-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.expenseStatusFilter = btn.dataset.status;
+    state.expensePage = 1;
+    loadExpenses();
+  });
+});
+
+async function loadExpenses() {
+  const params = new URLSearchParams();
+  if (state.expenseStatusFilter) params.set("status", state.expenseStatusFilter);
+  if (state.expenseSearchQuery) params.set("q", state.expenseSearchQuery);
+  params.set("sort", state.expenseSortField);
+  params.set("order", state.expenseSortOrder);
+  params.set("page", state.expensePage);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+  const url = `/api/expenses?${params}`;
+
+  await cachedLoad(
+    url,
+    async () => (await apiFetch(url)).json(),
+    renderExpenses
+  );
+}
+
+function renderExpenses({ items: receipts, total, categories }) {
+  if (categories) state.expenseCategories = categories;
+  const tbody = document.querySelector("#expense-table tbody");
+  tbody.innerHTML = receipts.map((r) => `
+    <tr data-id="${r.id}">
+      <td>${r.merchant_name ? escapeHtml(r.merchant_name) : "(unknown)"}</td>
+      <td>${fmtMoney(r.amount)}</td>
+      <td><span class="badge status-${r.status}">${r.status}</span></td>
+      <td>${fmtPct(r.overall_confidence)}</td>
+    </tr>
+  `).join("") || "<tr><td colspan='4' class='table-empty-row'>No expense receipts.</td></tr>";
+
+  tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+    row.addEventListener("click", () => selectExpense(row.dataset.id));
+  });
+
+  document.querySelectorAll("#expense-table th.expense-sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.expenseSortField);
+    th.dataset.order = th.dataset.sort === state.expenseSortField ? state.expenseSortOrder : "";
+  });
+
+  const start = total === 0 ? 0 : (state.expensePage - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.expensePage * QUEUE_PAGE_SIZE);
+  document.getElementById("expense-queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("expense-queue-prev-page").disabled = state.expensePage <= 1;
+  document.getElementById("expense-queue-next-page").disabled = end >= total;
+}
+
+document.getElementById("expense-search").addEventListener("input", debounce(() => {
+  state.expenseSearchQuery = document.getElementById("expense-search").value.trim();
+  state.expensePage = 1;
+  loadExpenses();
+}, 300));
+
+document.querySelectorAll("#expense-table th.expense-sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    if (state.expenseSortField === th.dataset.sort) {
+      state.expenseSortOrder = state.expenseSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.expenseSortField = th.dataset.sort;
+      state.expenseSortOrder = "asc";
+    }
+    state.expensePage = 1;
+    loadExpenses();
+  });
+});
+
+document.getElementById("expense-queue-prev-page").addEventListener("click", () => {
+  if (state.expensePage <= 1) return;
+  state.expensePage -= 1;
+  loadExpenses();
+});
+document.getElementById("expense-queue-next-page").addEventListener("click", () => {
+  state.expensePage += 1;
+  loadExpenses();
+});
+
+async function selectExpense(id) {
+  state.selectedExpenseId = id;
+  const res = await apiFetch(`/api/expenses/${id}`);
+  const receipt = await res.json();
+  renderExpenseDetail(receipt);
+}
+
+function expenseFieldConf(r, name) {
+  return (r.field_confidence && r.field_confidence[name]) ?? 0;
+}
+
+const EXPENSE_EMPTY_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l3 3v17a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+    <p class="hint">Select a receipt from the list to review it.</p>
+  </div>
+`;
+
+function renderExpenseDetail(r) {
+  const el = document.getElementById("expense-queue-detail");
+
+  if (r.status === "queued" || r.status === "processing") {
+    const isPdf = (r.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this receipt — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="expense-doc-preview-media"></iframe>` : `<img id="expense-doc-preview-media" />`}
+        </div>
+      </div>
+    `;
+    loadExpenseDocPreview(r);
+    pollExpenseWhileProcessing(r.id);
+    return;
+  }
+
+  const lowConf = (name) => expenseFieldConf(r, name) < 0.85 ? "low-confidence" : "";
+  const isPdf = (r.content_type || "").includes("pdf");
+  const preview = isPdf ? `<iframe id="expense-doc-preview-media"></iframe>` : `<img id="expense-doc-preview-media" />`;
+
+  const categoryOptions = state.expenseCategories.map(
+    (c) => `<option value="${escapeHtml(c)}" ${r.category === c ? "selected" : ""}>${escapeHtml(c)}</option>`
+  ).join("");
+
+  const statusBanner = r.status === "failed"
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(r.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    : `<div class="cross-check pass">✓ extraction method: ${r.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(r.overall_confidence)}</div>`;
+
+  el.innerHTML = `
+    ${statusBanner}
+
+    <div class="detail-grid">
+      <div class="field ${lowConf("merchant_name")}"><label>Merchant</label><input id="ef-merchant_name" value="${escapeHtml(r.merchant_name)}" /></div>
+      <div class="field ${lowConf("receipt_date")}"><label>Receipt Date</label><input id="ef-receipt_date" type="date" value="${r.receipt_date || ""}" /></div>
+      <div class="field ${lowConf("category")}"><label>Category</label><select id="ef-category"><option value="">Choose…</option>${categoryOptions}</select></div>
+      <div class="field"><label>Currency</label><input id="ef-currency" value="${escapeHtml(r.currency)}" /></div>
+      <div class="field ${lowConf("tax")}"><label>Tax</label><input id="ef-tax" value="${r.tax ?? ""}" /></div>
+      <div class="field ${lowConf("amount")}"><label>Amount</label><input id="ef-amount" value="${r.amount ?? ""}" /></div>
+      <div class="field"><label>Note</label><input id="ef-note" value="${escapeHtml(r.note)}" /></div>
+    </div>
+
+    <div class="actions">
+      <button class="save" id="ebtn-save">Save Corrections</button>
+      <button class="approve" id="ebtn-approve">Approve</button>
+      <button class="reject" id="ebtn-reject">Reject</button>
+      ${r.status !== "approved" ? `<button class="retry" id="ebtn-retry">Retry Extraction</button>` : ""}
+      <button class="delete" id="ebtn-delete">Delete</button>
+    </div>
+
+    <div class="doc-preview">
+      <h3>Source document</h3>
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("ebtn-save").addEventListener("click", () => saveExpenseCorrections(r.id));
+  document.getElementById("ebtn-approve").addEventListener("click", () => approveExpense(r.id));
+  document.getElementById("ebtn-reject").addEventListener("click", () => rejectExpense(r.id));
+  document.getElementById("ebtn-retry")?.addEventListener("click", () => retryExpense(r.id));
+  document.getElementById("ebtn-delete").addEventListener("click", () => deleteExpense(r.id));
+
+  loadExpenseDocPreview(r);
+}
+
+const EXPENSE_POLL_MAX_ATTEMPTS = 120;
+
+function pollExpenseWhileProcessing(id, attempt = 0) {
+  if (attempt >= EXPENSE_POLL_MAX_ATTEMPTS) {
+    if (state.selectedExpenseId === id) {
+      const banner = document.querySelector("#expense-queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
+  setTimeout(async () => {
+    if (state.selectedExpenseId !== id) return;
+    const res = await apiFetch(`/api/expenses/${id}`);
+    const r = await res.json();
+    if (state.selectedExpenseId !== id) return;
+    if (r.status === "queued" || r.status === "processing") {
+      pollExpenseWhileProcessing(id, attempt + 1);
+    } else {
+      renderExpenseDetail(r);
+      invalidateCache("/api/expenses?");
+      loadExpenses();
+    }
+  }, 3000);
+}
+
+async function loadExpenseDocPreview(r) {
+  const media = document.getElementById("expense-doc-preview-media");
+  if (!media) return;
+  if (expenseDocPreviewObjectUrl) {
+    URL.revokeObjectURL(expenseDocPreviewObjectUrl);
+    expenseDocPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/expenses/${r.id}/file`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
+    const blob = await res.blob();
+    expenseDocPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = expenseDocPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) }));
+  }
+}
+
+async function saveExpenseCorrections(id) {
+  const payload = {
+    merchant_name: document.getElementById("ef-merchant_name").value,
+    receipt_date: document.getElementById("ef-receipt_date").value || null,
+    category: document.getElementById("ef-category").value,
+    currency: document.getElementById("ef-currency").value,
+    tax: numOrNull(document.getElementById("ef-tax").value),
+    amount: numOrNull(document.getElementById("ef-amount").value),
+    note: document.getElementById("ef-note").value,
+  };
+
+  const res = await apiFetch(`/api/expenses/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const r = await res.json();
+  renderExpenseDetail(r);
+  invalidateCache("/api/expenses?");
+  loadExpenses();
+}
+
+async function approveExpense(id) {
+  const res = await apiFetch(`/api/expenses/${id}/approve`, { method: "POST" });
+  const r = await res.json();
+  renderExpenseDetail(r);
+  invalidateCache("/api/expenses?");
+  loadExpenses();
+}
+
+async function rejectExpense(id) {
+  const res = await apiFetch(`/api/expenses/${id}/reject`, { method: "POST" });
+  const r = await res.json();
+  renderExpenseDetail(r);
+  invalidateCache("/api/expenses?");
+  loadExpenses();
+}
+
+async function retryExpense(id) {
+  const res = await apiFetch(`/api/expenses/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't retry extraction", body.detail || "Could not retry this document.");
+    return;
+  }
+  renderExpenseDetail(body);
+  invalidateCache("/api/expenses?");
+  loadExpenses();
+}
+
+async function deleteExpense(id) {
+  const ok = await confirmDialog("Delete this receipt?", "This can't be undone from the review UI.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const res = await apiFetch(`/api/expenses/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't delete receipt", body.detail || "Could not delete this receipt.");
+    return;
+  }
+
+  if (state.selectedExpenseId === id) {
+    state.selectedExpenseId = null;
+    document.getElementById("expense-queue-detail").innerHTML = EXPENSE_EMPTY_DETAIL;
+  }
+  invalidateCache("/api/expenses?");
+  loadExpenses();
 }
 
 // ---- Matching ----

@@ -6,7 +6,7 @@
 
 import request from "supertest";
 import { app } from "../src/app.js";
-import { Invoice } from "../src/models/index.js";
+import { ExpenseReceipt, Invoice } from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -29,6 +29,19 @@ async function makeInvoice(orgId, overrides = {}) {
 async function orgId(token) {
   const res = await request(app).get("/api/auth/me").set(authHeader(token));
   return res.body.org_id;
+}
+
+async function makeReceipt(orgId, overrides = {}) {
+  return ExpenseReceipt.create({
+    orgId,
+    originalFilename: "receipt.pdf",
+    storagePath: "/tmp/does-not-matter.pdf",
+    contentType: "application/pdf",
+    status: "extracted",
+    merchantName: "Blue Bottle Coffee",
+    overallConfidence: 0.95,
+    ...overrides,
+  });
 }
 
 async function twoOrgs() {
@@ -120,4 +133,49 @@ test("matching sources and results are scoped to the caller's org", async () => 
   expect(sourcesA.body).toHaveLength(1);
   const resultsA = await request(app).get("/api/matching/results").set(authHeader(tokenA));
   expect(resultsA.body).toHaveLength(1);
+});
+
+test("a receipt's detail, file, audit log, correction, approve, and reject routes all 404 for another org", async () => {
+  const { tokenB, orgA } = await twoOrgs();
+  const receipt = await makeReceipt(orgA);
+
+  const detail = await request(app).get(`/api/expenses/${receipt.id}`).set(authHeader(tokenB));
+  expect(detail.status).toBe(404);
+
+  const file = await request(app).get(`/api/expenses/${receipt.id}/file`).set(authHeader(tokenB));
+  expect(file.status).toBe(404);
+
+  const auditLog = await request(app).get(`/api/expenses/${receipt.id}/audit-log`).set(authHeader(tokenB));
+  expect(auditLog.status).toBe(404);
+
+  const patch = await request(app)
+    .patch(`/api/expenses/${receipt.id}`)
+    .set(authHeader(tokenB))
+    .send({ merchant_name: "Hijacked" });
+  expect(patch.status).toBe(404);
+
+  const approve = await request(app).post(`/api/expenses/${receipt.id}/approve`).set(authHeader(tokenB));
+  expect(approve.status).toBe(404);
+
+  const reject = await request(app).post(`/api/expenses/${receipt.id}/reject`).set(authHeader(tokenB));
+  expect(reject.status).toBe(404);
+
+  // untouched by any of the above
+  await receipt.reload();
+  expect(receipt.merchantName).toBe("Blue Bottle Coffee");
+  expect(receipt.status).toBe("extracted");
+});
+
+test("expense CSV and Excel export only ever include the caller's own org's receipts", async () => {
+  const { tokenA, orgA, orgB } = await twoOrgs();
+  await makeReceipt(orgA, { merchantName: "Org A Diner" });
+  await makeReceipt(orgB, { merchantName: "Org B Diner" });
+
+  const csv = await request(app).get("/api/export/expenses/csv").set(authHeader(tokenA));
+  expect(csv.status).toBe(200);
+  expect(csv.text).toContain("Org A Diner");
+  expect(csv.text).not.toContain("Org B Diner");
+
+  const xlsx = await request(app).get("/api/export/expenses/xlsx").set(authHeader(tokenA));
+  expect(xlsx.status).toBe(200);
 });

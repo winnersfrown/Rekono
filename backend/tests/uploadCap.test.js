@@ -1,6 +1,6 @@
 import request from "supertest";
 import { app } from "../src/app.js";
-import { Invoice } from "../src/models/index.js";
+import { ExpenseReceipt, Invoice } from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -26,6 +26,20 @@ async function seedInvoices(org_id, count) {
 
 function attachFakePdf(req) {
   return req.attach("file", Buffer.from("%PDF-1.4 fake"), { filename: "invoice.pdf", contentType: "application/pdf" });
+}
+
+async function seedReceipts(org_id, count) {
+  await Promise.all(
+    Array.from({ length: count }, (_, i) =>
+      ExpenseReceipt.create({
+        orgId: org_id,
+        originalFilename: `seed-${i}.pdf`,
+        storagePath: "/tmp/does-not-matter.pdf",
+        contentType: "application/pdf",
+        status: "extracted",
+      })
+    )
+  );
 }
 
 test("free plan blocks uploads once the monthly document cap is reached", async () => {
@@ -135,5 +149,40 @@ describe("GET /api/auth/me document usage", () => {
     const uploadRes = await attachFakePdf(request(app).post("/api/invoices/upload").set(authHeader(token)));
     expect(uploadRes.status).toBe(402);
     expect(uploadRes.body.plan_cap_reached).toBe(true);
+  });
+});
+
+// Invoices and expense receipts draw from the same monthly document budget
+// (see documentUsage.js) -- an org's plan bounds total OCR/LLM spend, not
+// each document type separately.
+describe("the document cap is shared across invoices and expense receipts", () => {
+  test("existing invoices count against the cap for a new expense upload", async () => {
+    const token = await signup(app, request, { email: "sharedcap-a@uploadco.co" });
+    const org = await orgId(token);
+    await seedInvoices(org, 25); // fills the free plan's cap with invoices alone
+
+    const res = await attachFakePdf(request(app).post("/api/expenses/upload").set(authHeader(token)));
+    expect(res.status).toBe(402);
+    expect(res.body.plan_cap_reached).toBe(true);
+  });
+
+  test("existing expense receipts count against the cap for a new invoice upload", async () => {
+    const token = await signup(app, request, { email: "sharedcap-b@uploadco.co" });
+    const org = await orgId(token);
+    await seedReceipts(org, 25); // fills the free plan's cap with receipts alone
+
+    const res = await attachFakePdf(request(app).post("/api/invoices/upload").set(authHeader(token)));
+    expect(res.status).toBe(402);
+    expect(res.body.plan_cap_reached).toBe(true);
+  });
+
+  test("GET /api/auth/me's document usage sums both document types", async () => {
+    const token = await signup(app, request, { email: "sharedcap-c@uploadco.co" });
+    const org = await orgId(token);
+    await seedInvoices(org, 10);
+    await seedReceipts(org, 5);
+
+    const res = await request(app).get("/api/auth/me").set(authHeader(token));
+    expect(res.body.documents_used_this_month).toBe(15);
   });
 });
