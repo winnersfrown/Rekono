@@ -18,13 +18,13 @@ beforeEach(resetDb);
 test("GET /api/auth/google redirects to an error instead of crashing when unconfigured", async () => {
   const res = await request(app).get("/api/auth/google");
   expect(res.status).toBe(302);
-  expect(res.headers.location).toBe("/app/?google_auth=error&reason=not_configured");
+  expect(res.headers.location).toBe("/?google_auth=error&reason=not_configured");
 });
 
 test("GET /api/auth/google/callback redirects to an error instead of crashing when unconfigured", async () => {
   const res = await request(app).get("/api/auth/google/callback?code=fake&state=fake");
   expect(res.status).toBe(302);
-  expect(res.headers.location).toBe("/app/?google_auth=error&reason=not_configured");
+  expect(res.headers.location).toBe("/?google_auth=error&reason=not_configured");
 });
 
 describe("completeGoogleLogin", () => {

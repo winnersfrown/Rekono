@@ -98,7 +98,7 @@ router.post("/api/team/invite", requireAuth, requireActivePlan, requireOwner, as
       details: { email },
     });
 
-    const inviteUrl = `${req.protocol}://${req.get("host")}/app/?invite_token=${token}`;
+    const inviteUrl = `${req.protocol}://${req.get("host")}/?invite_token=${token}`;
     let emailSent = false;
     if (settings.resendApiKey) {
       const resend = new Resend(settings.resendApiKey);

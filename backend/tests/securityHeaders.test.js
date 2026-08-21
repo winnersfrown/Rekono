@@ -31,7 +31,7 @@ describe("Content-Security-Policy", () => {
     expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(csp).not.toContain("unsafe-eval");
     expect(csp).toContain("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com");
-    expect(csp).toContain("font-src 'self' data: https://fonts.gstatic.com");
+    expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
     expect(csp).toContain("img-src 'self' data: blob:");
     expect(csp).toContain("frame-src 'self' blob:");
     expect(csp).toContain("frame-ancestors 'none'");
@@ -40,7 +40,12 @@ describe("Content-Security-Policy", () => {
 });
 
 describe("CORS allowlist", () => {
-  test("echoes back the app's own deployed origin (marketing site + app both served from it)", async () => {
+  test("echoes back an allowed origin (the marketing site)", async () => {
+    const res = await request(app).get("/api/health").set("Origin", "https://winnersfrown.github.io");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://winnersfrown.github.io");
+  });
+
+  test("echoes back the app's own deployed origin", async () => {
     const res = await request(app).get("/api/health").set("Origin", "https://rekono-crv7.onrender.com");
     expect(res.headers["access-control-allow-origin"]).toBe("https://rekono-crv7.onrender.com");
   });

@@ -94,17 +94,9 @@ cp ../.env.example .env   # set GEMINI_API_KEY to enable LLM extraction (optiona
 npm run dev
 ```
 
-Open http://localhost:8000/app for the review UI (http://localhost:8000 is the marketing site -- both are served by this same process, see "Marketing site + app, one deployment" below). Without `GEMINI_API_KEY` set, extraction falls back to the heuristic extractor, so you can exercise the whole pipeline immediately.
+Open http://localhost:8000 for the review UI. Without `GEMINI_API_KEY` set, extraction falls back to the heuristic extractor, so you can exercise the whole pipeline immediately.
 
 Try it with the bundled sample data in `sample_data/`: sign up (creates your organization), then upload `sample_invoice.pdf` on the Upload tab, then upload `sample_po.csv` (as Purchase Orders) and `sample_bank.csv` (as Bank Statement) on the Matching tab and click "Run Matching". Regenerate the sample PDF with `python sample_data/generate_sample_invoice.py` (needs `pip install reportlab` -- this one utility script is Python since it's dev-tooling, not part of the running app).
-
-### Marketing site + app, one deployment
-
-Both the marketing site (`backend/public/`) and the actual product (`backend/public/app/`) are static HTML/JS with no build step, served by this same Express process -- one deployment, not two. The marketing site is at the root (`/`); the app is mounted under `/app` (`app.js`'s static mounts), so their asset paths never collide -- the app's own `<script>`/`<link>` tags point at `/app/app.js`, `/app/auth.js`, `/app/styles.css`. `privacy.html`, `terms.html`, `robots.txt`, and `sitemap.xml` live at the shared root since both sites link to them.
-
-Every link into the product from anywhere server-side (Google OAuth's post-login redirect, password-reset emails, team-invite emails, Stripe Checkout's success/cancel URLs) points at `/app/...`, not `/`, for exactly this reason -- see `routes/auth.js`, `routes/billing.js`, and `routes/team.js` if you're adding a new one. `robots.txt` also disallows crawling `/app`, since there's nothing there worth indexing.
-
-This used to be two separate deployments (the app on Render, the marketing site on GitHub Pages) -- consolidated into one so there's a single place to deploy, and the marketing site's `fetch()` calls to the API become same-origin instead of needing CORS at all.
 
 ### Docker
 

@@ -144,7 +144,7 @@ router.post("/api/auth/forgot-password", async (req, res, next) => {
       user.passwordResetExpiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS);
       await user.save();
 
-      const resetUrl = `${req.protocol}://${req.get("host")}/app/?reset_token=${token}`;
+      const resetUrl = `${req.protocol}://${req.get("host")}/?reset_token=${token}`;
       const resend = new Resend(settings.resendApiKey);
       const { error } = await resend.emails.send({
         from: `Rekono <${settings.contactFromEmail}>`,
@@ -293,7 +293,7 @@ function googleRedirectUri(req) {
 
 router.get("/api/auth/google", (req, res) => {
   if (!settings.googleClientId) {
-    return res.redirect("/app/?google_auth=error&reason=not_configured");
+    return res.redirect("/?google_auth=error&reason=not_configured");
   }
 
   const state = crypto.randomBytes(16).toString("hex");
@@ -322,11 +322,11 @@ router.get("/api/auth/google/callback", async (req, res, next) => {
     res.clearCookie(GOOGLE_STATE_COOKIE, { path: "/" });
 
     if (!settings.googleClientId || !settings.googleClientSecret) {
-      return res.redirect("/app/?google_auth=error&reason=not_configured");
+      return res.redirect("/?google_auth=error&reason=not_configured");
     }
     if (req.query.error) {
       // e.g. the user clicked "Cancel" on Google's consent screen.
-      return res.redirect("/app/?google_auth=error&reason=denied");
+      return res.redirect("/?google_auth=error&reason=denied");
     }
     if (
       typeof req.query.code !== "string" ||
@@ -334,7 +334,7 @@ router.get("/api/auth/google/callback", async (req, res, next) => {
       !cookieState ||
       req.query.state !== cookieState
     ) {
-      return res.redirect("/app/?google_auth=error&reason=state_mismatch");
+      return res.redirect("/?google_auth=error&reason=state_mismatch");
     }
 
     const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
@@ -350,7 +350,7 @@ router.get("/api/auth/google/callback", async (req, res, next) => {
     });
     if (!tokenRes.ok) {
       console.error("Google token exchange failed:", await tokenRes.text());
-      return res.redirect("/app/?google_auth=error&reason=oauth_failed");
+      return res.redirect("/?google_auth=error&reason=oauth_failed");
     }
     const { access_token: googleAccessToken } = await tokenRes.json();
 
@@ -359,17 +359,17 @@ router.get("/api/auth/google/callback", async (req, res, next) => {
     });
     if (!userinfoRes.ok) {
       console.error("Google userinfo fetch failed:", await userinfoRes.text());
-      return res.redirect("/app/?google_auth=error&reason=oauth_failed");
+      return res.redirect("/?google_auth=error&reason=oauth_failed");
     }
     const profile = await userinfoRes.json();
 
     const result = await completeGoogleLogin(profile);
     if (result.error) {
-      return res.redirect(`/app/?google_auth=error&reason=${result.error}`);
+      return res.redirect(`/?google_auth=error&reason=${result.error}`);
     }
 
     const handoffCode = createGoogleHandoffCode(result.user.id);
-    res.redirect(`/app/?google_auth=success&code=${handoffCode}`);
+    res.redirect(`/?google_auth=success&code=${handoffCode}`);
   } catch (err) {
     next(err);
   }

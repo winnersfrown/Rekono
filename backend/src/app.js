@@ -29,17 +29,16 @@ app.disable("x-powered-by");
 // would make the contact form's per-IP rate limit a global one instead.
 app.set("trust proxy", 1);
 
-// The marketing site and the app (login/signup/upload/...) are both served
-// from this same origin (see the static mounts below), so CORS is mostly a
-// defense-in-depth measure rather than something day-to-day traffic
-// actually needs -- restricted to settings.allowedOrigins rather than wide
-// open, since an open policy would let any OTHER website make authenticated
-// fetch/XHR calls using a token if one ever leaked via XSS elsewhere. A
-// request with no Origin header at all (server-to-server calls, curl, the
-// test suite's supertest requests) isn't something CORS applies to in the
-// first place -- only a browser sends that header, to enforce its own
-// same-origin policy client-side -- so those are let through unconditionally
-// rather than rejected.
+// The marketing site (GitHub Pages) and the app (wherever it's deployed) are
+// different origins, so the browser needs CORS to let the marketing site's
+// login/signup calls reach this API. Restricted to settings.allowedOrigins
+// rather than wide open -- an open policy would let any website make
+// authenticated fetch/XHR calls using a token if one ever leaked via XSS
+// elsewhere. A request with no Origin header at all (server-to-server
+// calls, curl, the test suite's supertest requests) isn't something CORS
+// applies to in the first place -- only a browser sends that header, to
+// enforce its own same-origin policy client-side -- so those are let
+// through unconditionally rather than rejected.
 app.use(
   cors({
     origin(origin, callback) {
@@ -49,31 +48,25 @@ app.use(
   })
 );
 
-// Both the marketing site (backend/public/) and the app (backend/public/app/)
-// are served through this one policy, so it has to satisfy both's actual
-// footprint (verified by grepping, not guessed): neither has inline
-// event-handler attributes, and the marketing site's own inline <script>
-// blocks were extracted to public/marketing.js specifically so script-src
-// could stay a bare 'self' with no 'unsafe-inline'/nonce -- every <script>
-// in both is now <script src="/*.js">. Inline style="..." attributes are
-// used throughout both (no build step to generate nonces/hashes for them),
-// so style-src needs 'unsafe-inline' -- a much smaller trade than script-src
-// would be, since CSS injection alone can't run arbitrary JS. The app's
-// index.html links Google Fonts (fonts.googleapis.com's stylesheet,
-// fonts.gstatic.com's font files); the marketing site instead embeds its
-// fonts as base64 data: URIs directly in its own CSS (no external font
-// request at all), hence font-src needing both data: and fonts.gstatic.com.
-// blob: is required for img-src and frame-src: the app's document preview
-// never points an <iframe>/<img> straight at GET /api/invoices/:id/file
-// (that request needs the bearer token, which a src="..." attribute can't
-// carry), so app.js fetches it with the token and hands the element a
-// URL.createObjectURL(blob) blob: URL instead (see public/app/app.js's own
-// comment above loadDocPreview).
+// The review UI's actual script/style/resource footprint (verified by
+// grepping backend/public/ rather than guessed): no inline <script> blocks
+// and no inline event-handler attributes anywhere, only <script src="/*.js">
+// -- so script-src can be 'self' with no 'unsafe-inline'/nonce needed at
+// all. Inline style="..." attributes are used throughout (no build step to
+// generate nonces/hashes for them), so style-src alone needs 'unsafe-inline'
+// -- a much smaller trade than script-src would be, since CSS injection
+// alone can't run arbitrary JS. fonts.googleapis.com/fonts.gstatic.com serve
+// the Google Fonts in index.html's <head>. blob: is required for img-src and
+// frame-src: the document preview never points an <iframe>/<img> straight at
+// GET /api/invoices/:id/file (that request needs the bearer token, which a
+// src="..." attribute can't carry), so app.js fetches it with the token and
+// hands the element a URL.createObjectURL(blob) blob: URL instead (see
+// public/app.js's own comment above loadDocPreview).
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' data: https://fonts.gstatic.com",
+  "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob:",
   "frame-src 'self' blob:",
   "connect-src 'self'",
@@ -135,14 +128,7 @@ app.use(settingsRoutes);
 app.use(teamRoutes);
 app.use(integrationsRoutes);
 
-// backend/public/ is the marketing site (index.html, privacy/terms,
-// robots.txt/sitemap.xml, og-image.png) at this server's own root --
-// backend/public/app/ is the actual product (login/dashboard/upload/...),
-// mounted under /app so both can be served from one deployment without
-// either's asset paths colliding (each has its own index.html, and the
-// app's own script/style tags point at /app/*.js, /app/*.css to match).
 const publicDir = path.join(__dirname, "..", "public");
-app.use("/app", express.static(path.join(publicDir, "app")));
 app.use(express.static(publicDir));
 
 // Multer errors (e.g. malformed multipart body) and any route's next(err)
