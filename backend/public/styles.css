@@ -1017,6 +1017,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   margin-bottom: 0.85rem;
 }
 
+/* Groups the nav into labeled clusters (Documents / Workflow / Admin)
+   instead of one flat 11-item list -- the extra top margin (beyond the
+   nav's own 0.15rem gap) is what actually reads as separate groups rather
+   than just another row. */
+.sidebar-nav .sidebar-section-label { margin-top: 0.7rem; padding: 0.3rem 0.5rem 0.2rem; }
+.sidebar-nav .sidebar-section-label:first-child { margin-top: 0; }
+
 .sidebar-nav .tab-btn.active { position: relative; }
 .sidebar-nav .tab-btn.active::before {
   content: "";
