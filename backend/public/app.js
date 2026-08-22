@@ -1986,10 +1986,12 @@ async function loadSources() {
   );
 }
 
+const SOURCE_TYPE_LABELS = { po: "purchase orders", receiving: "goods receipts", bank: "bank statement" };
+
 function renderSources(sources) {
   const list = sources.map((s) => (
     `<div class="source-row">
-      <span>${escapeHtml(s.name)} (${s.source_type}) — ${s.entry_count} rows</span>
+      <span>${escapeHtml(s.name)} (${escapeHtml(SOURCE_TYPE_LABELS[s.source_type] || s.source_type)}) — ${s.entry_count} rows</span>
       <button type="button" class="source-delete" data-id="${s.id}" title="Delete" aria-label="Delete ${escapeHtml(s.name)}">&times;</button>
     </div>`
   )).join("") || "<div class='hint'>None yet.</div>";
@@ -2019,8 +2021,14 @@ async function deleteSource(id) {
 document.getElementById("run-matching-btn").addEventListener("click", async () => {
   const res = await apiFetch("/api/matching/run", { method: "POST" });
   const summary = await res.json();
-  document.getElementById("matching-summary").textContent =
-    `Evaluated ${summary.invoices_evaluated} invoices — matched ${summary.matched}, partial ${summary.partial}, unmatched ${summary.unmatched}.`;
+  // A three-way run's headline numbers are the ones that name a specific
+  // problem ("billed but never received"), not the generic partial count --
+  // that's the whole reason to upload receipts, so lead with it.
+  document.getElementById("matching-summary").textContent = summary.three_way
+    ? `Three-way match — evaluated ${summary.invoices_evaluated} invoices: ${summary.three_way.matched} fully matched, ` +
+      `${summary.three_way.no_receipt} billed with no goods receipt, ${summary.three_way.no_po} with no purchase order, ` +
+      `${summary.three_way.unmatched} unmatched.`
+    : `Evaluated ${summary.invoices_evaluated} invoices — matched ${summary.matched}, partial ${summary.partial}, unmatched ${summary.unmatched}.`;
   invalidateCache("__matching_results__");
   loadMatchResults();
 });
@@ -2041,6 +2049,15 @@ async function loadMatchResults() {
   );
 }
 
+// Wording for each three-way verdict (matching.js's threeWayOutcome), in
+// the terms an AP reviewer would actually use rather than the raw key.
+const THREE_WAY_LABELS = {
+  matched: "matched",
+  no_receipt: "no receipt",
+  no_po: "no PO",
+  unmatched: "unmatched",
+};
+
 function renderMatchResults({ results, invoices }) {
   const invoiceById = Object.fromEntries(invoices.map((i) => [i.id, i]));
 
@@ -2051,12 +2068,17 @@ function renderMatchResults({ results, invoices }) {
   const tbody = document.querySelector("#matching-table tbody");
   tbody.innerHTML = Object.values(latestByInvoice).map((r) => {
     const inv = invoiceById[r.invoice_id] || {};
+    // On a three-way result, the specific verdict ("no receipt") says far
+    // more than the generic status it rolls up into ("partial"), so show
+    // that instead where it exists. Falls back to the plain status for
+    // results from a two-way run, which have no three-way outcome.
+    const badgeText = THREE_WAY_LABELS[r.three_way_outcome] || r.status;
     return `
       <tr>
         <td>${inv.original_filename ? escapeHtml(inv.original_filename) : r.invoice_id}</td>
         <td>${escapeHtml(inv.vendor_name || "")}</td>
         <td>${fmtMoney(inv.total)}</td>
-        <td><span class="badge match-${r.status}">${r.status}</span></td>
+        <td><span class="badge match-${r.status}">${escapeHtml(badgeText)}</span></td>
         <td>${r.score.toFixed(0)}</td>
         <td>${escapeHtml(r.reasoning)}</td>
       </tr>

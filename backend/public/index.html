@@ -614,11 +614,12 @@
 
         <section id="tab-matching" class="tab-panel">
           <h1>Matching / Reconciliation</h1>
-          <p class="hint">Upload a PO list or bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices.</p>
+          <p class="hint">Upload a PO list, goods receipts, or a bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices. Upload goods receipts and matching automatically becomes a three-way check — ordered, received, and billed — so an invoice for goods that never arrived gets flagged instead of paid.</p>
           <div class="panel">
             <form id="source-form">
               <select id="source-type">
                 <option value="po">Purchase Orders</option>
+                <option value="receiving">Goods Receipts</option>
                 <option value="bank">Bank Statement</option>
               </select>
               <input type="file" id="source-file" accept=".csv" required />
