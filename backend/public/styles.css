@@ -977,14 +977,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 }
 
 /* ---------- app sidebar layout ---------- */
-/* height, not min-height: capping this to exactly the viewport is what
-   makes .app-main's own overflow-y below actually take effect. With only
-   min-height, a tall panel (an open invoice's document preview, a long
-   table) grew this whole flex row past 100vh instead, so the PAGE scrolled
-   -- carrying the sidebar's nav buttons (including the one back to this
-   landing tab) up and off-screen along with it, with no way back short of
-   scrolling the entire page back to the top. */
-.app-layout { display: flex; height: 100vh; align-items: stretch; }
+.app-layout { display: flex; min-height: 100vh; align-items: stretch; }
 
 .sidebar {
   width: 264px;
@@ -996,7 +989,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   -webkit-backdrop-filter: var(--glass-blur);
   border-right: 1px solid var(--glass-border);
   padding: 1.1rem 0.8rem;
-  position: relative;
+  /* Sticky, not a capped-height layout with .app-main scrolling internally
+     (an earlier attempt at this): that approach kept the sidebar in place
+     but gave .app-main -- which is itself centered under a max-width --
+     its OWN scrollbar, sitting well short of the actual browser-window
+     edge instead of a normal page scrollbar. Sticky lets the real page
+     scroll (so its scrollbar sits exactly where a scrollbar normally
+     does) while this element simply stays pinned as that happens. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
   z-index: 1;
 }
 
@@ -1280,10 +1282,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   color: var(--muted);
 }
 
-/* min-height: 0 overrides the flex default of auto, which otherwise lets
-   this item grow to fit its content instead of respecting the sidebar's
-   fixed-height row above -- overflow-y then scrolls just this column. */
-.app-main { flex: 1; min-width: 0; min-height: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; overflow-y: auto; }
+.app-main { flex: 1; min-width: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; }
 
 .demo-mode-banner {
   display: flex;
@@ -1682,14 +1681,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .ask-answer-error { border-color: var(--red); color: var(--red); }
 
 @media (max-width: 760px) {
-  /* The desktop fix above pins the sidebar by capping .app-layout to the
-     viewport and scrolling .app-main independently -- that only makes
-     sense side-by-side. Stacked here, the whole page should scroll
-     normally instead, or content past the first 100vh would be clipped
-     and unreachable. */
-  .app-layout { flex-direction: column; height: auto; }
-  .app-main { overflow-y: visible; }
-  .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line-soft); }
+  .app-layout { flex-direction: column; }
+  /* The desktop rule pins the sidebar beside the content via position:
+     sticky -- stacked above content here instead, sticking it would just
+     glue it to the top of the screen as you scroll past it, permanently
+     covering whatever tab is open underneath. Static + auto-height lets
+     it scroll away normally, like any other stacked block. */
+  .sidebar { position: static; height: auto; width: 100%; border-right: none; border-bottom: 1px solid var(--line-soft); }
   .sidebar-recents { max-height: 160px; }
   .app-main { padding: 1.4rem 1.2rem; }
 
