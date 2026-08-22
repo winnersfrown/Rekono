@@ -46,8 +46,8 @@ describe("CORS allowlist", () => {
   });
 
   test("echoes back the app's own deployed origin", async () => {
-    const res = await request(app).get("/api/health").set("Origin", "https://rekono-crv7.onrender.com");
-    expect(res.headers["access-control-allow-origin"]).toBe("https://rekono-crv7.onrender.com");
+    const res = await request(app).get("/api/health").set("Origin", "https://rekono-ai-new.onrender.com");
+    expect(res.headers["access-control-allow-origin"]).toBe("https://rekono-ai-new.onrender.com");
   });
 
   test("does not grant CORS access to an arbitrary third-party origin", async () => {
