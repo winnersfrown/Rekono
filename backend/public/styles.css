@@ -1755,6 +1755,86 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   .ask-widget-panel { background: var(--ink-900); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
+/* ---------- transactions ---------- */
+.txn-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.55rem;
+  margin: 1.1rem 0;
+}
+.txn-totals:empty { display: none; }
+
+.txn-total {
+  padding: 0.6rem 0.75rem;
+  border-radius: 9px;
+  background: var(--ink-900);
+  border: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+/* The one bucket that's a to-do rather than a result. */
+.txn-total.is-uncategorized { border-color: rgba(150, 101, 15, 0.35); background: rgba(150, 101, 15, 0.06); }
+.txn-total-label {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.txn-total-amount { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+
+.txn-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.txn-filters { display: flex; gap: 0.3rem; }
+#txn-search { min-width: 220px; }
+
+#txn-table .txn-category {
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--ink-900);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  max-width: 200px;
+}
+/* An uncategorized row is the actionable one, so its control is the one
+   that should draw the eye -- everything already settled stays quiet. */
+#txn-table .txn-category:not(:has(option[value=""]:checked)) { border-color: var(--line); }
+#txn-table .txn-category:has(option[value=""]:checked) { border-color: var(--amber); color: var(--amber); }
+
+.txn-source {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  background: var(--ink-800);
+  color: var(--muted);
+}
+.txn-source-learned, .txn-source-manual { background: rgba(23, 128, 72, 0.13); color: var(--green); }
+.txn-source-ai { background: rgba(75, 134, 247, 0.13); color: var(--blue-deep); }
+.txn-source-heuristic { background: rgba(150, 101, 15, 0.13); color: var(--amber); }
+.txn-conf { font-family: var(--font-mono); font-size: 0.66rem; color: var(--muted); margin-left: 0.35rem; }
+
+.txn-delete {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+#txn-table tr:hover .txn-delete { opacity: 1; }
+.txn-delete:hover { color: var(--red); background: none; box-shadow: none; transform: none; }
+/* Keyboard users never trigger :hover -- without this the control is
+   unreachable without a mouse. */
+.txn-delete:focus-visible { opacity: 1; }
+
 /* ---------- month-end close ---------- */
 .close-head {
   display: flex;
