@@ -3098,34 +3098,60 @@ async function loadDashboard() {
 // The export endpoints are bearer-token authenticated, so a plain <a href>
 // would hit them with no Authorization header and 401. Fetch through
 // apiFetch (which attaches the token) and hand the browser a blob: URL
-// instead -- same approach the document-preview panes already use.
-document.querySelectorAll("[data-export]").forEach((link) => {
+// instead -- same approach the document-preview panes already use. Shared
+// by both the dashboard's Reports rail and the Export tab's cards, which
+// otherwise duplicated this exact fetch-blob-download dance.
+async function downloadExport(path) {
+  const res = await apiFetch(path);
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = path.split("/").slice(-2).join("-").replace("/", "-");
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.querySelectorAll(".dash-report[data-export]").forEach((link) => {
   link.addEventListener("click", async (e) => {
     e.preventDefault();
-    const path = link.dataset.export;
-    const original = link.querySelector(".dash-report-fmt").textContent;
-    link.querySelector(".dash-report-fmt").textContent = "…";
+    const fmtEl = link.querySelector(".dash-report-fmt");
+    const original = fmtEl.textContent;
+    fmtEl.textContent = "…";
     try {
-      const res = await apiFetch(path);
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = path.split("/").slice(-2).join("-").replace("/", "-");
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await downloadExport(link.dataset.export);
     } catch (err) {
       const errorEl = document.getElementById("dash-error");
       errorEl.textContent = String(err.message || err);
       errorEl.style.display = "block";
     } finally {
-      link.querySelector(".dash-report-fmt").textContent = original;
+      fmtEl.textContent = original;
     }
   });
 });
+
+document.querySelectorAll(".export-btn[data-export]").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const statusEl = document.getElementById("export-status");
+    statusEl.style.display = "none";
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Preparing…";
+    try {
+      await downloadExport(btn.dataset.export);
+    } catch (err) {
+      statusEl.textContent = String(err.message || err);
+      statusEl.style.display = "block";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  });
+});
+
 
 // Called by auth.js once a valid session is confirmed (not on script load,
 // since there's nothing to load until we know the user is authenticated).
