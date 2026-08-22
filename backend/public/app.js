@@ -102,6 +102,9 @@ function switchTab(name) {
   const navBtn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
   if (navBtn) navBtn.classList.add("active");
   document.getElementById(`tab-${name}`).classList.add("active");
+  // Coming back to the landing tab after approving/uploading elsewhere
+  // should show the effect of that work, not a stale snapshot from login.
+  if (name === "ask") loadDashboard();
   if (name === "review") loadInvoices();
   if (name === "expenses") loadExpenses();
   if (name === "vendordocs") loadVendorDocs();
@@ -2857,10 +2860,278 @@ document.getElementById("team-invite-form").addEventListener("submit", async (e)
 });
 
 // ---- Init ----
+// ---- Dashboard (the landing tab) ----
+// Everything below renders from one GET /api/dashboard payload (see
+// routes/dashboard.js). No number here is computed client-side from a
+// partial list -- the server does the counting so the dashboard can't
+// disagree with the tab it links to.
+
+function fmtCompactMoney(v) {
+  const n = Number(v || 0);
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`;
+  if (abs >= 10_000) return `$${(n / 1000).toFixed(abs >= 100_000 ? 0 : 1)}k`;
+  return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function greetingForHour(hour) {
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+// A KPI's supporting line carries the "so what" -- a bare dollar figure
+// doesn't tell you whether it's fine. Where there's a genuine problem
+// (overdue, failed) the sub-line is escalated to a warning tone rather than
+// being tucked into the same muted grey as everything else.
+function kpiCard({ label, value, sub, subTone = "", accent = "" }) {
+  return `
+    <div class="kpi-card${accent ? ` kpi-${accent}` : ""}">
+      <span class="kpi-label">${label}</span>
+      <span class="kpi-value">${value}</span>
+      <span class="kpi-sub${subTone ? ` kpi-sub-${subTone}` : ""}">${sub}</span>
+    </div>`;
+}
+
+function renderDashboardKpis(k) {
+  const el = document.getElementById("dash-kpis");
+  el.removeAttribute("aria-busy");
+
+  // Rounded only to decide whether to escalate the tone -- never shown as
+  // a bare percentage, because 15 of 10,000 rounds to "0%", which reads as
+  // "nothing counted" right next to a card whose value is 15.
+  const capPct =
+    k.document_cap ? Math.min(100, Math.round((k.documents_used_this_month / k.document_cap) * 100)) : 0;
+
+  const cards = [
+    kpiCard({
+      label: "Outstanding AP",
+      value: fmtCompactMoney(k.outstanding_ap),
+      sub: k.overdue_count
+        ? `${k.outstanding_ap_count} open · ${k.overdue_count} past due`
+        : `${k.outstanding_ap_count} invoice${k.outstanding_ap_count === 1 ? "" : "s"} open`,
+      subTone: k.overdue_count ? "bad" : "",
+      accent: k.overdue_count ? "bad" : "",
+    }),
+    kpiCard({
+      label: "Approved this month",
+      value: fmtCompactMoney(k.approved_this_month_value),
+      sub: k.touchless.total_approvals
+        ? `${k.touchless.total_approvals} approval${k.touchless.total_approvals === 1 ? "" : "s"} recorded`
+        : "No approvals yet this month",
+    }),
+    kpiCard({
+      label: "Review queue",
+      value: String(k.review_queue),
+      sub: k.in_flight ? `${k.in_flight} still extracting` : "Across all document types",
+      accent: k.review_queue ? "warn" : "good",
+    }),
+    kpiCard({
+      label: "Touchless rate",
+      value: k.touchless.rate === null ? "—" : `${Math.round(k.touchless.rate * 100)}%`,
+      sub:
+        k.touchless.rate === null
+          ? "Needs approvals to measure"
+          : `${k.touchless.auto_approved} of ${k.touchless.total_approvals} auto-approved`,
+    }),
+    kpiCard({
+      label: "Avg confidence",
+      value: k.avg_confidence === null ? "—" : `${Math.round(k.avg_confidence * 100)}%`,
+      sub: k.failed ? `${k.failed} extraction${k.failed === 1 ? "" : "s"} failed` : "Across extracted invoices",
+      subTone: k.failed ? "bad" : "",
+    }),
+    kpiCard({
+      label: "Documents this month",
+      value: String(k.documents_used_this_month),
+      sub: k.document_cap
+        ? `of ${k.document_cap.toLocaleString()} included this month`
+        : "No cap on this plan",
+      subTone: capPct >= 90 ? "bad" : "",
+    }),
+  ];
+
+  el.innerHTML = cards.join("");
+}
+
+// Inline SVG rather than a charting library: it's a 14-bar bar chart, and
+// pulling in a dependency for it would cost more (bundle, CSP surface) than
+// it saves. Bars are drawn as percentages of the container so the chart is
+// fluid without needing a resize listener.
+function renderVolumeChart(trend) {
+  const el = document.getElementById("dash-volume");
+  const max = Math.max(...trend.map((d) => d.count), 1);
+  const total = trend.reduce((sum, d) => sum + d.count, 0);
+
+  if (!total) {
+    el.innerHTML = `<p class="dash-empty">Nothing processed in the last 14 days. <button type="button" class="linklike" data-tab="upload">Upload a document</button> to get started.</p>`;
+    el.querySelector("[data-tab]").addEventListener("click", (e) => switchTab(e.currentTarget.dataset.tab));
+    return;
+  }
+
+  const bars = trend
+    .map((d) => {
+      const pct = (d.count / max) * 100;
+      const label = new Date(`${d.date}T00:00:00Z`).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      });
+      // A zero day gets a fixed 3px stub rather than a percentage height:
+      // as a fraction of the chart it rounds to a sub-pixel hairline, which
+      // reads as a rendering glitch instead of "nothing happened that day".
+      const height = d.count ? `${Math.max(pct, 4)}%` : "3px";
+      return `
+        <div class="vol-bar-wrap" title="${label}: ${d.count} document${d.count === 1 ? "" : "s"}">
+          <div class="vol-bar${d.count ? "" : " is-zero"}" style="height: ${height}"></div>
+        </div>`;
+    })
+    .join("");
+
+  const first = trend[0].date;
+  const last = trend[trend.length - 1].date;
+  const fmtAxis = (iso) =>
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
+
+  el.innerHTML = `
+    <div class="vol-summary"><strong>${total}</strong> document${total === 1 ? "" : "s"} processed</div>
+    <div class="vol-chart">${bars}</div>
+    <div class="vol-axis"><span>${fmtAxis(first)}</span><span>${fmtAxis(last)}</span></div>`;
+}
+
+function renderAttention(items) {
+  const el = document.getElementById("dash-attention");
+  const active = items.filter((i) => i.count > 0);
+
+  if (!active.length) {
+    el.innerHTML = `<p class="dash-empty dash-empty-good">Nothing needs attention — no overdue invoices, failed extractions, or approaching deadlines.</p>`;
+    return;
+  }
+
+  el.innerHTML = active
+    .map(
+      (i) => `
+      <button type="button" class="attn-row attn-${i.severity}" data-tab="${i.tab}">
+        <span class="attn-dot"></span>
+        <span class="attn-label">${i.label}</span>
+        <span class="attn-count">${i.count}</span>
+      </button>`
+    )
+    .join("");
+
+  el.querySelectorAll("[data-tab]").forEach((b) =>
+    b.addEventListener("click", () => switchTab(b.dataset.tab))
+  );
+}
+
+function renderWorkflow(items) {
+  const el = document.getElementById("dash-workflow");
+  el.innerHTML = items
+    .map(
+      (i) => `
+      <button type="button" class="wf-tile${i.count ? "" : " is-clear"}" data-tab="${i.tab}">
+        <span class="wf-count">${i.count}</span>
+        <span class="wf-label">${i.label}</span>
+      </button>`
+    )
+    .join("");
+
+  el.querySelectorAll("[data-tab]").forEach((b) =>
+    b.addEventListener("click", () => switchTab(b.dataset.tab))
+  );
+}
+
+function renderIntegrations(integrations) {
+  const el = document.getElementById("dash-integrations");
+  const rows = [
+    {
+      name: "AI extraction",
+      on: integrations.ai_extraction,
+      onText: "Active",
+      offText: "Heuristic fallback",
+    },
+    { name: "QuickBooks", on: integrations.quickbooks, onText: "Connected", offText: "Not connected" },
+  ];
+  el.innerHTML = rows
+    .map(
+      (r) => `
+      <div class="intg-row">
+        <span class="intg-dot${r.on ? " is-on" : ""}"></span>
+        <span class="intg-name">${r.name}</span>
+        <span class="intg-state">${r.on ? r.onText : r.offText}</span>
+      </div>`
+    )
+    .join("");
+}
+
+async function loadDashboard() {
+  const errorEl = document.getElementById("dash-error");
+  errorEl.style.display = "none";
+
+  const user = window.currentUser;
+  const firstName = (user?.full_name || "").trim().split(/\s+/)[0];
+  document.getElementById("dash-greeting-text").textContent = firstName
+    ? `${greetingForHour(new Date().getHours())}, ${firstName}`
+    : greetingForHour(new Date().getHours());
+
+  try {
+    const res = await apiFetch("/api/dashboard");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Could not load your dashboard.");
+
+    document.getElementById("dash-greeting-sub").textContent = `${data.org_name} · ${new Date().toLocaleDateString(
+      undefined,
+      { weekday: "long", month: "long", day: "numeric" }
+    )}`;
+
+    renderDashboardKpis(data.kpis);
+    renderVolumeChart(data.volume_trend);
+    renderAttention(data.attention);
+    renderWorkflow(data.workflow);
+    renderIntegrations(data.integrations);
+  } catch (err) {
+    errorEl.textContent = String(err.message || err);
+    errorEl.style.display = "block";
+    document.getElementById("dash-kpis").innerHTML = "";
+  }
+}
+
+// The export endpoints are bearer-token authenticated, so a plain <a href>
+// would hit them with no Authorization header and 401. Fetch through
+// apiFetch (which attaches the token) and hand the browser a blob: URL
+// instead -- same approach the document-preview panes already use.
+document.querySelectorAll("[data-export]").forEach((link) => {
+  link.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const path = link.dataset.export;
+    const original = link.querySelector(".dash-report-fmt").textContent;
+    link.querySelector(".dash-report-fmt").textContent = "…";
+    try {
+      const res = await apiFetch(path);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = path.split("/").slice(-2).join("-").replace("/", "-");
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const errorEl = document.getElementById("dash-error");
+      errorEl.textContent = String(err.message || err);
+      errorEl.style.display = "block";
+    } finally {
+      link.querySelector(".dash-report-fmt").textContent = original;
+    }
+  });
+});
+
 // Called by auth.js once a valid session is confirmed (not on script load,
 // since there's nothing to load until we know the user is authenticated).
 function onAuthenticated() {
   loadRecentUploads();
+  loadDashboard();
   // Needed early (not just when the Settings tab is opened) so the invoice
   // detail panel's "Push to QuickBooks" button knows whether to show up.
   loadQuickbooksStatus();
