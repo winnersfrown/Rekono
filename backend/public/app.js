@@ -2269,6 +2269,21 @@ document.getElementById("quickreview-open-full").addEventListener("click", () =>
 });
 
 // ---- Ask Rekono ----
+// A floating widget on every tab (not a dedicated page) -- so asking a
+// question about what's on screen doesn't require navigating away from
+// it first. Collapsed by default; the panel and its thread history persist
+// in the DOM across opens/closes, so re-opening it picks up right where
+// you left off instead of losing the conversation.
+document.getElementById("ask-widget-toggle").addEventListener("click", () => {
+  document.getElementById("ask-widget-panel").style.display = "flex";
+  document.getElementById("ask-widget-toggle").style.display = "none";
+  document.getElementById("ask-input").focus();
+});
+document.getElementById("ask-widget-close").addEventListener("click", () => {
+  document.getElementById("ask-widget-panel").style.display = "none";
+  document.getElementById("ask-widget-toggle").style.display = "flex";
+});
+
 // Builds the thread via DOM methods (textContent), not innerHTML --
 // unlike the rest of this file, this handles raw user input (the
 // question) and an LLM response, neither of which should ever be

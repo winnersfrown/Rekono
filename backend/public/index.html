@@ -208,11 +208,8 @@
   <div id="app-shell" style="display: none;">
     <div class="app-layout">
       <aside class="sidebar">
-        <div class="sidebar-brand brand"><span class="logomark"></span>Rekono</div>
-
-        <button class="tab-btn sidebar-ask-btn active" data-tab="ask">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
-          Ask Rekono
+        <button type="button" class="sidebar-brand brand" data-tab="ask" title="Home">
+          <span class="logomark"></span>Rekono
         </button>
 
         <nav class="sidebar-nav">
@@ -296,16 +293,7 @@
               <h1 id="dash-greeting-text">Welcome back</h1>
               <p id="dash-greeting-sub" class="dash-greeting-sub"></p>
             </div>
-            <div class="dash-head-actions">
-              <form id="ask-form" class="ask-form">
-                <svg class="ask-form-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
-                <input type="text" id="ask-input" placeholder="Ask about your invoices…" required maxlength="1000" />
-                <button type="submit">Ask</button>
-              </form>
-            </div>
           </header>
-
-          <div id="ask-thread" class="ask-thread"></div>
 
           <div id="dash-error" class="dash-error" style="display: none;"></div>
 
@@ -874,6 +862,29 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <!-- Floating on every tab (a sibling of .app-layout, not nested inside
+         it) rather than living only on the dashboard -- asking a question
+         about what's on screen shouldn't require leaving the tab you're
+         actually looking at. -->
+    <div id="ask-widget" class="ask-widget">
+      <div id="ask-widget-panel" class="ask-widget-panel" style="display: none;">
+        <div class="ask-widget-header">
+          <span>Ask Rekono</span>
+          <button type="button" id="ask-widget-close" class="ask-widget-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="ask-thread" class="ask-thread"></div>
+        <form id="ask-form" class="ask-form">
+          <svg class="ask-form-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
+          <input type="text" id="ask-input" placeholder="Ask about your invoices…" required maxlength="1000" />
+          <button type="submit">Ask</button>
+        </form>
+      </div>
+      <button type="button" id="ask-widget-toggle" class="ask-widget-toggle">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8L12 2z"/></svg>
+        Ask Rekono
+      </button>
     </div>
   </div>
 
