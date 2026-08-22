@@ -16,7 +16,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import { documentsUsedThisMonth, startOfCurrentMonthUtc } from "../documentUsage.js";
-import { AuditLog, ExpenseReceipt, Invoice, Lease, MatchResult, VendorDocument } from "../models/index.js";
+import { AuditLog, ExpenseReceipt, Invoice, Lease, MatchResult, TaxDocument, VendorDocument } from "../models/index.js";
 
 const router = Router();
 
@@ -52,18 +52,19 @@ async function volumeTrend(orgId) {
   const where = { orgId, createdAt: { [Op.gte]: since } };
   const attributes = ["createdAt"];
 
-  const [invoices, receipts, vendorDocs, leases] = await Promise.all([
+  const [invoices, receipts, vendorDocs, leases, taxDocs] = await Promise.all([
     Invoice.findAll({ where, attributes, raw: true }),
     ExpenseReceipt.findAll({ where, attributes, raw: true }),
     VendorDocument.findAll({ where, attributes, raw: true }),
     Lease.findAll({ where, attributes, raw: true }),
+    TaxDocument.findAll({ where, attributes, raw: true }),
   ]);
 
   const buckets = new Map();
   for (let i = 0; i < VOLUME_TREND_DAYS; i++) {
     buckets.set(isoDate(daysFromNow(-(VOLUME_TREND_DAYS - 1 - i))), 0);
   }
-  for (const row of [...invoices, ...receipts, ...vendorDocs, ...leases]) {
+  for (const row of [...invoices, ...receipts, ...vendorDocs, ...leases, ...taxDocs]) {
     const key = isoDate(new Date(row.createdAt));
     if (buckets.has(key)) buckets.set(key, buckets.get(key) + 1);
   }
@@ -127,6 +128,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
       expensesNeedingReview,
       vendorDocsNeedingReview,
       leasesNeedingReview,
+      taxDocsNeedingReview,
       failedCount,
       inFlightCount,
       outstandingAp,
@@ -136,6 +138,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
       qaPending,
       expiringVendorDocs,
       leaseDeadlines,
+      taxDocsMissingTin,
       documentsUsed,
       avgConfidence,
       unmatched,
@@ -146,12 +149,14 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
       ExpenseReceipt.count({ where: needsReviewWhere }),
       VendorDocument.count({ where: needsReviewWhere }),
       Lease.count({ where: needsReviewWhere }),
+      TaxDocument.count({ where: needsReviewWhere }),
 
       Promise.all([
         Invoice.count({ where: failedWhere }),
         ExpenseReceipt.count({ where: failedWhere }),
         VendorDocument.count({ where: failedWhere }),
         Lease.count({ where: failedWhere }),
+        TaxDocument.count({ where: failedWhere }),
       ]).then((counts) => counts.reduce((a, b) => a + b, 0)),
 
       Promise.all([
@@ -159,6 +164,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
         ExpenseReceipt.count({ where: inFlightWhere }),
         VendorDocument.count({ where: inFlightWhere }),
         Lease.count({ where: inFlightWhere }),
+        TaxDocument.count({ where: inFlightWhere }),
       ]).then((counts) => counts.reduce((a, b) => a + b, 0)),
 
       // Approved but not yet recorded as paid -- money the org still owes.
@@ -192,6 +198,17 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
           ],
         },
       }),
+      // A form still in review might simply not have been read yet, and a
+      // rejected one isn't going to be filed -- neither is a compliance
+      // problem, so neither belongs in a count that's asking "what will
+      // bite us at filing time".
+      TaxDocument.count({
+        where: {
+          orgId,
+          status: { [Op.in]: ["extracted", "approved"] },
+          recipientTinLast4: "",
+        },
+      }),
 
       documentsUsedThisMonth(orgId),
 
@@ -209,7 +226,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
 
     const plan = PLANS[org.plan];
     const reviewQueue =
-      invoicesNeedingReview + expensesNeedingReview + vendorDocsNeedingReview + leasesNeedingReview;
+      invoicesNeedingReview + expensesNeedingReview + vendorDocsNeedingReview + leasesNeedingReview + taxDocsNeedingReview;
 
     res.json({
       org_name: org.name,
@@ -237,6 +254,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
         { key: "expenses", label: "Expenses to review", count: expensesNeedingReview, tab: "expenses" },
         { key: "vendordocs", label: "Vendor docs to review", count: vendorDocsNeedingReview, tab: "vendordocs" },
         { key: "leases", label: "Leases to review", count: leasesNeedingReview, tab: "leases" },
+        { key: "taxdocs", label: "Tax docs to review", count: taxDocsNeedingReview, tab: "taxdocs" },
         { key: "unmatched", label: "Approved, not yet matched", count: unmatched, tab: "matching" },
         { key: "qa", label: "Spot-checks pending", count: qaPending, tab: "settings" },
       ],
@@ -271,6 +289,13 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
           count: leaseDeadlines,
           severity: "warning",
           tab: "leases",
+        },
+        {
+          key: "tax_docs_missing_tin",
+          label: "Tax forms missing a recipient TIN",
+          count: taxDocsMissingTin,
+          severity: "warning",
+          tab: "taxdocs",
         },
       ],
       volume_trend: trend,

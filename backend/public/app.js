@@ -32,6 +32,16 @@ const state = {
   leaseSortField: "created_at",
   leaseSortOrder: "desc",
   leasePage: 1,
+  taxdocStatusFilter: "",
+  taxdocMissingTinOnly: false,
+  taxdocYearFilter: "",
+  taxdocTypeFilter: "",
+  selectedTaxDocId: null,
+  taxdocSearchQuery: "",
+  taxdocSortField: "created_at",
+  taxdocSortOrder: "desc",
+  taxdocPage: 1,
+  taxDocumentTypes: [],
 };
 const MAX_ASK_HISTORY_MESSAGES = 12; // last 6 question/answer exchanges
 const QUEUE_PAGE_SIZE = 25;
@@ -39,6 +49,7 @@ let docPreviewObjectUrl = null;
 let expenseDocPreviewObjectUrl = null;
 let vendordocDocPreviewObjectUrl = null;
 let leaseDocPreviewObjectUrl = null;
+let taxdocDocPreviewObjectUrl = null;
 
 function debounce(fn, delayMs) {
   let timer = null;
@@ -109,6 +120,7 @@ function switchTab(name) {
   if (name === "expenses") loadExpenses();
   if (name === "vendordocs") loadVendorDocs();
   if (name === "leases") loadLeases();
+  if (name === "taxdocs") loadTaxDocs();
   if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
@@ -127,7 +139,13 @@ function fmtMoney(v) {
   // Sign outside the symbol: "-$8.50", not "$-8.50". Invoice totals are
   // always positive so this never came up before transactions (where a
   // debit is negative) started rendering money.
-  return `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
+  //
+  // Grouped thousands, same as fmtCompactMoney's sub-$10k branch: a single
+  // invoice total reads fine either way, but a tax-year total like
+  // "$315130.44" does not, and having the summary line and the table
+  // beneath it disagree about formatting would read as a bug.
+  const grouped = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "-" : ""}$${grouped}`;
 }
 
 function fmtPct(v) {
@@ -1962,6 +1980,441 @@ async function deleteLease(id) {
   }
   invalidateCache("/api/leases?");
   loadLeases();
+}
+
+// ---- Tax Docs ----
+// Same shape as the Leases queue above (upload/list/detail/correct/
+// approve/reject/retry/delete), applied to /api/tax-documents. Two things
+// differ, both because a pile of tax forms is a different kind of pile:
+// the filters are tax year + form type + "missing recipient TIN" rather
+// than a date window, and the list carries running totals for whatever
+// subset is on screen -- "what do I report for 2025" is the question the
+// year filter exists to answer.
+document.getElementById("taxdoc-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("taxdoc-file-input");
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+
+  const statusEl = document.getElementById("taxdoc-upload-status");
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/tax-documents/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
+    }
+  }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} tax documents — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  if (uploaded) {
+    invalidateCache("/api/tax-documents?");
+    loadTaxDocs();
+    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+  }
+});
+
+document.querySelectorAll(".taxdoc-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".taxdoc-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (btn.dataset.status === "missing_tin") {
+      state.taxdocMissingTinOnly = true;
+      state.taxdocStatusFilter = "";
+    } else {
+      state.taxdocMissingTinOnly = false;
+      state.taxdocStatusFilter = btn.dataset.status;
+    }
+    state.taxdocPage = 1;
+    loadTaxDocs();
+  });
+});
+
+document.getElementById("taxdoc-year-filter").addEventListener("change", (e) => {
+  state.taxdocYearFilter = e.target.value;
+  state.taxdocPage = 1;
+  loadTaxDocs();
+});
+
+document.getElementById("taxdoc-type-filter").addEventListener("change", (e) => {
+  state.taxdocTypeFilter = e.target.value;
+  state.taxdocPage = 1;
+  loadTaxDocs();
+});
+
+async function loadTaxDocs() {
+  const params = new URLSearchParams();
+  if (state.taxdocMissingTinOnly) {
+    params.set("missing_tin", "true");
+  } else if (state.taxdocStatusFilter) {
+    params.set("status", state.taxdocStatusFilter);
+  }
+  if (state.taxdocYearFilter) params.set("tax_year", state.taxdocYearFilter);
+  if (state.taxdocTypeFilter) params.set("document_type", state.taxdocTypeFilter);
+  if (state.taxdocSearchQuery) params.set("q", state.taxdocSearchQuery);
+  params.set("sort", state.taxdocSortField);
+  params.set("order", state.taxdocSortOrder);
+  params.set("page", state.taxdocPage);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+  const url = `/api/tax-documents?${params}`;
+
+  await cachedLoad(
+    url,
+    async () => (await apiFetch(url)).json(),
+    renderTaxDocs
+  );
+}
+
+function renderTaxDocs({ items: docs, total, tax_years: taxYears, document_types: documentTypes, totals }) {
+  state.taxDocumentTypes = documentTypes || [];
+  syncTaxDocSelect("taxdoc-year-filter", taxYears || [], state.taxdocYearFilter, "All years");
+  syncTaxDocSelect("taxdoc-type-filter", state.taxDocumentTypes, state.taxdocTypeFilter, "All forms");
+
+  const totalsEl = document.getElementById("taxdoc-totals");
+  if (totals && total) {
+    const parts = [
+      `${total} form${total === 1 ? "" : "s"}`,
+      `${fmtMoney(totals.amount)} reported`,
+      `${fmtMoney(totals.federal_tax_withheld)} federal tax withheld`,
+    ];
+    if (totals.missing_tin) {
+      parts.push(`${totals.missing_tin} missing a recipient TIN`);
+    }
+    totalsEl.textContent = parts.join(" · ");
+  } else {
+    totalsEl.textContent = "";
+  }
+
+  const tbody = document.querySelector("#taxdoc-table tbody");
+  tbody.innerHTML = docs.map((t) => `
+    <tr data-id="${t.id}">
+      <td>${t.document_type ? escapeHtml(t.document_type) : "—"}</td>
+      <td>${t.tax_year ?? "—"}</td>
+      <td>${t.payer_name ? escapeHtml(t.payer_name) : "(unknown)"}</td>
+      <td>${fmtMoney(t.amount)}</td>
+      <td><span class="badge status-${t.status}">${t.status}</span></td>
+      <td>${fmtPct(t.overall_confidence)}</td>
+    </tr>
+  `).join("") || "<tr><td colspan='6' class='table-empty-row'>No tax documents.</td></tr>";
+
+  tbody.querySelectorAll("tr[data-id]").forEach((row) => {
+    row.addEventListener("click", () => selectTaxDoc(row.dataset.id));
+  });
+
+  document.querySelectorAll("#taxdoc-table th.taxdoc-sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.taxdocSortField);
+    th.dataset.order = th.dataset.sort === state.taxdocSortField ? state.taxdocSortOrder : "";
+  });
+
+  const start = total === 0 ? 0 : (state.taxdocPage - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.taxdocPage * QUEUE_PAGE_SIZE);
+  document.getElementById("taxdoc-queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("taxdoc-queue-prev-page").disabled = state.taxdocPage <= 1;
+  document.getElementById("taxdoc-queue-next-page").disabled = end >= total;
+}
+
+// The year and form dropdowns are populated from whatever the org actually
+// has, so their options change as documents are uploaded. Rebuilt in place
+// rather than blindly re-set, so an already-chosen value isn't dropped on
+// the floor when the list it came from is re-rendered.
+function syncTaxDocSelect(id, values, selected, allLabel) {
+  const select = document.getElementById(id);
+  const options = [`<option value="">${allLabel}</option>`].concat(
+    values.map((v) => `<option value="${escapeHtml(String(v))}">${escapeHtml(String(v))}</option>`)
+  );
+  const markup = options.join("");
+  if (select.innerHTML !== markup) select.innerHTML = markup;
+  select.value = selected;
+}
+
+document.getElementById("taxdoc-search").addEventListener("input", debounce(() => {
+  state.taxdocSearchQuery = document.getElementById("taxdoc-search").value.trim();
+  state.taxdocPage = 1;
+  loadTaxDocs();
+}, 300));
+
+document.querySelectorAll("#taxdoc-table th.taxdoc-sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    if (state.taxdocSortField === th.dataset.sort) {
+      state.taxdocSortOrder = state.taxdocSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.taxdocSortField = th.dataset.sort;
+      state.taxdocSortOrder = "asc";
+    }
+    state.taxdocPage = 1;
+    loadTaxDocs();
+  });
+});
+
+document.getElementById("taxdoc-queue-prev-page").addEventListener("click", () => {
+  if (state.taxdocPage <= 1) return;
+  state.taxdocPage -= 1;
+  loadTaxDocs();
+});
+document.getElementById("taxdoc-queue-next-page").addEventListener("click", () => {
+  state.taxdocPage += 1;
+  loadTaxDocs();
+});
+
+async function selectTaxDoc(id) {
+  state.selectedTaxDocId = id;
+  const res = await apiFetch(`/api/tax-documents/${id}`);
+  const doc = await res.json();
+  renderTaxDocDetail(doc);
+}
+
+function taxDocFieldConf(t, name) {
+  return (t.field_confidence && t.field_confidence[name]) ?? 0;
+}
+
+const TAXDOC_EMPTY_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h3"/></svg>
+    <p class="hint">Select a tax document from the list to review it.</p>
+  </div>
+`;
+
+function renderTaxDocDetail(t) {
+  const el = document.getElementById("taxdoc-queue-detail");
+
+  if (t.status === "queued" || t.status === "processing") {
+    const isPdf = (t.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this document — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="taxdoc-doc-preview-media"></iframe>` : `<img id="taxdoc-doc-preview-media" />`}
+        </div>
+      </div>
+    `;
+    loadTaxDocPreview(t);
+    pollTaxDocWhileProcessing(t.id);
+    return;
+  }
+
+  const lowConf = (name) => taxDocFieldConf(t, name) < 0.85 ? "low-confidence" : "";
+  const isPdf = (t.content_type || "").includes("pdf");
+  const preview = isPdf ? `<iframe id="taxdoc-doc-preview-media"></iframe>` : `<img id="taxdoc-doc-preview-media" />`;
+
+  const statusBanner = t.status === "failed"
+    ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(t.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+    : `<div class="cross-check pass">✓ extraction method: ${t.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(t.overall_confidence)}</div>`;
+
+  // The one defect on these forms that carries a deadline and a penalty:
+  // an information return filed without the payee's TIN is what triggers
+  // an IRS B-notice and backup withholding on future payments.
+  const tinBanner = t.recipient_tin_last4
+    ? ""
+    : `<div class="cross-check warn">⚠ No recipient taxpayer ID was found on this form. Filing an information return without one can trigger an IRS notice and backup withholding — check the source document and fill in the last four digits below.</div>`;
+
+  const typeOptions = (state.taxDocumentTypes.length ? state.taxDocumentTypes : [t.document_type].filter(Boolean))
+    .map((type) => `<option value="${escapeHtml(type)}"${type === t.document_type ? " selected" : ""}>${escapeHtml(type)}</option>`)
+    .join("");
+
+  el.innerHTML = `
+    ${tinBanner}
+    ${statusBanner}
+
+    <div class="detail-grid">
+      <div class="field ${lowConf("document_type")}"><label>Form</label><select id="tf-document_type">${typeOptions}</select></div>
+      <div class="field ${lowConf("tax_year")}"><label>Tax Year</label><input id="tf-tax_year" value="${t.tax_year ?? ""}" /></div>
+      <div class="field ${lowConf("payer_name")}"><label>Payer</label><input id="tf-payer_name" value="${escapeHtml(t.payer_name)}" /></div>
+      <div class="field ${lowConf("recipient_name")}"><label>Recipient</label><input id="tf-recipient_name" value="${escapeHtml(t.recipient_name)}" /></div>
+      <!-- Deliberately no maxlength: a reviewer reads the form and types
+           the whole number, and a 4-character cap would keep the FIRST
+           four characters ("987-" out of 987-65-4321), which is both the
+           wrong digits and short enough that the server then rejects it
+           outright. Let the full value through and let the server narrow
+           it to the correct last four (see routes/taxDocuments.js). -->
+      <div class="field ${lowConf("recipient_tin_last4")}"><label>Recipient TIN</label><input id="tf-recipient_tin_last4" inputmode="numeric" placeholder="Last 4, or paste the full number" value="${escapeHtml(t.recipient_tin_last4)}" /></div>
+      <div class="field ${lowConf("amount")}"><label>Amount</label><input id="tf-amount" value="${t.amount ?? ""}" /></div>
+      <div class="field ${lowConf("federal_tax_withheld")}"><label>Federal Tax Withheld</label><input id="tf-federal_tax_withheld" value="${t.federal_tax_withheld ?? ""}" /></div>
+      <div class="field"><label>Note</label><input id="tf-note" value="${escapeHtml(t.note)}" /></div>
+    </div>
+    <p class="hint">Rekono stores only the last four digits of a taxpayer ID — type or paste the whole number and it's narrowed to the last four on save. The full number stays in the source document.</p>
+
+    <div class="actions">
+      <button class="save" id="tbtn-save">Save Corrections</button>
+      <button class="approve" id="tbtn-approve">Approve</button>
+      <button class="reject" id="tbtn-reject">Reject</button>
+      ${t.status !== "approved" ? `<button class="retry" id="tbtn-retry">Retry Extraction</button>` : ""}
+      <button class="delete" id="tbtn-delete">Delete</button>
+    </div>
+
+    <div class="doc-preview">
+      <h3>Source document</h3>
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("tbtn-save").addEventListener("click", () => saveTaxDocCorrections(t.id));
+  document.getElementById("tbtn-approve").addEventListener("click", () => approveTaxDoc(t.id));
+  document.getElementById("tbtn-reject").addEventListener("click", () => rejectTaxDoc(t.id));
+  document.getElementById("tbtn-retry")?.addEventListener("click", () => retryTaxDoc(t.id));
+  document.getElementById("tbtn-delete").addEventListener("click", () => deleteTaxDoc(t.id));
+
+  loadTaxDocPreview(t);
+}
+
+const TAXDOC_POLL_MAX_ATTEMPTS = 120;
+
+function pollTaxDocWhileProcessing(id, attempt = 0) {
+  if (attempt >= TAXDOC_POLL_MAX_ATTEMPTS) {
+    if (state.selectedTaxDocId === id) {
+      const banner = document.querySelector("#taxdoc-queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
+  setTimeout(async () => {
+    if (state.selectedTaxDocId !== id) return;
+    const res = await apiFetch(`/api/tax-documents/${id}`);
+    const t = await res.json();
+    if (state.selectedTaxDocId !== id) return;
+    if (t.status === "queued" || t.status === "processing") {
+      pollTaxDocWhileProcessing(id, attempt + 1);
+    } else {
+      renderTaxDocDetail(t);
+      invalidateCache("/api/tax-documents?");
+      loadTaxDocs();
+    }
+  }, 3000);
+}
+
+async function loadTaxDocPreview(t) {
+  const media = document.getElementById("taxdoc-doc-preview-media");
+  if (!media) return;
+  if (taxdocDocPreviewObjectUrl) {
+    URL.revokeObjectURL(taxdocDocPreviewObjectUrl);
+    taxdocDocPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/tax-documents/${t.id}/file`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
+    const blob = await res.blob();
+    taxdocDocPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = taxdocDocPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) }));
+  }
+}
+
+async function saveTaxDocCorrections(id) {
+  const yearRaw = document.getElementById("tf-tax_year").value.trim();
+  const year = yearRaw === "" ? null : parseInt(yearRaw, 10);
+  if (yearRaw !== "" && !Number.isFinite(year)) {
+    await alertDialog("Couldn't save", "Tax year must be a four-digit year, e.g. 2025.");
+    return;
+  }
+
+  const payload = {
+    document_type: document.getElementById("tf-document_type").value,
+    tax_year: year,
+    payer_name: document.getElementById("tf-payer_name").value,
+    recipient_name: document.getElementById("tf-recipient_name").value,
+    recipient_tin_last4: document.getElementById("tf-recipient_tin_last4").value,
+    amount: numOrNull(document.getElementById("tf-amount").value),
+    federal_tax_withheld: numOrNull(document.getElementById("tf-federal_tax_withheld").value),
+    note: document.getElementById("tf-note").value,
+  };
+
+  const res = await apiFetch(`/api/tax-documents/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    // `detail` is a plain sentence for the route's own validation (e.g. a
+    // TIN too short to narrow) and a zod issues array for a schema
+    // failure -- both reach the reviewer as something readable.
+    const detail = typeof body.detail === "string" ? body.detail : body.detail?.[0]?.message;
+    await alertDialog("Couldn't save", detail || "Could not save these corrections.");
+    return;
+  }
+  renderTaxDocDetail(body);
+  invalidateCache("/api/tax-documents?");
+  loadTaxDocs();
+}
+
+async function approveTaxDoc(id) {
+  const res = await apiFetch(`/api/tax-documents/${id}/approve`, { method: "POST" });
+  const t = await res.json();
+  renderTaxDocDetail(t);
+  invalidateCache("/api/tax-documents?");
+  loadTaxDocs();
+}
+
+async function rejectTaxDoc(id) {
+  const res = await apiFetch(`/api/tax-documents/${id}/reject`, { method: "POST" });
+  const t = await res.json();
+  renderTaxDocDetail(t);
+  invalidateCache("/api/tax-documents?");
+  loadTaxDocs();
+}
+
+async function retryTaxDoc(id) {
+  const res = await apiFetch(`/api/tax-documents/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't retry extraction", body.detail || "Could not retry this document.");
+    return;
+  }
+  renderTaxDocDetail(body);
+  invalidateCache("/api/tax-documents?");
+  loadTaxDocs();
+}
+
+async function deleteTaxDoc(id) {
+  const ok = await confirmDialog("Delete this tax document?", "This can't be undone from the review UI.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+
+  const res = await apiFetch(`/api/tax-documents/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't delete tax document", body.detail || "Could not delete this document.");
+    return;
+  }
+
+  if (state.selectedTaxDocId === id) {
+    state.selectedTaxDocId = null;
+    document.getElementById("taxdoc-queue-detail").innerHTML = TAXDOC_EMPTY_DETAIL;
+  }
+  invalidateCache("/api/tax-documents?");
+  loadTaxDocs();
 }
 
 // ---- Matching ----

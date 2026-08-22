@@ -1,6 +1,7 @@
 // Populates a brand-new demo Organization with a realistic, fully worked
-// dataset across all four document pipelines -- invoices, expense receipts,
-// vendor documents, and leases -- plus matching data and an audit trail.
+// dataset across all five document pipelines -- invoices, expense receipts,
+// vendor documents, leases, and tax documents -- plus matching data and an
+// audit trail.
 // Backs POST /api/demo/login (routes/demo.js): a public, no-signup sandbox
 // for investors/prospects to click straight into a populated instance.
 //
@@ -30,6 +31,7 @@ import {
   ExpenseReceipt,
   VendorDocument,
   Lease,
+  TaxDocument,
 } from "./models/index.js";
 
 // ---- minimal hand-rolled single-page PDF builder ----
@@ -39,7 +41,10 @@ import {
 // real byte offsets for its own xref table, so the result is a genuinely
 // valid PDF any viewer/OCR step can open, not just a byte string that
 // happens to start with "%PDF".
-function buildPdf(lines) {
+// Exported so tests that need a genuinely OCR-able document (see
+// taxDocPipeline.test.js) can build one instead of checking in a binary
+// fixture -- there's no second implementation of this to drift from.
+export function buildPdf(lines) {
   const escape = (s) => String(s).replace(/([()\\])/g, "\\$1");
   const body = lines.map((line, i) => `${i === 0 ? "72 720" : "0 -18"} Td (${escape(line)}) Tj`).join("\n");
   const stream = `BT /F1 12 Tf\n${body}\nET`;
@@ -355,6 +360,48 @@ export async function seedDemoOrg() {
     overallConfidence: 0.64,
   });
 
+  // ---- tax documents ----
+  // Last tax year rather than the current one -- these forms arrive in
+  // January reporting on the year just ended, so a demo showing the
+  // current year would look wrong to anyone who files them.
+  const lastTaxYear = new Date().getUTCFullYear() - 1;
+  await seedTaxDocument(org, owner, {
+    status: "approved",
+    documentType: "1099-NEC",
+    taxYear: lastTaxYear,
+    payerName: "Brightline Systems Inc.",
+    recipientName: "Northwind Consulting LLC",
+    recipientTinLast4: "4417",
+    amount: 84250,
+    federalTaxWithheld: 0,
+    overallConfidence: 0.94,
+  });
+  await seedTaxDocument(org, member, {
+    status: "extracted",
+    documentType: "1099-K",
+    taxYear: lastTaxYear,
+    payerName: "Stripe Payments Company",
+    recipientName: "Northwind Consulting LLC",
+    recipientTinLast4: "4417",
+    amount: 212880.44,
+    federalTaxWithheld: 0,
+    overallConfidence: 0.89,
+  });
+  // Deliberately missing its recipient TIN, so the "Missing recipient TIN"
+  // filter and the detail-view B-notice warning both have something real
+  // to show.
+  await seedTaxDocument(org, member, {
+    status: "needs_review",
+    documentType: "1099-MISC",
+    taxYear: lastTaxYear,
+    payerName: "Cedar Ridge Property Management",
+    recipientName: "Northwind Consulting LLC",
+    recipientTinLast4: "",
+    amount: 18000,
+    federalTaxWithheld: 5400,
+    overallConfidence: 0.58,
+  });
+
   return { org, user: owner };
 }
 
@@ -548,4 +595,57 @@ async function seedLease(org, actorUser, overrides) {
   }
 
   return lease;
+}
+
+async function seedTaxDocument(org, actorUser, overrides) {
+  const storagePath = writeDemoFile([
+    `FORM ${overrides.documentType} - Tax Year ${overrides.taxYear}`,
+    `PAYER: ${overrides.payerName}`,
+    `RECIPIENT: ${overrides.recipientName}`,
+    // Masked in the demo's own synthetic source document too -- there's no
+    // reason for a sample file to carry a full SSN-shaped string.
+    `RECIPIENT'S TIN: ${overrides.recipientTinLast4 ? `***-**-${overrides.recipientTinLast4}` : "(not provided)"}`,
+  ]);
+  const doc = await TaxDocument.create({
+    orgId: org.id,
+    originalFilename: `${overrides.documentType}_${overrides.payerName.replace(/\s+/g, "_")}.pdf`,
+    storagePath,
+    contentType: "application/pdf",
+    extractionMethod: "llm",
+    fieldConfidence: {
+      document_type: overrides.overallConfidence,
+      tax_year: overrides.overallConfidence,
+      payer_name: overrides.overallConfidence,
+      amount: overrides.overallConfidence,
+    },
+    ...overrides,
+  });
+
+  await AuditLog.create({
+    orgId: org.id,
+    userId: actorUser.id,
+    taxDocumentId: doc.id,
+    action: "uploaded",
+    actor: actorUser.email,
+    details: { filename: doc.originalFilename },
+  });
+  await AuditLog.create({
+    orgId: org.id,
+    taxDocumentId: doc.id,
+    action: "extraction_completed",
+    actor: "system",
+    details: { method: doc.extractionMethod, overall_confidence: overrides.overallConfidence },
+  });
+  if (doc.status === "approved" || doc.status === "rejected") {
+    await AuditLog.create({
+      orgId: org.id,
+      userId: actorUser.id,
+      taxDocumentId: doc.id,
+      action: doc.status,
+      actor: actorUser.email,
+      details: {},
+    });
+  }
+
+  return doc;
 }
