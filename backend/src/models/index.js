@@ -14,6 +14,8 @@ import { Invite } from "./Invite.js";
 import { ExpenseReceipt } from "./ExpenseReceipt.js";
 import { VendorDocument } from "./VendorDocument.js";
 import { Lease } from "./Lease.js";
+import { ClosePeriod } from "./ClosePeriod.js";
+import { CloseTask } from "./CloseTask.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -40,6 +42,11 @@ AuditLog.belongsTo(VendorDocument, { foreignKey: "vendorDocumentId" });
 
 Lease.hasMany(AuditLog, { foreignKey: "leaseId", as: "auditLogs", onDelete: "CASCADE", hooks: true });
 AuditLog.belongsTo(Lease, { foreignKey: "leaseId" });
+
+// Deleting a close period takes its checklist with it -- a task has no
+// meaning outside the month it belongs to.
+ClosePeriod.hasMany(CloseTask, { foreignKey: "closePeriodId", as: "tasks", onDelete: "CASCADE", hooks: true });
+CloseTask.belongsTo(ClosePeriod, { foreignKey: "closePeriodId" });
 
 Invoice.hasMany(MatchResult, {
   foreignKey: "invoiceId",
@@ -143,4 +150,6 @@ export {
   ExpenseReceipt,
   VendorDocument,
   Lease,
+  ClosePeriod,
+  CloseTask,
 };

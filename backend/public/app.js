@@ -113,6 +113,7 @@ function switchTab(name) {
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
+  if (name === "close") loadClose();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -2085,6 +2086,218 @@ function renderMatchResults({ results, invoices }) {
     `;
   }).join("") || "<tr><td colspan='6' class='table-empty-row'>No matching results yet.</td></tr>";
 }
+
+// ---- Month-End Close ----
+// Two halves, deliberately shown differently (see routes/close.js): the
+// readiness checks are derived from live data and can't be ticked, so
+// they're rendered as read-only findings that link to the tab where you'd
+// actually fix them; the manual tasks are real checkboxes someone attests
+// to, so they carry who completed them and when.
+
+// Tracks which period the user is looking at, so a re-render after ticking
+// a task doesn't snap them back to the default period.
+let selectedClosePeriodMonth = null;
+
+function closeStatus(message, isError = false) {
+  const el = document.getElementById("close-status");
+  el.textContent = message || "";
+  el.style.display = message ? "block" : "none";
+  el.classList.toggle("close-status-error", Boolean(isError));
+}
+
+async function loadClose() {
+  closeStatus("");
+  const query = selectedClosePeriodMonth ? `?period_month=${encodeURIComponent(selectedClosePeriodMonth)}` : "";
+  const [closeRes, periodsRes] = await Promise.all([
+    apiFetch(`/api/close${query}`),
+    apiFetch("/api/close/periods"),
+  ]);
+  const data = await closeRes.json();
+  const periods = await periodsRes.json();
+  renderClose(data, periods);
+}
+
+function renderClose(data, periods) {
+  const select = document.getElementById("close-period-select");
+  select.innerHTML = periods
+    .map((p) => `<option value="${p.period_month}">${p.period_month}${p.status === "closed" ? " (closed)" : ""}</option>`)
+    .join("");
+  select.style.display = periods.length ? "inline-block" : "none";
+  if (data.period) select.value = data.period.period_month;
+
+  const monthInput = document.getElementById("close-new-period-month");
+  if (!monthInput.value) monthInput.value = new Date().toISOString().slice(0, 7);
+
+  const body = document.getElementById("close-body");
+
+  if (!data.period) {
+    body.innerHTML = `
+      <div class="panel">
+        <div class="empty-state">
+          <p class="hint">No close period open yet. Open one for ${escapeHtml(data.suggested_period_month)} to start working through the checklist.</p>
+        </div>
+      </div>`;
+    monthInput.value = monthInput.value || data.suggested_period_month;
+    return;
+  }
+
+  const p = data.period;
+  const isClosed = p.status === "closed";
+
+  const readinessRows = p.readiness
+    .map(
+      (c) => `
+      <button type="button" class="close-check ${c.ok ? "is-ok" : "is-blocking"}" data-tab="${c.tab}" ${c.ok ? "disabled" : ""}>
+        <span class="close-check-mark">${c.ok ? "✓" : "!"}</span>
+        <span class="close-check-label">${escapeHtml(c.label)}</span>
+        <span class="close-check-count">${c.count}</span>
+      </button>`
+    )
+    .join("");
+
+  const taskRows = p.tasks
+    .map(
+      (t) => `
+      <li class="close-task${t.done ? " is-done" : ""}">
+        <label>
+          <input type="checkbox" class="close-task-toggle" data-id="${t.id}" ${t.done ? "checked" : ""} ${isClosed ? "disabled" : ""} />
+          <span class="close-task-title">${escapeHtml(t.title)}</span>
+        </label>
+        <span class="close-task-meta">${
+          t.done && t.completed_by
+            ? `${escapeHtml(t.completed_by)} · ${new Date(t.completed_at).toLocaleDateString()}`
+            : ""
+        }</span>
+        ${isClosed ? "" : `<button type="button" class="close-task-delete" data-id="${t.id}" aria-label="Delete task">&times;</button>`}
+      </li>`
+    )
+    .join("");
+
+  body.innerHTML = `
+    <div class="close-banner ${isClosed ? "is-closed" : p.blocking_count ? "is-blocking" : "is-ready"}">
+      ${
+        isClosed
+          ? `<strong>${escapeHtml(p.period_month)} is closed.</strong> Signed off by ${escapeHtml(p.closed_by || "—")} on ${
+              p.closed_at ? new Date(p.closed_at).toLocaleDateString() : "—"
+            }.`
+          : p.blocking_count
+          ? // "checks", not "items": this is the number of failing checks,
+            // which is not the number of underlying documents behind them.
+            `<strong>${p.blocking_count} check${p.blocking_count === 1 ? "" : "s"} still outstanding.</strong> You can still close with a known exception — whatever is left gets recorded on the audit trail.`
+          : `<strong>Everything checks out.</strong> ${p.tasks_remaining ? `${p.tasks_remaining} manual task${p.tasks_remaining === 1 ? "" : "s"} left.` : "Ready to sign off."}`
+      }
+      <button type="button" id="close-toggle-period-btn" data-id="${p.id}" data-action="${isClosed ? "reopen" : "close"}">
+        ${isClosed ? "Reopen period" : "Close this period"}
+      </button>
+    </div>
+
+    <div class="panel">
+      <h3>Automatic checks</h3>
+      <p class="hint">Derived from your data every time this page loads — these can't be ticked off by hand, only resolved.</p>
+      <div class="close-checks">${readinessRows}</div>
+    </div>
+
+    <div class="panel">
+      <h3>Checklist</h3>
+      <ul class="close-tasks">${taskRows || `<li class="hint">No tasks left on this checklist.</li>`}</ul>
+      ${
+        isClosed
+          ? ""
+          : `<form id="close-add-task-form">
+               <input type="text" id="close-new-task" placeholder="Add a task…" maxlength="512" required autocomplete="off" />
+               <button type="submit">Add</button>
+             </form>`
+      }
+    </div>`;
+
+  body.querySelectorAll(".close-check[data-tab]:not([disabled])").forEach((b) =>
+    b.addEventListener("click", () => switchTab(b.dataset.tab))
+  );
+  body.querySelectorAll(".close-task-toggle").forEach((cb) =>
+    cb.addEventListener("change", () => updateCloseTask(cb.dataset.id, { done: cb.checked }))
+  );
+  body.querySelectorAll(".close-task-delete").forEach((b) =>
+    b.addEventListener("click", () => deleteCloseTask(b.dataset.id))
+  );
+
+  const addForm = document.getElementById("close-add-task-form");
+  if (addForm) {
+    addForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("close-new-task");
+      const title = input.value.trim();
+      if (!title) return;
+      const res = await apiFetch(`/api/close/periods/${p.id}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) return closeStatus((await res.json()).detail || "Could not add that task.", true);
+      input.value = "";
+      loadClose();
+    });
+  }
+
+  const toggleBtn = document.getElementById("close-toggle-period-btn");
+  toggleBtn.addEventListener("click", async () => {
+    const action = toggleBtn.dataset.action;
+    if (action === "close") {
+      const ok = await confirmDialog(
+        `Close ${p.period_month}?`,
+        p.blocking_count
+          ? `${p.blocking_count} automatic check${p.blocking_count === 1 ? " is" : "s are"} still failing. Closing anyway records exactly what was outstanding on the audit trail.`
+          : "This signs off the month and freezes its checklist. You can reopen it later if you need to."
+      );
+      if (!ok) return;
+    }
+    const res = await apiFetch(`/api/close/periods/${toggleBtn.dataset.id}/${action}`, { method: "POST" });
+    if (!res.ok) return closeStatus((await res.json()).detail || "Could not update this period.", true);
+    loadClose();
+  });
+}
+
+async function updateCloseTask(id, patch) {
+  const res = await apiFetch(`/api/close/tasks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return closeStatus((await res.json()).detail || "Could not update that task.", true);
+  loadClose();
+}
+
+async function deleteCloseTask(id) {
+  const res = await apiFetch(`/api/close/tasks/${id}`, { method: "DELETE" });
+  if (!res.ok) return closeStatus((await res.json()).detail || "Could not delete that task.", true);
+  loadClose();
+}
+
+document.getElementById("close-period-select").addEventListener("change", (e) => {
+  selectedClosePeriodMonth = e.target.value;
+  loadClose();
+});
+
+document.getElementById("close-open-period-btn").addEventListener("click", async () => {
+  const input = document.getElementById("close-new-period-month");
+  // Prefilled with the current month, but left editable: a close is often
+  // worked well into the following month, and older months get backfilled.
+  const periodMonth = input.value || new Date().toISOString().slice(0, 7);
+
+  const res = await apiFetch("/api/close/periods", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ period_month: periodMonth }),
+  });
+  if (!res.ok) {
+    const body = await res.json();
+    return closeStatus(
+      typeof body.detail === "string" ? body.detail : "That doesn't look like a valid month (use YYYY-MM).",
+      true
+    );
+  }
+  selectedClosePeriodMonth = periodMonth;
+  loadClose();
+});
 
 // ---- QuickBooks bank reconciliation ----
 // Surfaces QuickBooks bank/card transactions that look like payment for a

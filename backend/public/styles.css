@@ -1755,6 +1755,146 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   .ask-widget-panel { background: var(--ink-900); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
+/* ---------- month-end close ---------- */
+.close-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.2rem;
+}
+.close-head-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+/* The period picker ("which period am I looking at") and the open-a-period
+   control sit side by side and would otherwise read as two versions of the
+   same control. A divider before the month input separates "view" from
+   "create" -- only applied when the select is actually present, since with
+   no periods yet there's nothing to divide it from. */
+.close-head-actions > select + input[type="month"] {
+  margin-left: 0.5rem;
+  border-left: 1px solid var(--line);
+  box-shadow: -0.5rem 0 0 -0.49rem var(--line);
+}
+.close-head-actions select,
+.close-head-actions input[type="month"] {
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--ink-900);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+
+.close-status-error { color: var(--red); }
+
+/* The banner carries the period's whole state at a glance, so its tone is
+   the fastest read on the page: green when there's nothing outstanding,
+   amber when closing would mean signing off with a known exception. */
+.close-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.1rem;
+  border-radius: 11px;
+  margin-bottom: 1.1rem;
+  font-size: 0.88rem;
+  border: 1px solid var(--line);
+  background: var(--ink-850);
+}
+.close-banner.is-ready { background: rgba(23, 128, 72, 0.09); border-color: rgba(23, 128, 72, 0.28); }
+.close-banner.is-blocking { background: rgba(150, 101, 15, 0.09); border-color: rgba(150, 101, 15, 0.28); }
+.close-banner.is-closed { background: var(--ink-800); }
+.close-banner button { flex: none; }
+
+.close-checks { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.close-check {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.86rem;
+}
+/* A passing check is a statement, not an action -- it's disabled, so it
+   must not keep the interactive affordances (pointer, hover lift) that
+   would imply there's somewhere to go. */
+.close-check.is-ok { color: var(--muted); cursor: default; opacity: 0.85; }
+.close-check.is-ok:hover { background: transparent; box-shadow: none; transform: none; }
+.close-check.is-blocking:hover { background: var(--ink-850); border-color: var(--line); box-shadow: none; transform: none; }
+
+.close-check-mark {
+  flex: none;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.close-check.is-ok .close-check-mark { background: rgba(23, 128, 72, 0.15); color: var(--green); }
+.close-check.is-blocking .close-check-mark { background: rgba(150, 101, 15, 0.16); color: var(--amber); }
+
+.close-check-label { flex: 1; min-width: 0; }
+.close-check-count {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.close-check.is-blocking .close-check-count { color: var(--amber); font-weight: 600; }
+
+.close-tasks { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+
+.close-task {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+}
+.close-task:hover { background: var(--ink-850); }
+.close-task label { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 0; margin: 0; cursor: pointer; }
+.close-task input[type="checkbox"] { flex: none; }
+.close-task-title { font-size: 0.88rem; }
+.close-task.is-done .close-task-title { color: var(--muted); text-decoration: line-through; }
+.close-task-meta { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); flex: none; }
+
+.close-task-delete {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.35rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.close-task:hover .close-task-delete { opacity: 1; }
+.close-task-delete:hover { color: var(--red); background: none; box-shadow: none; transform: none; }
+/* Keyboard users never trigger :hover, so the control has to appear on
+   focus too or it's unreachable without a mouse. */
+.close-task-delete:focus-visible { opacity: 1; }
+
+#close-add-task-form { display: flex; gap: 0.5rem; margin: 0; }
+#close-add-task-form input { flex: 1; }
+
+@media (max-width: 760px) {
+  .close-head { flex-direction: column; }
+  .close-head-actions { width: 100%; }
+}
+
 /* ---------- legal pages (privacy / terms) ---------- */
 .legal-page {
   max-width: 760px;
