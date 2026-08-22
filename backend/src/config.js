@@ -82,7 +82,7 @@ export const settings = {
   // authenticated fetch/XHR calls using a token if one ever leaked via XSS
   // elsewhere.
   allowedOrigins: (
-    process.env.ALLOWED_ORIGINS || "https://winnersfrown.github.io,https://rekono-crv7.onrender.com,http://localhost:8000"
+    process.env.ALLOWED_ORIGINS || "https://winnersfrown.github.io,https://rekono-ai-new.onrender.com,http://localhost:8000"
   )
     .split(",")
     .map((origin) => origin.trim())
