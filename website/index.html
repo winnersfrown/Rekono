@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rekono — Invoice extraction and reconciliation, checked before it hits your books</title>
+<title>Rekono: Invoice extraction and reconciliation, checked before it hits your books</title>
 <meta name="description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
 <link rel="canonical" href="https://winnersfrown.github.io/Rekono/">
 <meta name="theme-color" content="#f4f7fd">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Rekono">
-<meta property="og:title" content="Rekono — Invoice extraction and reconciliation, checked before it hits your books">
+<meta property="og:title" content="Rekono: Invoice extraction and reconciliation, checked before it hits your books">
 <meta property="og:description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
 <meta property="og:url" content="https://winnersfrown.github.io/Rekono/">
 <meta property="og:image" content="https://winnersfrown.github.io/Rekono/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Rekono — Every invoice, read, checked, and reconciled before it touches your books.">
+<meta property="og:image:alt" content="Rekono. Every invoice, read, checked, and reconciled before it touches your books.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Rekono — Invoice extraction and reconciliation, checked before it hits your books">
+<meta name="twitter:title" content="Rekono: Invoice extraction and reconciliation, checked before it hits your books">
 <meta name="twitter:description" content="Turn PDF and scanned invoices into structured, confidence-scored data. Anything the AI isn't sure about gets flagged for review before it hits your books.">
 <meta name="twitter:image" content="https://winnersfrown.github.io/Rekono/og-image.png">
 <style>
@@ -51,7 +51,7 @@
   }
 
   /* ---------------------------------------------------------------------
-     Rekono marketing page — "virtual ledger" world: light paper ground,
+     Rekono marketing page: "virtual ledger" world, light paper ground,
      electric-blue accent, slab-serif thesis type paired with an engineered
      sans and a mono face for the numbers Rekono itself extracts. Colors are
      painted explicitly (no OS light/dark switching) -- the blue-on-paper
@@ -519,11 +519,24 @@
   }
 
   /* ---------- features ---------- */
+  /* A bento grid, not a uniform 3-across shelf of equal cards -- the two
+     cards that carry this section's actual argument (trust via confidence
+     scoring, and the audit trail that makes it defensible to a controller)
+     get more width than the three cards underneath them that are closer
+     to "how it works" recap, and the export card closes the section full
+     width rather than sitting cramped as a sixth equal box. Twelve tracks
+     so every card's span is a clean fraction rather than an odd number. */
   .feature-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(12, 1fr);
     gap: 14px;
   }
+  .feature-card { grid-column: span 12; }
+  .feature-card.f-trust { grid-column: span 5; }
+  .feature-card.f-audit { grid-column: span 7; }
+  .feature-card.f-extract { grid-column: span 3; }
+  .feature-card.f-review { grid-column: span 5; }
+  .feature-card.f-match { grid-column: span 4; }
   .feature-card {
     background: var(--glass-bg);
     backdrop-filter: var(--glass-blur);
@@ -547,11 +560,28 @@
   }
   .feature-card h3 { font-size: 1.08rem; font-family: var(--font-body); font-weight: 700; margin-bottom: 10px; }
   .feature-card p { color: var(--paper-dim); font-size: 0.92rem; }
+  /* The two featured cards carry a touch more presence than the rest of
+     the grid -- larger heading, blue-tinted glass -- so the wider span
+     reads as "this is the point" rather than just "this div is bigger". */
+  .feature-card.f-trust, .feature-card.f-audit {
+    background: var(--glass-tint);
+    border-color: rgba(75, 134, 247, 0.3);
+  }
+  .feature-card.f-trust h3, .feature-card.f-audit h3 { font-size: 1.24rem; }
+  .feature-card.f-trust p, .feature-card.f-audit p { font-size: 0.96rem; max-width: 46ch; }
   @media (max-width: 900px) {
-    .feature-grid { grid-template-columns: 1fr 1fr; }
+    .feature-card,
+    .feature-card.f-trust, .feature-card.f-audit,
+    .feature-card.f-extract, .feature-card.f-review, .feature-card.f-match {
+      grid-column: span 6;
+    }
   }
   @media (max-width: 620px) {
-    .feature-grid { grid-template-columns: 1fr; }
+    .feature-card,
+    .feature-card.f-trust, .feature-card.f-audit,
+    .feature-card.f-extract, .feature-card.f-review, .feature-card.f-match {
+      grid-column: span 12;
+    }
   }
 
   /* ---------- pricing ---------- */
@@ -947,12 +977,12 @@
       <div>
         <span class="eyebrow">Accounts payable, read by a model, checked by you</span>
         <h1>Every invoice, read, checked, and reconciled before it touches your books.</h1>
-        <p class="lede">Rekono turns PDFs and scanned invoices into structured, audited records — extracting vendor, totals, and line items, flagging anything it isn't confident about, and matching each one against your POs or bank statement.</p>
+        <p class="lede">Rekono turns PDFs and scanned invoices into structured, audited records: extracting vendor, totals, and line items, flagging anything it isn't confident about, and matching each one against your POs or bank statement.</p>
         <div class="cta-row">
-          <a href="https://rekono-ai-new.onrender.com/" class="btn btn-primary">Get started free — no card required</a>
-          <a href="#how-it-works" class="btn btn-ghost">See how it works ↓</a>
+          <a href="https://rekono-ai-new.onrender.com/" class="btn btn-primary">Get started free, no card required</a>
+          <a href="#how-it-works" class="btn btn-ghost">See how it works</a>
         </div>
-        <p class="fineprint">AI-powered extraction included — no API key or setup required.</p>
+        <p class="fineprint">AI-powered extraction included, no API key or setup required.</p>
         <p class="hero-demo-link"><a href="https://rekono-ai-new.onrender.com/?demo=1">Or explore a live demo with sample data, no signup required →</a></p>
       </div>
 
@@ -961,14 +991,14 @@
         <div class="doc-mock-head">
           <div>
             <span class="doc-tag">Invoice · INV-2026-0007</span>
-            <div class="vendor">Acme Supplies Inc</div>
+            <div class="vendor">Dunmore Hardware Co.</div>
           </div>
           <span class="doc-tag">01/15/2026</span>
         </div>
 
         <div class="field-row">
           <span class="label">VENDOR_NAME</span>
-          <span><span class="value">Acme Supplies Inc</span><span class="conf conf-high">98%</span></span>
+          <span><span class="value">Dunmore Hardware Co.</span><span class="conf conf-high">98%</span></span>
         </div>
         <div class="field-row">
           <span class="label">PO_REFERENCE</span>
@@ -985,7 +1015,7 @@
 
         <div class="field-flag-note">
           <span>⚑</span>
-          <span>Due date confidence below threshold — routed to review queue for a one-click check.</span>
+          <span>Due date confidence below threshold, routed to review queue for a one-click check.</span>
         </div>
 
         <div class="doc-mock-foot">
@@ -1003,7 +1033,7 @@
       <div class="proof-item reveal">
         <span class="proof-num">Cross-checked</span>
         <h3>Line items vs. totals, every time</h3>
-        <p>Every extraction is checked against its own math before it reaches you — not just scored, verified.</p>
+        <p>Every extraction is checked against its own math before it reaches you: not just scored, verified.</p>
       </div>
       <div class="proof-item reveal">
         <span class="proof-num">Confidence-scored</span>
@@ -1024,7 +1054,7 @@
       <div class="block-head reveal">
         <span class="eyebrow">How it works</span>
         <h2>One pipeline, from inbox to reconciled record.</h2>
-        <p class="sub">Five steps, in order — each one a real stage the document passes through, not a marketing simplification.</p>
+        <p class="sub">Five steps, in order: each one a real stage the document passes through, not a marketing simplification.</p>
       </div>
 
       <div class="steps">
@@ -1032,7 +1062,7 @@
           <div class="step-num-col"><span class="step-num">01</span><span class="step-rail"></span></div>
           <div class="step-body reveal">
             <h3>Upload</h3>
-            <p>Drop in a PDF or a photo of an invoice, one at a time or as a batch. It's queued immediately and processed in the background — nothing blocks on the upload.</p>
+            <p>Drop in a PDF or a photo of an invoice, one at a time or as a batch. It's queued immediately and processed in the background; nothing blocks on the upload.</p>
             <span class="step-tag">async job queue</span>
           </div>
         </div>
@@ -1040,7 +1070,7 @@
           <div class="step-num-col"><span class="step-num">02</span><span class="step-rail"></span></div>
           <div class="step-body reveal">
             <h3>Read</h3>
-            <p>OCR lifts the raw text from the page, then a language model parses it into a fixed schema — vendor, dates, PO reference, line items, tax, and totals.</p>
+            <p>OCR lifts the raw text from the page, then a language model parses it into a fixed schema: vendor, dates, PO reference, line items, tax, and totals.</p>
             <span class="step-tag">OCR + structured extraction</span>
           </div>
         </div>
@@ -1056,7 +1086,7 @@
           <div class="step-num-col"><span class="step-num">04</span><span class="step-rail"></span></div>
           <div class="step-body reveal">
             <h3>Review</h3>
-            <p>Anything below the confidence bar — or that fails the cross-check — lands in the review queue. Source document and extracted fields sit side by side; corrections are one click and get logged.</p>
+            <p>Anything below the confidence bar, or that fails the cross-check, lands in the review queue. Source document and extracted fields sit side by side; corrections are one click and get logged.</p>
             <span class="step-tag">human-in-the-loop</span>
           </div>
         </div>
@@ -1064,7 +1094,7 @@
           <div class="step-num-col"><span class="step-num">05</span></div>
           <div class="step-body reveal">
             <h3>Reconcile &amp; export</h3>
-            <p>Approved invoices are fuzzy-matched against your PO list or bank statement — vendor name, amount tolerance, date window — then exported to CSV or Excel, or synced onward.</p>
+            <p>Approved invoices are fuzzy-matched against your PO list or bank statement (vendor name, amount tolerance, date window), then exported to CSV or Excel, or synced onward.</p>
             <span class="step-tag">matching engine + export</span>
           </div>
         </div>
@@ -1078,39 +1108,39 @@
       <div class="block-head reveal">
         <span class="eyebrow">Features</span>
         <h2>Built for the part of AP automation people don't trust yet.</h2>
-        <p class="sub">Every feature here exists because "fully autonomous" isn't a real option for your books — "flags what needs a human" is.</p>
+        <p class="sub">Every feature here exists because "fully autonomous" isn't a real option for your books. "Flags what needs a human" is.</p>
       </div>
 
       <div class="feature-grid">
-        <div class="feature-card reveal">
-          <span class="f-tag">Extraction</span>
-          <h3>Structured, every time</h3>
-          <p>Vendor, invoice number, dates, PO reference, line items, tax, and totals — pulled into one consistent schema regardless of layout.</p>
-        </div>
-        <div class="feature-card reveal">
+        <div class="feature-card f-trust reveal">
           <span class="f-tag">Trust</span>
           <h3>Confidence scoring</h3>
           <p>Every field carries its own score. A cross-check of line items against the stated total catches what confidence alone misses.</p>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card f-audit reveal">
+          <span class="f-tag">Compliance</span>
+          <h3>Full audit trail</h3>
+          <p>Every extraction, correction, approval, and match decision is logged: who made it, when, and exactly what changed.</p>
+        </div>
+        <div class="feature-card f-extract reveal">
+          <span class="f-tag">Extraction</span>
+          <h3>Structured, every time</h3>
+          <p>Vendor, invoice number, dates, PO reference, line items, tax, and totals: pulled into one consistent schema regardless of layout.</p>
+        </div>
+        <div class="feature-card f-review reveal">
           <span class="f-tag">Review</span>
           <h3>Human review queue</h3>
           <p>Low-confidence fields are flagged, not shipped. Correct them side by side with the source document in a single pass.</p>
         </div>
-        <div class="feature-card reveal">
+        <div class="feature-card f-match reveal">
           <span class="f-tag">Reconciliation</span>
           <h3>Fuzzy matching engine</h3>
-          <p>Vendor names, amounts, and dates matched against your POs or bank statement, with tolerance rules — not exact-string demands.</p>
-        </div>
-        <div class="feature-card reveal">
-          <span class="f-tag">Compliance</span>
-          <h3>Full audit trail</h3>
-          <p>Every extraction, correction, approval, and match decision is logged — who made it, when, and exactly what changed.</p>
+          <p>Vendor names, amounts, and dates matched against your POs or bank statement, with tolerance rules instead of exact-string demands.</p>
         </div>
         <div class="feature-card reveal">
           <span class="f-tag">Output</span>
           <h3>Export &amp; sync</h3>
-          <p>CSV and Excel today, built on the same data your ledger needs next — QuickBooks, Xero, and NetSuite sync are on the roadmap.</p>
+          <p>CSV and Excel today, built on the same data your ledger needs next. QuickBooks, Xero, and NetSuite sync are on the roadmap.</p>
         </div>
       </div>
     </div>
@@ -1122,7 +1152,7 @@
       <div class="block-head reveal">
         <span class="eyebrow">Pricing</span>
         <h2>Flat monthly plans with a document cap.</h2>
-        <p class="sub">No per-document metering to watch nervously. Every plan runs the same extraction, review, and matching engine — you're paying for volume and support.</p>
+        <p class="sub">No per-document metering to watch nervously. Every plan runs the same extraction, review, and matching engine; you're paying for volume and support.</p>
       </div>
 
       <div class="billing-toggle reveal" role="group" aria-label="Billing period">
@@ -1136,7 +1166,7 @@
           <h3>For a single AP owner</h3>
           <div class="price price-monthly">$99<span class="per">/mo</span></div>
           <div class="price price-annual">$79<span class="per">/mo, billed annually</span></div>
-          <div class="price-annual-detail">$948/yr <span class="save">— save $240 (20%)</span></div>
+          <div class="price-annual-detail">$948/yr <span class="save">, save $240 (20%)</span></div>
           <div class="cap">Up to 150 documents/mo</div>
           <ul>
             <li>14-day free trial</li>
@@ -1153,7 +1183,7 @@
           <h3>For a small AP team</h3>
           <div class="price price-monthly">$249<span class="per">/mo</span></div>
           <div class="price price-annual">$199<span class="per">/mo, billed annually</span></div>
-          <div class="price-annual-detail">$2,388/yr <span class="save">— save $600 (20%)</span></div>
+          <div class="price-annual-detail">$2,388/yr <span class="save">, save $600 (20%)</span></div>
           <div class="cap">Up to 750 documents/mo</div>
           <ul>
             <li>14-day free trial</li>
@@ -1170,7 +1200,7 @@
           <h3>For growing volume</h3>
           <div class="price price-monthly">$499<span class="per">/mo</span></div>
           <div class="price price-annual">$399<span class="per">/mo, billed annually</span></div>
-          <div class="price-annual-detail">$4,788/yr <span class="save">— save $1,200 (20%)</span></div>
+          <div class="price-annual-detail">$4,788/yr <span class="save">, save $1,200 (20%)</span></div>
           <div class="cap">Up to 2,500 documents/mo</div>
           <ul>
             <li>14-day free trial</li>
@@ -1188,7 +1218,7 @@
           <h3>For your highest volume</h3>
           <div class="price price-monthly">$1,499<span class="per">/mo</span></div>
           <div class="price price-annual">$1,199<span class="per">/mo, billed annually</span></div>
-          <div class="price-annual-detail">$14,388/yr <span class="save">— save $3,600 (20%)</span></div>
+          <div class="price-annual-detail">$14,388/yr <span class="save">, save $3,600 (20%)</span></div>
           <div class="cap">Up to 10,000 documents/mo</div>
           <ul>
             <li>14-day free trial</li>
@@ -1201,7 +1231,7 @@
         </div>
       </div>
 
-      <p class="pricing-foot">Paid plans include a 14-day free trial — card required at signup, first charge after the trial ends. Upgrading to a higher tier later bills right away, without a new trial.</p>
+      <p class="pricing-foot">Paid plans include a 14-day free trial. Card required at signup, first charge after the trial ends. Upgrading to a higher tier later bills right away, without a new trial.</p>
     </div>
   </section>
 
@@ -1216,7 +1246,7 @@
       <div class="faq-list">
         <details class="faq-item reveal">
           <summary>What file types does Rekono accept?<span class="q-mark">+</span></summary>
-          <div class="a">PDF and common image formats — PNG, JPG, TIFF, BMP, WEBP. If you can scan it or photograph it, Rekono can read it.</div>
+          <div class="a">PDF and common image formats: PNG, JPG, TIFF, BMP, WEBP. If you can scan it or photograph it, Rekono can read it.</div>
         </details>
         <details class="faq-item reveal">
           <summary>What happens to invoices Rekono isn't confident about?<span class="q-mark">+</span></summary>
@@ -1224,15 +1254,15 @@
         </details>
         <details class="faq-item reveal">
           <summary>How does matching actually work?<span class="q-mark">+</span></summary>
-          <div class="a">Rekono fuzzy-matches vendor name, amount (within a tolerance you set — percentage or flat dollar), and a date window against an uploaded PO list or bank statement, plus an exact PO/reference check when one is present on the invoice.</div>
+          <div class="a">Rekono fuzzy-matches vendor name, amount (within a tolerance you set: percentage or flat dollar), and a date window against an uploaded PO list or bank statement, plus an exact PO/reference check when one is present on the invoice.</div>
         </details>
         <details class="faq-item reveal">
           <summary>Do you integrate with QuickBooks, Xero, or NetSuite?<span class="q-mark">+</span></summary>
-          <div class="a">QuickBooks Online is live — connect your account and push an approved invoice to QuickBooks as a Bill in one click. Xero and NetSuite are next on the roadmap, along with deeper QuickBooks automation (bulk push, sync-back).</div>
+          <div class="a">QuickBooks Online is live: connect your account and push an approved invoice to QuickBooks as a Bill in one click. Xero and NetSuite are next on the roadmap, along with deeper QuickBooks automation (bulk push, sync-back).</div>
         </details>
         <details class="faq-item reveal">
           <summary>Can I self-host it?<span class="q-mark">+</span></summary>
-          <div class="a">Yes — Rekono runs on Postgres or SQLite and ships with a Dockerfile and docker-compose setup for running it entirely on your own infrastructure.</div>
+          <div class="a">Yes. Rekono runs on Postgres or SQLite and ships with a Dockerfile and docker-compose setup for running it entirely on your own infrastructure.</div>
         </details>
         <details class="faq-item reveal">
           <summary>What happens if I go over my document cap?<span class="q-mark">+</span></summary>
@@ -1247,7 +1277,7 @@
     <div class="wrap reveal">
       <span class="eyebrow">Get started</span>
       <h2 style="margin-top:16px;">Stop retyping invoices.</h2>
-      <p class="sub">Get started free, no card required — or talk to us if you've got a real pile of invoices and want to build the matching rules around them together.</p>
+      <p class="sub">Get started free, no card required, or talk to us if you've got a real pile of invoices and want to build the matching rules around them together.</p>
       <div class="cta-row">
         <a href="https://rekono-ai-new.onrender.com/" class="btn btn-primary">Get started</a>
         <a href="mailto:wfrownusa@yahoo.com?subject=Rekono%20design%20partnership" class="secondary-link">Talk to us about a design partnership →</a>
@@ -1261,7 +1291,7 @@
   <div class="wrap">
     <div class="foot-left">
       <a href="#top" class="wordmark" style="font-size:1.05rem;"><span class="mark" style="width:16px;height:16px;"></span>Rekono</a>
-      <span>— invoices, read and checked before they hit your books.</span>
+      <span>Invoices, read and checked before they hit your books.</span>
     </div>
     <nav>
       <a href="#how-it-works">How It Works</a>
@@ -1284,7 +1314,7 @@
   <div class="contact-modal-card" role="dialog" aria-modal="true" aria-labelledby="contact-modal-title">
     <button type="button" class="contact-modal-close" data-close-modal aria-label="Close">&times;</button>
     <h2 id="contact-modal-title">Talk to us</h2>
-    <p class="hint">Tell us a bit about what you're looking for — we reply within 1 business day.</p>
+    <p class="hint">Tell us a bit about what you're looking for. We reply within 1 business day.</p>
     <form id="contact-form">
       <label>Name<input type="text" id="contact-name" required maxlength="256" /></label>
       <label>Email<input type="email" id="contact-email" required /></label>
