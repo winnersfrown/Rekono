@@ -1002,20 +1002,24 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   z-index: 1;
 }
 
-.sidebar-brand { padding: 0.4rem 0.5rem 1.1rem; }
+/* A real button now (clicking it goes home), reset back to looking like
+   the plain wordmark it always was -- no border/background of its own
+   until hovered, which is what actually signals it's clickable. */
+.sidebar-brand {
+  width: 100%;
+  padding: 0.4rem 0.5rem 1.1rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: opacity 0.15s ease;
+}
+.sidebar-brand:hover { opacity: 0.75; }
 
 .sidebar .tab-btn { display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left; }
 .sidebar .tab-btn svg { flex: none; opacity: 0.85; }
 .sidebar .tab-btn.active svg { opacity: 1; color: var(--blue-bright); }
-
-.sidebar-ask-btn {
-  margin-bottom: 0.85rem;
-  font-weight: 600;
-  background: linear-gradient(135deg, rgba(75, 134, 247, 0.16), rgba(75, 134, 247, 0.05));
-  border: 1px solid rgba(75, 134, 247, 0.3) !important;
-  color: var(--paper) !important;
-}
-.sidebar-ask-btn:hover { background: linear-gradient(135deg, rgba(75, 134, 247, 0.24), rgba(75, 134, 247, 0.08)); }
 
 .sidebar-nav {
   display: flex;
@@ -1320,19 +1324,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
    now carries real content (KPIs, charts, queues), so vertical centering
    would push the most important row below the fold. */
 
-.dash-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.5rem;
-}
+.dash-head { margin-bottom: 1.5rem; }
 
 .dash-greeting h1 { font-size: 1.5rem; margin-bottom: 0.15rem; }
 .dash-greeting-sub { color: var(--muted); font-size: 0.85rem; margin: 0; }
-
-.dash-head-actions { flex: 1 1 320px; max-width: 460px; }
 
 .dash-error {
   background: rgba(212, 58, 65, 0.08);
@@ -1618,20 +1613,77 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   .dash-grid { grid-template-columns: 1fr; }
 }
 
-/* ---------- ask form + thread ---------- */
+/* ---------- Ask Rekono: floating widget ---------- */
+/* Fixed to the viewport on every tab (a sibling of .app-layout in the
+   markup, not nested inside it -- .sidebar/.app-panel's own
+   backdrop-filter would otherwise create a containing block that traps
+   position: fixed to their box instead of the real viewport corner).
+   Collapsed to a small pill by default, expanding into a compact panel --
+   the same pattern a live-chat bubble uses, sized to this app's own
+   design system rather than a full dashboard-width tool. */
+.ask-widget { position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 15; }
+
+.ask-widget-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.15rem;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(180deg, #5f97ff, var(--blue));
+  color: #04081a;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.88rem;
+  box-shadow: var(--shadow-lg);
+}
+.ask-widget-toggle:hover { background: linear-gradient(180deg, #78a7ff, var(--blue-bright)); box-shadow: var(--shadow-glow), var(--shadow-lg); }
+
+.ask-widget-panel {
+  flex-direction: column;
+  width: min(380px, calc(100vw - 2.5rem));
+  max-height: min(560px, calc(100vh - 3rem));
+  margin-bottom: 0.75rem;
+  border-radius: 16px;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), var(--shadow-lg);
+  overflow: hidden;
+  animation: fade-in 0.2s var(--ease);
+}
+
+.ask-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--glass-border);
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--paper);
+}
+.ask-widget-close {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.4rem;
+  font-size: 1.2rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ask-widget-close:hover { color: var(--paper); background: none; box-shadow: none; transform: none; }
+
 .ask-form {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   background: var(--ink-900);
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  padding: 0.3rem 0.3rem 0.3rem 0.85rem;
-  box-shadow: var(--shadow-sm);
+  border-top: 1px solid var(--line);
+  padding: 0.6rem 0.7rem;
   margin-bottom: 0;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.ask-form:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.15), var(--shadow-md); }
 .ask-form-icon { flex: none; color: var(--blue-bright); }
 
 .ask-form input {
@@ -1646,10 +1698,11 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .ask-form input:focus { outline: none; box-shadow: none; }
 .ask-form button { padding: 0.45rem 0.9rem; font-size: 0.82rem; }
 
-/* Capped rather than full-bleed: an answer stretched across the full
-   dashboard width would run well past a comfortable reading measure. */
-.ask-thread { display: flex; flex-direction: column; gap: 1rem; max-width: 760px; }
-.ask-thread:not(:empty) { margin-bottom: 1.3rem; }
+/* The one scrolling region in the panel -- header and the form stay put
+   above/below it as the conversation grows past the panel's own
+   max-height. */
+.ask-thread { display: flex; flex-direction: column; gap: 1rem; padding: 1rem; overflow-y: auto; }
+.ask-thread:empty { display: none; }
 
 .ask-entry { display: flex; flex-direction: column; gap: 0.5rem; animation: fade-in 0.35s var(--ease); }
 
@@ -1691,15 +1744,15 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   .sidebar-recents { max-height: 160px; }
   .app-main { padding: 1.4rem 1.2rem; }
 
-  /* The greeting and the Ask box sit side by side on desktop; at this width
-     there isn't room for both on one line, so the box drops below and takes
-     the full column instead of being squeezed into a sliver. */
-  .dash-head { flex-direction: column; align-items: stretch; gap: 0.9rem; }
-  /* flex-basis switches axis with the container: the 320px basis that sets
-     this block's WIDTH in the desktop row would set its HEIGHT here,
-     inflating the header by ~300px of dead space above the KPIs. */
-  .dash-head-actions { flex: 0 0 auto; max-width: none; }
   .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* The sidebar sits above content in normal flow here rather than beside
+     it, so opening the widget near the top of a page reliably lands it
+     over sidebar nav, not just page content -- the glass panel's
+     translucency (fine on desktop, where it opens over plain content)
+     would otherwise let nav labels bleed through underneath it. Solid
+     background instead, so it always reads as its own cleanly on top. */
+  .ask-widget-panel { background: var(--ink-900); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 /* ---------- legal pages (privacy / terms) ---------- */
