@@ -16,6 +16,8 @@ import { VendorDocument } from "./VendorDocument.js";
 import { Lease } from "./Lease.js";
 import { ClosePeriod } from "./ClosePeriod.js";
 import { CloseTask } from "./CloseTask.js";
+import { Transaction } from "./Transaction.js";
+import { MerchantCategory } from "./MerchantCategory.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -152,4 +154,6 @@ export {
   Lease,
   ClosePeriod,
   CloseTask,
+  Transaction,
+  MerchantCategory,
 };

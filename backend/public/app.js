@@ -114,6 +114,7 @@ function switchTab(name) {
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
   if (name === "close") loadClose();
+  if (name === "transactions") loadTransactions();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -122,7 +123,11 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "—";
-  return `$${Number(v).toFixed(2)}`;
+  const n = Number(v);
+  // Sign outside the symbol: "-$8.50", not "$-8.50". Invoice totals are
+  // always positive so this never came up before transactions (where a
+  // debit is negative) started rendering money.
+  return `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
 }
 
 function fmtPct(v) {
@@ -2086,6 +2091,183 @@ function renderMatchResults({ results, invoices }) {
     `;
   }).join("") || "<tr><td colspan='6' class='table-empty-row'>No matching results yet.</td></tr>";
 }
+
+// ---- Transactions (AI categorization) ----
+// The category cell is an inline <select> rather than a detail panel:
+// reviewing a statement is a long run of one-field decisions, and making
+// each one cost a click-in/click-out would defeat the point.
+
+const TXN_PAGE_SIZE = 100;
+const txnState = { page: 1, filter: "", search: "", categories: [] };
+
+const TXN_SOURCE_LABELS = {
+  learned: "learned",
+  ai: "AI",
+  heuristic: "keyword",
+  manual: "you",
+  "": "—",
+};
+
+async function loadTransactions() {
+  const params = new URLSearchParams();
+  if (txnState.filter === "needs_review") params.set("needs_review", "true");
+  if (txnState.search) params.set("q", txnState.search);
+  params.set("page", txnState.page);
+  params.set("page_size", TXN_PAGE_SIZE);
+
+  const res = await apiFetch(`/api/transactions?${params}`);
+  renderTransactions(await res.json());
+}
+
+function renderTransactions(data) {
+  txnState.categories = data.categories || [];
+
+  const totalsEl = document.getElementById("txn-totals");
+  const totals = Object.entries(data.category_totals || {}).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  totalsEl.innerHTML = totals.length
+    ? totals
+        .map(
+          ([category, amount]) => `
+          <div class="txn-total${category === "Uncategorized" ? " is-uncategorized" : ""}">
+            <span class="txn-total-label">${escapeHtml(category)}</span>
+            <span class="txn-total-amount">${fmtMoney(amount)}</span>
+          </div>`
+        )
+        .join("")
+    : "";
+
+  const options = (selected) =>
+    [`<option value=""${selected ? "" : " selected"}>— uncategorized —</option>`]
+      .concat(
+        txnState.categories.map(
+          (c) => `<option value="${escapeHtml(c)}"${c === selected ? " selected" : ""}>${escapeHtml(c)}</option>`
+        )
+      )
+      .join("");
+
+  const tbody = document.querySelector("#txn-table tbody");
+  tbody.innerHTML =
+    data.items
+      .map(
+        (t) => `
+      <tr data-id="${t.id}"${t.reviewed_at ? ' class="is-reviewed"' : ""}>
+        <td>${t.posted_date || "—"}</td>
+        <td>${escapeHtml(t.description)}</td>
+        <td>${fmtMoney(t.amount)}</td>
+        <td>
+          <select class="txn-category" data-id="${t.id}" aria-label="Category">${options(t.category)}</select>
+        </td>
+        <td>
+          <span class="txn-source txn-source-${t.category_source || "none"}">${TXN_SOURCE_LABELS[t.category_source] ?? t.category_source}</span>
+          ${t.category_source && t.category_source !== "manual" && t.category_source !== "learned" ? `<span class="txn-conf">${fmtPct(t.category_confidence)}</span>` : ""}
+        </td>
+        <td><button type="button" class="txn-delete" data-id="${t.id}" aria-label="Delete transaction">&times;</button></td>
+      </tr>`
+      )
+      .join("") || "<tr><td colspan='6' class='table-empty-row'>No transactions yet. Upload a statement to get started.</td></tr>";
+
+  tbody.querySelectorAll(".txn-category").forEach((select) =>
+    select.addEventListener("change", () => categorizeTransaction(select.dataset.id, select.value))
+  );
+  tbody.querySelectorAll(".txn-delete").forEach((btn) =>
+    btn.addEventListener("click", () => deleteTransaction(btn.dataset.id))
+  );
+
+  const start = data.total === 0 ? 0 : (data.page - 1) * TXN_PAGE_SIZE + 1;
+  const end = Math.min(data.total, data.page * TXN_PAGE_SIZE);
+  document.getElementById("txn-page-info").textContent = `${start}–${end} of ${data.total}`;
+  document.getElementById("txn-prev-page").disabled = data.page <= 1;
+  document.getElementById("txn-next-page").disabled = end >= data.total;
+}
+
+async function categorizeTransaction(id, category) {
+  // Clearing back to uncategorized isn't a decision worth remembering, and
+  // the API only accepts a real category, so there's nothing to send.
+  if (!category) return loadTransactions();
+
+  const res = await apiFetch(`/api/transactions/${id}/categorize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    document.getElementById("txn-upload-status").textContent = body.detail || "Could not save that category.";
+    return;
+  }
+  // Surfacing the ripple matters: one correction quietly fixing eleven other
+  // rows is the feature working, and silently is the wrong way to do it.
+  document.getElementById("txn-upload-status").textContent = body.also_applied_to
+    ? `Saved — also applied to ${body.also_applied_to} other transaction${body.also_applied_to === 1 ? "" : "s"} from this merchant.`
+    : "Saved.";
+  loadTransactions();
+}
+
+async function deleteTransaction(id) {
+  const ok = await confirmDialog("Delete this transaction?", "It disappears from your lists and totals.", {
+    confirmLabel: "Delete",
+    danger: true,
+  });
+  if (!ok) return;
+  await apiFetch(`/api/transactions/${id}`, { method: "DELETE" });
+  loadTransactions();
+}
+
+document.getElementById("txn-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("txn-file");
+  if (!fileInput.files.length) return;
+
+  const statusEl = document.getElementById("txn-upload-status");
+  statusEl.textContent = "Uploading and categorizing…";
+
+  const fd = new FormData();
+  fd.append("file", fileInput.files[0]);
+  const res = await apiFetch("/api/transactions/upload", { method: "POST", body: fd });
+  const body = await res.json();
+
+  if (!res.ok) {
+    statusEl.textContent = typeof body.detail === "string" ? body.detail : "Could not import that file.";
+    return;
+  }
+
+  const parts = [`Imported ${body.imported} transaction${body.imported === 1 ? "" : "s"} across ${body.distinct_merchants} merchant${body.distinct_merchants === 1 ? "" : "s"}.`];
+  const s = body.by_source || {};
+  if (s.learned) parts.push(`${s.learned} from merchants you've categorized before.`);
+  if (s.uncategorized) parts.push(`${s.uncategorized} couldn't be placed — review them below.`);
+  statusEl.textContent = parts.join(" ");
+
+  fileInput.value = "";
+  txnState.page = 1;
+  loadTransactions();
+});
+
+document.querySelectorAll(".txn-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".txn-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    txnState.filter = btn.dataset.filter;
+    txnState.page = 1;
+    loadTransactions();
+  });
+});
+
+document.getElementById("txn-search").addEventListener("input", (e) => {
+  txnState.search = e.target.value.trim();
+  txnState.page = 1;
+  clearTimeout(window.__txnSearchTimer);
+  window.__txnSearchTimer = setTimeout(loadTransactions, 250);
+});
+
+document.getElementById("txn-prev-page").addEventListener("click", () => {
+  if (txnState.page <= 1) return;
+  txnState.page -= 1;
+  loadTransactions();
+});
+document.getElementById("txn-next-page").addEventListener("click", () => {
+  txnState.page += 1;
+  loadTransactions();
+});
 
 // ---- Month-End Close ----
 // Two halves, deliberately shown differently (see routes/close.js): the
