@@ -3101,6 +3101,17 @@ async function loadDashboard() {
 // instead -- same approach the document-preview panes already use. Shared
 // by both the dashboard's Reports rail and the Export tab's cards, which
 // otherwise duplicated this exact fetch-blob-download dance.
+function filenameFromContentDisposition(header) {
+  // A blob: URL download never applies Content-Disposition automatically
+  // the way a real browser-initiated navigation would -- fetch() just hands
+  // back bytes, so the header has to be parsed out by hand or the server's
+  // actual filename (routes/export.js sets a real one, e.g.
+  // "rekono_invoices.csv") is silently lost in favor of whatever the
+  // frontend makes up instead.
+  const match = /filename="?([^";]+)"?/i.exec(header || "");
+  return match ? match[1] : null;
+}
+
 async function downloadExport(path) {
   const res = await apiFetch(path);
   if (!res.ok) throw new Error("Export failed");
@@ -3108,7 +3119,7 @@ async function downloadExport(path) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = path.split("/").slice(-2).join("-").replace("/", "-");
+  a.download = filenameFromContentDisposition(res.headers.get("content-disposition")) || "export";
   document.body.appendChild(a);
   a.click();
   a.remove();
