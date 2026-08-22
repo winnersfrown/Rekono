@@ -2,7 +2,7 @@ import { Router } from "express";
 import ExcelJS from "exceljs";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { ExpenseReceipt, Invoice, Lease, LineItem, MatchResult, VendorDocument } from "../models/index.js";
+import { ExpenseReceipt, Invoice, Lease, LineItem, MatchResult, TaxDocument, VendorDocument } from "../models/index.js";
 
 const router = Router();
 
@@ -338,6 +338,84 @@ router.get("/api/export/leases/xlsx", requireAuth, requireActivePlan, async (req
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     );
     res.set("Content-Disposition", "attachment; filename=rekono_leases.xlsx");
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// recipient_tin_last4 rather than a full TIN column, deliberately -- see
+// TaxDocument.js. An export is exactly the moment a full SSN would leave
+// the app for an unmanaged spreadsheet on someone's laptop, and four
+// digits is enough to line a row up against the source document.
+const TAX_DOCUMENT_COLUMNS = [
+  "tax_document_id",
+  "status",
+  "document_type",
+  "tax_year",
+  "payer_name",
+  "recipient_name",
+  "recipient_tin_last4",
+  "amount",
+  "federal_tax_withheld",
+  "extraction_method",
+  "overall_confidence",
+  "original_filename",
+  "created_at",
+];
+
+async function buildTaxDocumentRows(orgId) {
+  const docs = await TaxDocument.findAll({
+    where: { orgId },
+    order: [["createdAt", "DESC"]],
+  });
+
+  return docs.map((t) => ({
+    tax_document_id: t.id,
+    status: t.status,
+    document_type: t.documentType,
+    tax_year: t.taxYear,
+    payer_name: sanitizeSpreadsheetCell(t.payerName),
+    recipient_name: sanitizeSpreadsheetCell(t.recipientName),
+    recipient_tin_last4: t.recipientTinLast4,
+    amount: t.amount,
+    federal_tax_withheld: t.federalTaxWithheld,
+    extraction_method: t.extractionMethod,
+    overall_confidence: t.overallConfidence,
+    original_filename: sanitizeSpreadsheetCell(t.originalFilename),
+    created_at: t.createdAt.toISOString(),
+  }));
+}
+
+router.get("/api/export/tax-documents/csv", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildTaxDocumentRows(req.currentUser.orgId);
+    const lines = [TAX_DOCUMENT_COLUMNS.join(",")];
+    for (const row of rows) {
+      lines.push(TAX_DOCUMENT_COLUMNS.map((c) => toCsvValue(row[c])).join(","));
+    }
+    res.set("Content-Type", "text/csv");
+    res.set("Content-Disposition", "attachment; filename=rekono_tax_documents.csv");
+    res.send(lines.join("\n") + (rows.length ? "\n" : ""));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/export/tax-documents/xlsx", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const rows = await buildTaxDocumentRows(req.currentUser.orgId);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Tax Documents");
+    sheet.columns = TAX_DOCUMENT_COLUMNS.map((c) => ({ header: c, key: c }));
+    sheet.addRows(rows);
+
+    res.set(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.set("Content-Disposition", "attachment; filename=rekono_tax_documents.xlsx");
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {

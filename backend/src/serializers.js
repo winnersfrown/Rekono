@@ -206,6 +206,52 @@ export function serializeLeaseListItem(l) {
   };
 }
 
+export function serializeTaxDocumentDetail(t) {
+  return {
+    id: t.id,
+    original_filename: t.originalFilename,
+    content_type: t.contentType,
+    status: t.status,
+    error_message: t.errorMessage,
+
+    document_type: t.documentType,
+    tax_year: t.taxYear,
+    payer_name: t.payerName,
+    recipient_name: t.recipientName,
+    // Already only four digits by the time it's stored -- see
+    // TaxDocument.js's recipientTinLast4 comment. Nothing is masked on the
+    // way out here because there's nothing left to mask.
+    recipient_tin_last4: t.recipientTinLast4,
+    amount: t.amount,
+    federal_tax_withheld: t.federalTaxWithheld,
+    note: t.note,
+
+    extraction_method: t.extractionMethod,
+    field_confidence: t.fieldConfidence,
+    overall_confidence: t.overallConfidence,
+
+    created_at: t.createdAt,
+    updated_at: t.updatedAt,
+  };
+}
+
+export function serializeTaxDocumentListItem(t) {
+  return {
+    id: t.id,
+    original_filename: t.originalFilename,
+    status: t.status,
+    document_type: t.documentType,
+    tax_year: t.taxYear,
+    payer_name: t.payerName,
+    recipient_name: t.recipientName,
+    recipient_tin_last4: t.recipientTinLast4,
+    amount: t.amount,
+    federal_tax_withheld: t.federalTaxWithheld,
+    overall_confidence: t.overallConfidence,
+    created_at: t.createdAt,
+  };
+}
+
 export function serializeAuditLog(entry) {
   return {
     id: entry.id,
