@@ -654,19 +654,20 @@
 
         <section id="tab-export" class="tab-panel">
           <h1>Export</h1>
+          <div id="export-status" class="hint" style="display: none;"></div>
           <p class="hint">Export all invoices (with current status and latest match result) to CSV or Excel.</p>
           <div class="export-options">
             <div class="export-card">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
               <h3>CSV</h3>
               <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
-              <a href="/api/export/csv"><button>Download CSV</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/csv">Download CSV</button>
             </div>
             <div class="export-card">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
               <h3>Excel</h3>
               <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
-              <a href="/api/export/xlsx"><button>Download Excel</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/xlsx">Download Excel</button>
             </div>
           </div>
 
@@ -677,13 +678,13 @@
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
               <h3>CSV</h3>
               <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
-              <a href="/api/export/expenses/csv"><button>Download CSV</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/expenses/csv">Download CSV</button>
             </div>
             <div class="export-card">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
               <h3>Excel</h3>
               <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
-              <a href="/api/export/expenses/xlsx"><button>Download Excel</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/expenses/xlsx">Download Excel</button>
             </div>
           </div>
 
@@ -694,13 +695,13 @@
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
               <h3>CSV</h3>
               <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
-              <a href="/api/export/vendor-documents/csv"><button>Download CSV</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/vendor-documents/csv">Download CSV</button>
             </div>
             <div class="export-card">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
               <h3>Excel</h3>
               <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
-              <a href="/api/export/vendor-documents/xlsx"><button>Download Excel</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/vendor-documents/xlsx">Download Excel</button>
             </div>
           </div>
 
@@ -711,13 +712,13 @@
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h1M8 16h1M8 19h1M12 13h1M12 16h1M12 19h1"/></svg>
               <h3>CSV</h3>
               <p class="hint">A plain comma-separated file — opens cleanly in Excel, Google Sheets, or any spreadsheet tool.</p>
-              <a href="/api/export/leases/csv"><button>Download CSV</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/leases/csv">Download CSV</button>
             </div>
             <div class="export-card">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>
               <h3>Excel</h3>
               <p class="hint">A native .xlsx workbook with formatted, labeled columns — ready to hand off as-is.</p>
-              <a href="/api/export/leases/xlsx"><button>Download Excel</button></a>
+              <button type="button" class="export-btn" data-export="/api/export/leases/xlsx">Download Excel</button>
             </div>
           </div>
         </section>
