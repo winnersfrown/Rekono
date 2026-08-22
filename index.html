@@ -313,6 +313,17 @@
     color: var(--muted);
     font-family: var(--font-mono);
   }
+  .hero .hero-demo-link {
+    margin-top: 10px;
+    font-size: 0.86rem;
+  }
+  .hero .hero-demo-link a {
+    color: var(--blue-bright);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.15s var(--ease);
+  }
+  .hero .hero-demo-link a:hover { border-color: var(--blue-bright); }
 
   @media (max-width: 900px) {
     .hero .wrap { grid-template-columns: 1fr; }
@@ -942,6 +953,7 @@
           <a href="#how-it-works" class="btn btn-ghost">See how it works ↓</a>
         </div>
         <p class="fineprint">AI-powered extraction included — no API key or setup required.</p>
+        <p class="hero-demo-link"><a href="https://rekono-crv7.onrender.com/?demo=1">Or explore a live demo with sample data, no signup required →</a></p>
       </div>
 
       <div class="doc-mock-wrap">

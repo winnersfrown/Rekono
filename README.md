@@ -171,7 +171,7 @@ Covers the confidence cross-check logic, the fuzzy matching engine, the heuristi
 
 ## API surface
 
-Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/google*`, `/api/team/invite/:token` (both the `GET` check and the `POST .../accept`), and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth/invite-acceptance routes also returns `402` once that org's onboarding/billing state isn't active (`onboarding_required` or `billing_required` -- see `plan.js`).
+Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`, `/api/auth/google*`, `/api/demo/login`, `/api/team/invite/:token` (both the `GET` check and the `POST .../accept`), and `/api/health` requires an `Authorization: Bearer <token>` header, and every result is scoped to that token's organization. Every endpoint except those auth/invite-acceptance routes also returns `402` once that org's onboarding/billing state isn't active (`onboarding_required` or `billing_required` -- see `plan.js`).
 
 | Endpoint | Purpose |
 |---|---|
@@ -180,6 +180,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/auth/google` | Redirects to Google's OAuth consent screen (requires `GOOGLE_CLIENT_ID`) |
 | `GET /api/auth/google/callback` | Google redirects back here; finds or creates the account by verified email and redirects to `/` with a single-use handoff code |
 | `GET /api/auth/google/exchange` | `{code}` from that redirect → bearer token (the actual token is never put in a URL) |
+| `POST /api/demo/login` | Public, no request body. Seeds a brand-new org with realistic sample data across every document type and returns a bearer token -- the "View live demo" flow, see Demo mode below |
 | `POST /api/auth/forgot-password` | Email a password reset link (requires `RESEND_API_KEY`; always responds the same way regardless of whether the email matches an account, to avoid leaking which emails are registered) |
 | `POST /api/auth/reset-password` | `{token, password}` from the emailed link → new password, returns a bearer token (signs the user in) |
 | `GET /api/auth/me` | Current user + org name + plan status (`plan`, `billing_period`, `subscription_status`, `trial_ends_at`, `onboarding_completed`, `documents_used_this_month`, `document_cap`), for verifying a stored token |
@@ -321,6 +322,14 @@ The "Sign in with Google" button needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
 3. Under **Authorized redirect URIs**, add `https://<your-deployed-url>/api/auth/google/callback` (and `http://localhost:8000/api/auth/google/callback` too, for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/auth/google/callback`.
 4. Copy the generated **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Render/Fly dashboard, or `.env` locally).
 5. No new database columns or account-linking table: a Google sign-in is matched to an existing account purely by verified email, and creates a new org + user (same as a normal signup, sent through the same onboarding wizard) if there's no match yet. See `completeGoogleLogin` in `routes/auth.js`.
+
+### Demo mode
+
+`POST /api/demo/login` is a public, unauthenticated endpoint (rate-limited per IP, same shape as signup) that spins up a brand-new org, seeds it with a realistic, varied-status dataset across all four document pipelines (invoices, expense receipts, vendor documents, leases) plus matching data and an audit trail (`src/demoSeed.js`), and returns a working bearer token -- no signup, no email, no card. It's meant for investors/prospects to click straight into a populated instance: the marketing site's hero has a "View live demo" link (`?demo=1` on the app's own origin), which `public/auth.js` detects on load and exchanges for a session the same way the Google sign-in handoff works. A logged-in demo session shows a persistent "Demo Mode" banner in the app shell with a one-click path to the real signup form.
+
+Seeded rows are inserted directly rather than run through the real OCR/LLM pipeline (the login response needs to come back immediately), but every field is set to what that pipeline would actually have produced -- confidence bars, cross-checks, and the review queue all render exactly as they would for a real org. Small real (synthetic, hand-generated) PDF files are still written to disk per row, so the document preview pane has something real to load.
+
+**Known limitation:** demo orgs are never automatically deleted. There's no cascade-delete from `Organization` down through its invoices/receipts/vendor documents/leases/match data/audit log today, so a correct sweep would need to touch every org-scoped table -- not worth the added complexity/risk for what's expected to be low-traffic marketing-site clicks, each capped by the endpoint's own rate limit. Revisit this (e.g. a scheduled job that deletes `Organization` rows where `isDemo` is true and older than N days) if demo-mode traffic grows enough for storage/DB size to matter.
 
 ### QuickBooks Online (Phase 1)
 
