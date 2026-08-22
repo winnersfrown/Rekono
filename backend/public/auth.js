@@ -139,6 +139,8 @@ function showApp(user) {
   document.getElementById("onboarding-gate").style.display = "none";
   document.getElementById("billing-required").style.display = "none";
   document.getElementById("app-shell").style.display = "block";
+  const banner = document.getElementById("demo-mode-banner");
+  if (banner) banner.style.display = user.is_demo ? "flex" : "none";
   const badge = document.getElementById("current-user-badge");
   if (badge) badge.textContent = user.full_name || user.email;
 
@@ -550,6 +552,12 @@ document.getElementById("logout-btn").addEventListener("click", () => {
   showAuthGate();
 });
 
+document.getElementById("demo-signup-btn").addEventListener("click", () => {
+  clearToken();
+  showAuthGate();
+  showAuthPanel("auth-signup-panel", { tabBtn: document.querySelector('[data-auth-tab="signup-panel"]') });
+});
+
 document.getElementById("billing-required-logout-btn").addEventListener("click", () => {
   clearToken();
   showAuthGate();
@@ -696,6 +704,28 @@ function handleGoogleAuthReturn(status, code, reason) {
     });
 }
 
+// The marketing site's "View live demo" link sends visitors here with
+// ?demo=1 -- no signup, no OAuth round trip, just a same-origin POST that
+// spins up a freshly seeded demo org (routes/demo.js) and logs straight
+// into it. Same "show the gate while it settles" shape as
+// handleGoogleAuthReturn above, just with nothing to exchange since the
+// token comes back directly in the POST response.
+function handleDemoLogin() {
+  history.replaceState(null, "", location.pathname);
+  showAuthGate();
+
+  fetch("/api/demo/login", { method: "POST" })
+    .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+    .then(({ ok, body }) => {
+      if (!ok) throw new Error(body.detail || "Could not start the demo. Please try again.");
+      setToken(body.access_token);
+      return bootstrapApp();
+    })
+    .catch((err) => {
+      authError(String(err.message || err));
+    });
+}
+
 // QuickBooks redirects back here after /api/integrations/quickbooks/callback
 // -- either ?quickbooks=connected or ?quickbooks=error&reason=<code>. Unlike
 // Google/Stripe's redirects above, this one always happens to an
@@ -730,6 +760,7 @@ const inviteTokenFromUrl = new URLSearchParams(location.search).get("invite_toke
 const checkoutParam = new URLSearchParams(location.search).get("checkout");
 const googleAuthParam = new URLSearchParams(location.search).get("google_auth");
 const quickbooksParam = new URLSearchParams(location.search).get("quickbooks");
+const demoParam = new URLSearchParams(location.search).get("demo");
 if (resetTokenFromUrl) {
   pendingResetToken = resetTokenFromUrl;
   history.replaceState(null, "", location.pathname);
@@ -751,6 +782,8 @@ if (resetTokenFromUrl) {
   handleGoogleAuthReturn(googleAuthParam, params.get("code"), params.get("reason"));
 } else if (quickbooksParam === "connected" || quickbooksParam === "error") {
   handleQuickbooksReturn(quickbooksParam, new URLSearchParams(location.search).get("reason"));
+} else if (demoParam === "1") {
+  handleDemoLogin();
 } else {
   bootstrapApp();
 }

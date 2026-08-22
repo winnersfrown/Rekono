@@ -117,6 +117,15 @@ export const Organization = sequelize.define(
     // reasoning as Invoice's duplicateOfFilename.
     quickbooksDefaultExpenseAccountId: { type: DataTypes.STRING(64), allowNull: true },
     quickbooksDefaultExpenseAccountName: { type: DataTypes.STRING(256), allowNull: true },
+
+    // Set on every org created by POST /api/demo/login (routes/demo.js) --
+    // a public, no-signup sandbox pre-loaded with realistic sample data
+    // (demoSeed.js) so an investor/prospect can click straight into a
+    // working instance. Surfaced to the frontend as is_demo (buildMeResponse
+    // in routes/auth.js) so the app shell can show a persistent "you're in
+    // a demo" banner. Never set on a real signup; false/null-compatible
+    // default like every other boolean flag on this model.
+    isDemo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   { tableName: "organizations", updatedAt: false, createdAt: "createdAt" }
 );
