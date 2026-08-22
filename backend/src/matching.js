@@ -1,5 +1,5 @@
 // Reconciliation engine: fuzzy-matches an invoice against a list of
-// candidate PO or bank-transaction entries.
+// candidate PO, goods-receipt, or bank-transaction entries.
 //
 // Pure functions here (no DB access) so the matching logic is
 // unit-testable in isolation -- this is the "constraint matching" core of
@@ -69,4 +69,85 @@ function scorePair(invoiceVendor, invoiceAmount, invoiceDate, invoicePoReference
   }
 
   return { status, score: Math.round(composite * 100) / 100, reasoning, entryId: entry.id };
+}
+
+// ---- Three-way matching ----
+// Two-way matching (above) answers "does this invoice line up with
+// something we have on file?". Three-way answers the question AP actually
+// cares about before releasing money: was this ordered, did it arrive, and
+// is the bill consistent with both? An invoice that reconciles perfectly
+// against its PO is still not safe to pay if nothing was ever received --
+// that gap is the single most common way an AP department pays for goods
+// it never got, and catching it is the whole point of this function.
+//
+// Bank entries are deliberately not a leg here: they evidence that money
+// left the account, which is the payment-reconciliation job (see
+// routes/integrations.js), not the pre-payment authorization check.
+const THREE_WAY_VERDICTS = {
+  matched: {
+    status: "matched",
+    summary: "Ordered, received, and billed consistently.",
+  },
+  no_receipt: {
+    status: "partial",
+    summary: "Billed and ordered, but nothing matches on the goods receipts — do not pay until delivery is confirmed.",
+  },
+  no_po: {
+    status: "partial",
+    summary: "Received and billed, but no matching purchase order — this spend was never authorized.",
+  },
+  unmatched: {
+    status: "unmatched",
+    summary: "No purchase order or goods receipt matches this invoice.",
+  },
+};
+
+export function findThreeWayMatch(
+  invoiceVendor,
+  invoiceAmount,
+  invoiceDate,
+  invoicePoReference,
+  poCandidates,
+  receivingCandidates
+) {
+  const leg = (candidates, emptyReason) =>
+    candidates.length
+      ? findBestMatch(invoiceVendor, invoiceAmount, invoiceDate, invoicePoReference, candidates)
+      : { status: "unmatched", score: 0, reasoning: emptyReason, entryId: null };
+
+  const po = leg(poCandidates, "no purchase orders uploaded to match against");
+  const receipt = leg(receivingCandidates, "no goods receipts uploaded to match against");
+
+  // Only a full "matched" on a leg counts as that leg being satisfied --
+  // a "partial" is precisely the case where we can't actually be confident
+  // this is the same transaction, which is not a basis for releasing money.
+  const poOk = po.status === "matched";
+  const receiptOk = receipt.status === "matched";
+
+  let outcome;
+  if (poOk && receiptOk) outcome = "matched";
+  else if (poOk) outcome = "no_receipt";
+  else if (receiptOk) outcome = "no_po";
+  else outcome = "unmatched";
+
+  const verdict = THREE_WAY_VERDICTS[outcome];
+
+  return {
+    status: verdict.status,
+    threeWayOutcome: outcome,
+    // Averaged rather than taking the best leg: a three-way match is only
+    // as trustworthy as its weakest leg, so a missing one should visibly
+    // drag the score down instead of being hidden by a strong other half.
+    score: Math.round(((po.score + receipt.score) / 2) * 100) / 100,
+    reasoning: `${verdict.summary} PO: ${po.reasoning} Receipt: ${receipt.reasoning}`,
+    // Only ever the entry that actually satisfied its leg. findBestMatch
+    // returns its best-scoring candidate even when that candidate doesn't
+    // match, which is useful for explaining a near-miss in `reasoning` but
+    // wrong to persist as a foreign key -- a stored receivingEntryId reads
+    // as "this is the receipt this invoice matched", so pointing it at an
+    // unrelated receipt that failed the check would be actively
+    // misleading to anything that later joins on it.
+    entryId: poOk ? po.entryId : null,
+    receivingEntryId: receiptOk ? receipt.entryId : null,
+  };
 }

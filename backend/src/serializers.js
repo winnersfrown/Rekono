@@ -19,7 +19,10 @@ export function serializeMatchResult(mr) {
     id: mr.id,
     invoice_id: mr.invoiceId,
     match_entry_id: mr.matchEntryId,
+    receiving_entry_id: mr.receivingEntryId,
     status: mr.status,
+    // null on a result from a two-way run -- see MatchResult.js.
+    three_way_outcome: mr.threeWayOutcome,
     score: mr.score,
     reasoning: mr.reasoning,
   };

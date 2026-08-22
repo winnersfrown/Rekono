@@ -58,8 +58,8 @@ function parseDateToISO(raw) {
 router.post("/api/matching/sources", requireAuth, requireActivePlan, upload.single("file"), async (req, res, next) => {
   try {
     const sourceType = req.query.source_type;
-    if (!["po", "bank"].includes(sourceType)) {
-      return res.status(422).json({ detail: "source_type must be 'po' or 'bank'" });
+    if (!["po", "bank", "receiving"].includes(sourceType)) {
+      return res.status(422).json({ detail: "source_type must be 'po', 'bank', or 'receiving'" });
     }
     if (!req.file) {
       return res.status(422).json({ detail: "A file upload is required." });
@@ -149,35 +149,66 @@ router.delete("/api/matching/sources/:id", requireAuth, requireActivePlan, async
   }
 });
 
+// Runs three-way matching (PO + goods receipt + invoice) as soon as the org
+// has any goods receipts on file, and the original two-way match otherwise.
+// Inferred from the uploaded sources rather than asked for via a mode flag:
+// uploading receipts is already an unambiguous statement that you want them
+// checked, and an org with none has nothing to run the third leg against.
+// The mode actually used comes back in the response either way, so it's
+// visible rather than a silent behavior change.
 router.post("/api/matching/run", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
-    const sources = await MatchSource.findAll({ where: { orgId: req.currentUser.orgId }, attributes: ["id"] });
+    const sources = await MatchSource.findAll({
+      where: { orgId: req.currentUser.orgId },
+      attributes: ["id", "sourceType"],
+    });
     const entries = await MatchEntry.findAll({ where: { sourceId: sources.map((s) => s.id) } });
-    const candidates = entries.map((e) => ({
+
+    const typeBySourceId = new Map(sources.map((s) => [s.id, s.sourceType]));
+    const toCandidate = (e) => ({
       id: e.id,
       vendor: e.vendor,
       amount: e.amount,
       entryDate: e.entryDate,
       reference: e.reference,
-    }));
+    });
+    const candidates = entries.map(toCandidate);
+    const poCandidates = entries.filter((e) => typeBySourceId.get(e.sourceId) === "po").map(toCandidate);
+    const receivingCandidates = entries.filter((e) => typeBySourceId.get(e.sourceId) === "receiving").map(toCandidate);
+
+    const threeWay = receivingCandidates.length > 0;
 
     const invoices = await Invoice.findAll({
       where: { orgId: req.currentUser.orgId, status: ["extracted", "needs_review", "approved"] },
     });
 
     const counts = { matched: 0, partial: 0, unmatched: 0 };
+    const outcomeCounts = { matched: 0, no_receipt: 0, no_po: 0, unmatched: 0 };
+
     for (const invoice of invoices) {
-      const outcome = matchingEngine.findBestMatch(
-        invoice.vendorName,
-        invoice.total,
-        invoice.invoiceDate,
-        invoice.poReference,
-        candidates
-      );
+      const outcome = threeWay
+        ? matchingEngine.findThreeWayMatch(
+            invoice.vendorName,
+            invoice.total,
+            invoice.invoiceDate,
+            invoice.poReference,
+            poCandidates,
+            receivingCandidates
+          )
+        : matchingEngine.findBestMatch(
+            invoice.vendorName,
+            invoice.total,
+            invoice.invoiceDate,
+            invoice.poReference,
+            candidates
+          );
+
       await MatchResult.create({
         invoiceId: invoice.id,
         matchEntryId: outcome.entryId,
+        receivingEntryId: outcome.receivingEntryId ?? null,
         status: outcome.status,
+        threeWayOutcome: outcome.threeWayOutcome ?? null,
         score: outcome.score,
         reasoning: outcome.reasoning,
       });
@@ -187,16 +218,28 @@ router.post("/api/matching/run", requireAuth, requireActivePlan, async (req, res
         invoiceId: invoice.id,
         action: "match_evaluated",
         actor: req.currentUser.email,
-        details: { status: outcome.status, score: outcome.score, reasoning: outcome.reasoning },
+        details: {
+          mode: threeWay ? "three_way" : "two_way",
+          status: outcome.status,
+          three_way_outcome: outcome.threeWayOutcome ?? null,
+          score: outcome.score,
+          reasoning: outcome.reasoning,
+        },
       });
       counts[outcome.status] += 1;
+      if (threeWay) outcomeCounts[outcome.threeWayOutcome] += 1;
     }
 
     res.json({
+      mode: threeWay ? "three_way" : "two_way",
       invoices_evaluated: invoices.length,
       matched: counts.matched,
       partial: counts.partial,
       unmatched: counts.unmatched,
+      // Only meaningful on a three-way run -- null (rather than a set of
+      // zeroes) on a two-way one, so the UI can tell "not evaluated" apart
+      // from "evaluated, found none".
+      three_way: threeWay ? outcomeCounts : null,
     });
   } catch (err) {
     next(err);
