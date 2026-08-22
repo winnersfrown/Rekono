@@ -139,6 +139,10 @@ function showApp(user) {
   document.getElementById("onboarding-gate").style.display = "none";
   document.getElementById("billing-required").style.display = "none";
   document.getElementById("app-shell").style.display = "block";
+  // Stashed for app.js's dashboard greeting -- the /api/auth/me response is
+  // already fetched here on every bootstrap, so re-requesting it there just
+  // to learn the user's name would be a redundant round trip.
+  window.currentUser = user;
   const banner = document.getElementById("demo-mode-banner");
   if (banner) banner.style.display = user.is_demo ? "flex" : "none";
   const badge = document.getElementById("current-user-badge");

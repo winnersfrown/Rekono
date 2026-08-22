@@ -4,6 +4,7 @@ import cors from "cors";
 import express from "express";
 import { settings } from "./config.js";
 import authRoutes from "./routes/auth.js";
+import dashboardRoutes from "./routes/dashboard.js";
 import demoRoutes from "./routes/demo.js";
 import onboardingRoutes from "./routes/onboarding.js";
 import billingRoutes, { webhookRouter as billingWebhookRoutes } from "./routes/billing.js";
@@ -119,6 +120,7 @@ app.use(express.json());
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 app.use(authRoutes);
+app.use(dashboardRoutes);
 app.use(demoRoutes);
 app.use(onboardingRoutes);
 app.use(billingRoutes);
