@@ -977,7 +977,14 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 }
 
 /* ---------- app sidebar layout ---------- */
-.app-layout { display: flex; min-height: 100vh; align-items: stretch; }
+/* height, not min-height: capping this to exactly the viewport is what
+   makes .app-main's own overflow-y below actually take effect. With only
+   min-height, a tall panel (an open invoice's document preview, a long
+   table) grew this whole flex row past 100vh instead, so the PAGE scrolled
+   -- carrying the sidebar's nav buttons (including the one back to this
+   landing tab) up and off-screen along with it, with no way back short of
+   scrolling the entire page back to the top. */
+.app-layout { display: flex; height: 100vh; align-items: stretch; }
 
 .sidebar {
   width: 264px;
@@ -1273,7 +1280,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   color: var(--muted);
 }
 
-.app-main { flex: 1; min-width: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; }
+/* min-height: 0 overrides the flex default of auto, which otherwise lets
+   this item grow to fit its content instead of respecting the sidebar's
+   fixed-height row above -- overflow-y then scrolls just this column. */
+.app-main { flex: 1; min-width: 0; min-height: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; overflow-y: auto; }
 
 .demo-mode-banner {
   display: flex;
@@ -1672,7 +1682,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .ask-answer-error { border-color: var(--red); color: var(--red); }
 
 @media (max-width: 760px) {
-  .app-layout { flex-direction: column; }
+  /* The desktop fix above pins the sidebar by capping .app-layout to the
+     viewport and scrolling .app-main independently -- that only makes
+     sense side-by-side. Stacked here, the whole page should scroll
+     normally instead, or content past the first 100vh would be clipped
+     and unreachable. */
+  .app-layout { flex-direction: column; height: auto; }
+  .app-main { overflow-y: visible; }
   .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line-soft); }
   .sidebar-recents { max-height: 160px; }
   .app-main { padding: 1.4rem 1.2rem; }
