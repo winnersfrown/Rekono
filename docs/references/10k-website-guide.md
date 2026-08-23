@@ -6,11 +6,14 @@
 > Retrieved: 2026-08-23, pasted in by hand (the domain is blocked by this
 > environment's egress policy, so it could not be fetched directly).
 >
-> Deliberately filed under `docs/references/` rather than `.claude/skills/`.
-> A skill is auto-loaded and treated as guidance; two of this guide's four
-> steps assume a React/Tailwind stack and would be actively wrong applied to
-> this repo, which has no build step at all. See "How this maps to Rekono"
-> at the bottom before acting on anything here.
+> Deliberately filed under `docs/references/` rather than `.claude/skills/`
+> so it's read as background, not auto-loaded as standing instruction.
+>
+> **Update, same day:** the marketing site was rebuilt as a real
+> React + Vite + Tailwind + Framer Motion app on explicit request (see
+> `website/README.md`), so Steps 2 and 3 below are no longer hypothetical --
+> "How this maps to Rekono" at the bottom reflects the actual outcome, not a
+> stack-mismatch analysis of a plain-HTML site that no longer exists.
 
 ---
 
@@ -153,50 +156,59 @@ That's it. No fluff, no upsell. Just the stack.
 
 ## How this maps to Rekono
 
-Audited against the repo on 2026-08-23. Three of the four steps were already
-satisfied before this guide arrived; the fourth doesn't fit the stack.
+First audited against the repo on 2026-08-23, when the marketing site was
+still a single hand-written static HTML file — at that point, Steps 2 and 4
+didn't fit (they assume React) and were left un-adopted on purpose. Later
+the same day, the user asked for the stack to actually be adopted, for
+real, and the site was rebuilt as a React + Vite + Tailwind + Framer Motion
+app to do it (see `website/README.md` for the how and the trade-offs that
+came with it). This table reflects that outcome.
 
 | Step | Status here |
 | --- | --- |
 | 1. Install Claude Code | Already in use — this repo is built with it. |
-| 2. Framer Motion | **Does not apply.** See below. |
+| 2. Framer Motion | **Adopted.** Real dependency, real animation — see below. |
 | 3. Design-focused skill | Already done, twice: `.claude/skills/taste-skill/` (PR #116) and `.claude/skills/design-references/` (PR #120). |
-| 4. 21st.dev components | **Does not apply directly.** See below. |
+| 4. 21st.dev components | **Partially.** 21st.dev itself is unreachable from this environment — see below. |
 
-### Why Framer Motion doesn't fit
+### Framer Motion
 
-Framer Motion is a React library. `website/index.html` is a single hand-written
-static file — no React, no npm, no bundler, no build step; it deploys as-is to
-GitHub Pages. Adopting Framer Motion would mean adding React, a bundler, and a
-build pipeline in order to ship behavior the site already has.
+Now a real dependency (`website/package.json`), not a hypothetical. The
+site's scroll reveals moved from a hand-rolled `IntersectionObserver` script
+to Framer Motion's `whileInView` (`website/src/components/Reveal.jsx`), plus
+motion this guide's Step 2 doesn't even ask for: an animated billing-period
+toggle with a spring-driven pill (`Pricing.jsx`), a height-animated FAQ
+accordion (`FAQ.jsx`), and a hero document mock that animates its fields in
+with a stagger and then drifts continuously (`Hero.jsx`).
 
-The site already implements exactly what Step 2 asks for, natively:
+`prefers-reduced-motion` is handled once, globally, via
+`<MotionConfig reducedMotion="user">` in `App.jsx` — every `motion.*`
+element in the tree resolves straight to its end state under that OS
+preference, matching what the old site's own guard did (reveal immediately,
+skip the animation) without needing a per-component check.
 
-- Scroll-triggered reveals via `IntersectionObserver` (see the bottom of
-  `website/index.html`), with `observer.unobserve` after firing so each element
-  animates once.
-- A `prefers-reduced-motion: reduce` guard, plus a no-`IntersectionObserver`
-  fallback that marks everything visible rather than leaving content hidden —
-  a failure mode Framer Motion would not protect against for free.
-- Hover/entrance transitions through CSS `transition` and `@keyframes` on a
-  shared `--ease` token.
+### 21st.dev — the one step that doesn't fully apply
 
-### Why 21st.dev doesn't fit directly
+`21st.dev` is blocked by this environment's egress policy (`curl` to it
+returns a hard `403` on the CONNECT tunnel, same failure mode as the Notion
+page this guide itself was retrieved from) — so nothing here was literally
+copied from it; there was no way to browse it in the first place. Every
+component in `website/src/components/` is original, hand-built on the same
+underlying stack 21st.dev itself is built on (Tailwind + Framer Motion),
+carrying Rekono's real copy and design tokens rather than a generic
+template's. `.claude/skills/design-references/`'s "reference, never literal
+copy" policy — already established for the marketing site's visual
+direction before this — describes the same posture this ended up taking by
+necessity as much as by choice.
 
-21st.dev components ship as React + Tailwind. Same stack mismatch. The
-underlying idea — work from professionally designed components rather than
-inventing every block — is already served by `.claude/skills/design-references/`,
-which captures the *principles* from 14 real design systems without importing
-anyone's markup or tokens (see that skill's "reference, never literal copy"
-policy).
+### The performance advice, re-checked after the rebuild
 
-### The performance advice, checked
-
-- **Lazy-loaded images:** nothing to do. The marketing site has zero `<img>`
-  tags; all imagery is CSS and inline SVG.
-- **Optimized fonts:** already handled, and then some. Every face is embedded
-  directly in the HTML as a base64 `data:font/woff2` URI with
-  `font-display: swap` — zero external font requests, not even a `preconnect`
-  to warm up, because there is no font host to reach.
-- **Lighthouse audit:** not yet run as a tracked artifact. This is the one
-  genuinely open item from the guide.
+- **Lazy-loaded images:** still nothing to do — still zero `<img>` tags.
+- **Optimized fonts:** the 4 fonts are the same ones, but no longer inlined
+  as base64. They're real files now (`website/public/fonts/*.woff2`),
+  same-origin and zero-external-request either way, but now cacheable by the
+  browser independently of the page and fingerprinted by Vite.
+- **Lighthouse audit:** still not run. Still the one genuinely open item —
+  and now a more interesting question than before, since a client-rendered
+  React app has a real performance/no-JS trade-off a static file didn't
+  (see `website/README.md`'s "Why this stack" section).
