@@ -127,6 +127,7 @@ function switchTab(name) {
   if (name === "team") loadTeam();
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
+  if (name === "networth") loadNetWorth();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -3769,11 +3770,24 @@ function greetingForHour(hour) {
 // doesn't tell you whether it's fine. Where there's a genuine problem
 // (overdue, failed) the sub-line is escalated to a warning tone rather than
 // being tucked into the same muted grey as everything else.
-function kpiCard({ label, value, sub, subTone = "", accent = "" }) {
+// `meter` is a 0-1 fill shown as a hairline bar under the value -- only
+// passed where a real denominator exists (the plan's document cap). There is
+// deliberately no delta badge here: the dashboard payload carries no
+// prior-period figures, and a "+12%" with nothing behind it is worse than no
+// badge at all. The one place a genuine comparison exists is the volume
+// panel, which computes it from its own 14-day series.
+function kpiCard({ label, value, sub, subTone = "", accent = "", meter = null }) {
+  const meterBar =
+    meter === null
+      ? ""
+      : `<span class="kpi-meter"><span class="kpi-meter-fill" style="width: ${Math.min(100, meter * 100).toFixed(
+          1
+        )}%"></span></span>`;
   return `
     <div class="kpi-card${accent ? ` kpi-${accent}` : ""}">
       <span class="kpi-label">${label}</span>
       <span class="kpi-value">${value}</span>
+      ${meterBar}
       <span class="kpi-sub${subTone ? ` kpi-sub-${subTone}` : ""}">${sub}</span>
     </div>`;
 }
@@ -3832,6 +3846,10 @@ function renderDashboardKpis(k) {
         ? `of ${k.document_cap.toLocaleString()} included this month`
         : "No cap on this plan",
       subTone: capPct >= 90 ? "bad" : "",
+      // Only where there's a real denominator -- an uncapped plan has
+      // nothing to be a fraction of.
+      meter: k.document_cap ? k.documents_used_this_month / k.document_cap : null,
+      accent: capPct >= 90 ? "bad" : "",
     }),
   ];
 
@@ -3877,8 +3895,28 @@ function renderVolumeChart(trend) {
   const fmtAxis = (iso) =>
     new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 
+  // A real week-over-week comparison, not a decorative one: the series is
+  // exactly 14 days, so its two halves are two complete 7-day windows. Shown
+  // only when the prior week actually had volume -- "+300%" off a base of 1,
+  // or any percentage at all off a base of 0, says nothing true.
+  const half = Math.floor(trend.length / 2);
+  const priorWeek = trend.slice(0, half).reduce((sum, d) => sum + d.count, 0);
+  const thisWeek = trend.slice(half).reduce((sum, d) => sum + d.count, 0);
+  const pctChange = priorWeek ? Math.round(((thisWeek - priorWeek) / priorWeek) * 100) : null;
+  const deltaBadge =
+    pctChange === null
+      ? ""
+      : `<span class="vol-delta vol-delta-${pctChange > 0 ? "up" : pctChange < 0 ? "down" : "flat"}">${
+          pctChange > 0 ? "↑" : pctChange < 0 ? "↓" : "±"
+        } ${Math.abs(pctChange)}%</span>
+         <span class="vol-delta-note">vs prior 7 days</span>`;
+
   el.innerHTML = `
-    <div class="vol-summary"><strong>${total}</strong> document${total === 1 ? "" : "s"} processed</div>
+    <div class="vol-summary">
+      <strong>${total}</strong>
+      <span class="vol-summary-unit">document${total === 1 ? "" : "s"} processed</span>
+      ${deltaBadge}
+    </div>
     <div class="vol-chart">${bars}</div>
     <div class="vol-axis"><span>${fmtAxis(first)}</span><span>${fmtAxis(last)}</span></div>`;
 }
@@ -4048,6 +4086,343 @@ document.querySelectorAll(".export-btn[data-export]").forEach((btn) => {
   });
 });
 
+
+// ---- Net Worth (personal) ----
+// The one tab in this app that isn't organization data. GET /api/net-worth
+// returns everything this view needs in one payload -- accounts, both
+// totals, and the trend series -- computed server-side for the same reason
+// the dashboard's numbers are: so nothing on screen can disagree with
+// anything else on screen.
+
+const NW_CATEGORY_LABELS = {
+  cash: "Cash",
+  investment: "Investment",
+  retirement: "Retirement",
+  property: "Property",
+  vehicle: "Vehicle",
+  other_asset: "Other asset",
+  credit_card: "Credit card",
+  loan: "Loan",
+  mortgage: "Mortgage",
+  other_liability: "Other liability",
+};
+
+// Mirrors CATEGORY_KIND in models/NetWorthAccount.js. Duplicated rather than
+// fetched because it's a fixed part of the UI's own structure (which of the
+// two sections an account renders in, which optgroup it's offered under),
+// not data -- and the server stays the authority on the arithmetic: every
+// total shown here comes off the API payload, never from this map.
+const NW_LIABILITY_CATEGORIES = new Set(["credit_card", "loan", "mortgage", "other_liability"]);
+
+let nwEditingId = null;
+
+function nwSetError(message) {
+  const el = document.getElementById("nw-error");
+  if (!message) {
+    el.style.display = "none";
+    return;
+  }
+  el.textContent = message;
+  el.style.display = "block";
+}
+
+// A signed delta needs its own formatter: fmtCompactMoney is unsigned-ish
+// (it renders a negative fine, but never marks a positive as "+"), and a
+// change badge is unreadable without knowing which way it went.
+function nwFmtDelta(v) {
+  const sign = v > 0 ? "+" : v < 0 ? "−" : "";
+  return `${sign}${fmtCompactMoney(Math.abs(v))}`;
+}
+
+function nwRenderKpis(data) {
+  const el = document.getElementById("nw-kpis");
+  el.removeAttribute("aria-busy");
+
+  const trend = data.trend || [];
+  // Compare against the *first* recorded point rather than the previous one:
+  // entries are only written on days something changed, so "previous point"
+  // could be yesterday or eight months ago, and a badge that silently means
+  // a different span each time it renders is worse than no badge.
+  const first = trend.length ? trend[0] : null;
+  const change = first ? data.net_worth - first.net_worth : 0;
+  const hasHistory = trend.length > 1;
+
+  const changeTone = change > 0 ? "good" : change < 0 ? "bad" : "";
+
+  el.innerHTML = [
+    `<div class="kpi-card kpi-nw-primary">
+       <span class="kpi-label">Net worth</span>
+       <span class="kpi-value">${fmtCompactMoney(data.net_worth)}</span>
+       <span class="kpi-sub">${
+         hasHistory
+           ? `<span class="nw-delta nw-delta-${changeTone || "flat"}">${nwFmtDelta(change)}</span> since ${nwFmtDate(
+               first.date
+             )}`
+           : "Add a second reading to see a trend"
+       }</span>
+     </div>`,
+    kpiCard({
+      label: "Assets",
+      value: fmtCompactMoney(data.total_assets),
+      sub: `${data.accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category)).length} account${
+        data.accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category)).length === 1 ? "" : "s"
+      }`,
+      accent: "good",
+    }),
+    kpiCard({
+      label: "Liabilities",
+      value: fmtCompactMoney(data.total_liabilities),
+      sub: `${data.accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category)).length} account${
+        data.accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category)).length === 1 ? "" : "s"
+      }`,
+      accent: data.total_liabilities > 0 ? "warn" : "",
+    }),
+  ].join("");
+}
+
+function nwFmtDate(iso) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+// An area-filled line rather than the bar chart the dashboard's volume panel
+// uses: bars read as "how much happened on each separate day", which is right
+// for document counts and wrong here -- net worth is one continuous quantity
+// carried forward, and the shape between readings is the point.
+//
+// Hand-built inline SVG for the same reason as that chart: it's a polyline
+// and a fill, and a charting dependency would cost more than it saves. The
+// viewBox is a fixed 0..100 x 0..100 grid with preserveAspectRatio="none", so
+// it stretches to whatever width the panel is without a resize listener.
+function nwRenderTrend(trend, currentNetWorth) {
+  const el = document.getElementById("nw-trend");
+  const rangeEl = document.getElementById("nw-trend-range");
+
+  if (trend.length < 2) {
+    rangeEl.textContent = "";
+    el.innerHTML = `<p class="dash-empty">${
+      trend.length
+        ? "One reading so far. Update a balance on another day and the line starts here."
+        : "No accounts yet. Add one on the right to start tracking."
+    }</p>`;
+    return;
+  }
+
+  rangeEl.textContent = `${nwFmtDate(trend[0].date)} – ${nwFmtDate(trend[trend.length - 1].date)}`;
+
+  const values = trend.map((p) => p.net_worth);
+  // Scaled to the data's own range, not anchored at zero. Someone whose net
+  // worth moved from $296k to $377k has a story the chart should show; a
+  // domain starting at 0 would render that as a flat line grazing the top of
+  // the panel. Zero is only pulled into the domain when the series actually
+  // crosses it, where the sign change is the most important thing on screen.
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const crossesZero = dataMin < 0 && dataMax > 0;
+  let min = crossesZero ? Math.min(dataMin, 0) : dataMin;
+  let max = crossesZero ? Math.max(dataMax, 0) : dataMax;
+  // A perfectly flat series has no range to scale to; give it a nominal one
+  // so it renders as a centered horizontal line instead of dividing by zero.
+  if (max === min) {
+    const nominal = Math.abs(max) * 0.1 || 1;
+    min -= nominal;
+    max += nominal;
+  }
+  // Breathing room so the peak and trough don't sit flush against the edges
+  // of the panel, where they read as clipped rather than as extremes.
+  const pad = (max - min) * 0.08;
+  min -= pad;
+  max += pad;
+  const span = max - min;
+
+  const x = (i) => (i / (trend.length - 1)) * 100;
+  const y = (v) => 100 - ((v - min) / span) * 100;
+
+  const points = trend.map((p, i) => `${x(i).toFixed(2)},${y(p.net_worth).toFixed(2)}`).join(" ");
+  // Zero only earns a rule when the series straddles it (which is also the
+  // only case where it's inside the domain at all) -- on an all-positive
+  // chart it would sit off-canvas, and clamped to the floor it would just
+  // look like an axis that isn't one.
+  const zeroY = y(0).toFixed(2);
+  const last = trend[trend.length - 1];
+
+  el.innerHTML = `
+    <div class="nw-trend-value">${fmtCompactMoney(currentNetWorth)}</div>
+    <div class="nw-trend-chart">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="nw-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.28" />
+            <stop offset="100%" stop-color="var(--blue)" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        ${crossesZero ? `<line class="nw-zero-line" x1="0" y1="${zeroY}" x2="100" y2="${zeroY}" />` : ""}
+        <polygon class="nw-area" points="0,100 ${points} 100,100" fill="url(#nw-fill)" />
+        <polyline class="nw-line" points="${points}" />
+      </svg>
+      <span class="nw-trend-endpoint" style="left: 100%; top: ${y(last.net_worth).toFixed(2)}%"></span>
+    </div>
+    <div class="vol-axis">
+      <span>${nwFmtDate(trend[0].date)}</span>
+      <span>${nwFmtDate(last.date)}</span>
+    </div>`;
+}
+
+function nwAccountRow(a) {
+  const notes = a.notes ? `<span class="nw-row-notes">${escapeHtml(a.notes)}</span>` : "";
+  return `
+    <div class="nw-row">
+      <div class="nw-row-main">
+        <span class="nw-row-name">${escapeHtml(a.name)}</span>
+        <span class="nw-row-meta">${NW_CATEGORY_LABELS[a.category] || a.category}</span>
+        ${notes}
+      </div>
+      <span class="nw-row-balance">${fmtMoney(a.current_balance)}</span>
+      <div class="nw-row-actions">
+        <button type="button" class="nw-edit" data-id="${a.id}">Edit</button>
+        <button type="button" class="nw-delete" data-id="${a.id}" aria-label="Delete ${escapeHtml(a.name)}">Delete</button>
+      </div>
+    </div>`;
+}
+
+function nwRenderAccounts(accounts) {
+  const assets = accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category));
+  const liabilities = accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category));
+
+  const fill = (elId, rows, emptyText) => {
+    document.getElementById(elId).innerHTML = rows.length
+      ? rows.map(nwAccountRow).join("")
+      : `<p class="dash-empty">${emptyText}</p>`;
+  };
+
+  fill("nw-assets", assets, "No assets yet.");
+  fill("nw-liabilities", liabilities, "No liabilities — nice.");
+
+  document.getElementById("nw-assets-total").textContent = assets.length
+    ? `${assets.length} account${assets.length === 1 ? "" : "s"}`
+    : "";
+  document.getElementById("nw-liabilities-total").textContent = liabilities.length
+    ? `${liabilities.length} account${liabilities.length === 1 ? "" : "s"}`
+    : "";
+
+  document.querySelectorAll(".nw-edit").forEach((b) =>
+    b.addEventListener("click", () => nwStartEdit(accounts.find((a) => a.id === b.dataset.id)))
+  );
+  document.querySelectorAll(".nw-delete").forEach((b) =>
+    b.addEventListener("click", () => nwDeleteAccount(accounts.find((a) => a.id === b.dataset.id)))
+  );
+}
+
+async function loadNetWorth() {
+  nwSetError("");
+  try {
+    const res = await apiFetch("/api/net-worth");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Could not load your net worth.");
+
+    nwRenderKpis(data);
+    nwRenderTrend(data.trend || [], data.net_worth);
+    nwRenderAccounts(data.accounts);
+  } catch (err) {
+    nwSetError(String(err.message || err));
+    document.getElementById("nw-kpis").innerHTML = "";
+  }
+}
+
+function nwStartEdit(account) {
+  if (!account) return;
+  nwEditingId = account.id;
+  document.getElementById("nw-form-id").value = account.id;
+  document.getElementById("nw-name").value = account.name;
+  document.getElementById("nw-category").value = account.category;
+  document.getElementById("nw-balance").value = account.current_balance;
+  document.getElementById("nw-notes").value = account.notes || "";
+  document.getElementById("nw-form-title").textContent = "Edit account";
+  document.getElementById("nw-submit").textContent = "Save changes";
+  document.getElementById("nw-cancel").style.display = "";
+  document.getElementById("nw-name").focus();
+}
+
+function nwResetForm() {
+  nwEditingId = null;
+  document.getElementById("nw-form").reset();
+  document.getElementById("nw-form-id").value = "";
+  document.getElementById("nw-form-title").textContent = "Add an account";
+  document.getElementById("nw-submit").textContent = "Add account";
+  document.getElementById("nw-cancel").style.display = "none";
+  document.getElementById("nw-form-status").textContent = "";
+}
+
+async function nwDeleteAccount(account) {
+  if (!account) return;
+  const ok = await confirmDialog(
+    "Delete account?",
+    `"${account.name}" and its balance history will be removed from your net worth.`,
+    { confirmLabel: "Delete", danger: true }
+  );
+  if (!ok) return;
+
+  try {
+    const res = await apiFetch(`/api/net-worth/accounts/${account.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not delete that account.");
+    }
+    // The form could be sitting open on the row that just disappeared.
+    if (nwEditingId === account.id) nwResetForm();
+    await loadNetWorth();
+  } catch (err) {
+    nwSetError(String(err.message || err));
+  }
+}
+
+document.getElementById("nw-cancel").addEventListener("click", nwResetForm);
+
+document.getElementById("nw-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("nw-form-status");
+  const submitBtn = document.getElementById("nw-submit");
+  const original = submitBtn.textContent;
+
+  const balance = Number(document.getElementById("nw-balance").value);
+  if (!Number.isFinite(balance)) {
+    statusEl.textContent = "Enter a balance.";
+    return;
+  }
+
+  const payload = {
+    name: document.getElementById("nw-name").value.trim(),
+    category: document.getElementById("nw-category").value,
+    current_balance: balance,
+    notes: document.getElementById("nw-notes").value,
+  };
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Saving…";
+  statusEl.textContent = "";
+
+  try {
+    const editing = nwEditingId;
+    const res = await apiFetch(editing ? `/api/net-worth/accounts/${editing}` : "/api/net-worth/accounts", {
+      method: editing ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Could not save that account.");
+
+    nwResetForm();
+    await loadNetWorth();
+  } catch (err) {
+    statusEl.textContent = String(err.message || err);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = original;
+  }
+});
 
 // Called by auth.js once a valid session is confirmed (not on script load,
 // since there's nothing to load until we know the user is authenticated).

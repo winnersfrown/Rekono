@@ -1401,6 +1401,25 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .kpi-sub { font-size: 0.76rem; color: var(--muted); }
 .kpi-sub-bad { color: var(--red); font-weight: 500; }
 
+/* Only rendered where a real denominator exists (see kpiCard's `meter`).
+   Sits between the value and its sub-line so the fraction reads as part of
+   the number rather than as a separate widget. */
+.kpi-meter {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+  margin: 0.1rem 0 0.05rem;
+}
+.kpi-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+.kpi-bad .kpi-meter-fill { background: var(--red); }
+
 .kpi-card.is-loading {
   min-height: 104px;
   background: var(--ink-850);
@@ -1457,8 +1476,40 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .linklike:hover { background: none; box-shadow: none; transform: none; color: var(--blue-deep); }
 
 /* ---------- volume chart ---------- */
-.vol-summary { font-size: 0.85rem; color: var(--paper-dim); margin-bottom: 0.7rem; }
-.vol-summary strong { font-family: var(--font-display); font-size: 1.05rem; color: var(--paper); }
+.vol-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+  margin-bottom: 0.7rem;
+}
+.vol-summary strong {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+.vol-summary-unit { color: var(--muted); font-size: 0.82rem; }
+
+/* Direction is carried by the arrow glyph as well as the color, so the
+   badge still reads correctly to anyone who can't separate the two. */
+.vol-delta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.12rem 0.42rem;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.vol-delta-up { background: rgba(23, 128, 72, 0.12); color: var(--green); }
+.vol-delta-down { background: rgba(150, 101, 15, 0.14); color: var(--amber); }
+.vol-delta-flat { background: var(--ink-800); color: var(--muted); }
+.vol-delta-note { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
 
 .vol-chart { display: flex; align-items: flex-end; gap: 4px; height: 96px; }
 .vol-bar-wrap { flex: 1; height: 100%; display: flex; align-items: flex-end; }
@@ -1612,6 +1663,160 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 @media (max-width: 1080px) {
   .dash-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Net Worth (personal tab) ---------- */
+/* Reuses the dashboard's own .dash-grid / .dash-panel / .kpi-card system
+   rather than introducing a parallel one -- it's a different subject, but
+   it's the same kind of screen, and a second visual language for it would
+   read as a bolted-on second app. Three KPIs instead of six, so the row is
+   explicitly 3-up rather than inheriting the 6-up default. */
+.nw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1240px) { .nw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px) { .nw-kpis { grid-template-columns: 1fr; } }
+
+/* The headline number on this tab -- the one figure the whole tab exists to
+   answer -- so it gets a size the two supporting cards don't. */
+.kpi-nw-primary .kpi-value { font-size: 2.1rem; }
+
+.nw-delta {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  font-size: 0.72rem;
+}
+.nw-delta-good { background: rgba(23, 128, 72, 0.12); color: var(--green); }
+.nw-delta-bad { background: rgba(212, 58, 65, 0.12); color: var(--red); }
+.nw-delta-flat { background: var(--ink-800); color: var(--muted); }
+
+.nw-trend-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.4rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.7rem;
+}
+
+/* The SVG is a fixed 0-100 grid stretched by preserveAspectRatio="none", so
+   the wrapper's height is what actually sets the chart's height. Relative
+   positioning is for the endpoint dot, which is placed in percentages of
+   this box rather than in SVG user units (a circle in a non-uniformly
+   scaled viewBox would render as an ellipse). */
+.nw-trend-chart { position: relative; height: 150px; }
+.nw-trend-chart svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* vector-effect keeps the stroke 2px after the viewBox's non-uniform scale;
+   without it the horizontal stretch would smear the line to a fat blur. */
+.nw-line {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.nw-zero-line {
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The reading you actually care about is the latest one, so it gets a mark
+   the rest of the line doesn't. Translated back by half its own size since
+   its left/top are the true data point. */
+.nw-trend-endpoint {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 3px var(--ink-900), 0 0 0 4px rgba(75, 134, 247, 0.35);
+}
+
+.nw-account-list { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.nw-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.nw-row:hover { background: var(--ink-850); border-color: var(--line-soft); }
+
+.nw-row-main { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; min-width: 0; }
+.nw-row-name { font-size: 0.88rem; font-weight: 500; }
+.nw-row-meta {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.nw-row-notes { font-size: 0.76rem; color: var(--muted); }
+
+.nw-row-balance {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Row actions stay out of the way until the row is hovered or one of them
+   has keyboard focus -- a list of balances shouldn't read as a wall of
+   buttons, but hiding them from keyboard users outright would strand them. */
+.nw-row-actions { display: flex; gap: 0.3rem; opacity: 0; transition: opacity 0.15s ease; }
+.nw-row:hover .nw-row-actions,
+.nw-row-actions:focus-within { opacity: 1; }
+
+.nw-row-actions button {
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  color: var(--paper-dim);
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+.nw-row-actions button:hover { background: var(--ink-800); box-shadow: none; transform: none; }
+.nw-row-actions .nw-delete:hover { border-color: var(--red); color: var(--red); }
+
+.nw-form { display: flex; flex-direction: column; gap: 0.65rem; }
+.nw-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.nw-field > span:first-child {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.nw-field input, .nw-field select, .nw-field textarea {
+  width: 100%;
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0.45rem 0.55rem;
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+.nw-field input:focus, .nw-field select:focus, .nw-field textarea:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(75, 134, 247, 0.15);
+}
+.nw-field textarea { resize: vertical; }
+.nw-field-hint { font-size: 0.7rem; color: var(--muted); line-height: 1.35; }
+
+.nw-form-actions { display: flex; gap: 0.4rem; }
+.nw-form-actions button { flex: 1; }
 
 /* ---------- Ask Rekono: floating widget ---------- */
 /* Fixed to the viewport on every tab (a sibling of .app-layout in the

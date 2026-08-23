@@ -23,6 +23,7 @@ import assistantRoutes from "./routes/assistant.js";
 import settingsRoutes from "./routes/settings.js";
 import teamRoutes from "./routes/team.js";
 import integrationsRoutes from "./routes/integrations.js";
+import netWorthRoutes from "./routes/netWorth.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -143,6 +144,7 @@ app.use(assistantRoutes);
 app.use(settingsRoutes);
 app.use(teamRoutes);
 app.use(integrationsRoutes);
+app.use(netWorthRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));

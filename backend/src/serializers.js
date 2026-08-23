@@ -281,3 +281,15 @@ export function serializeUser(user) {
     role: user.role,
   };
 }
+
+export function serializeNetWorthAccount(a) {
+  return {
+    id: a.id,
+    name: a.name,
+    category: a.category,
+    current_balance: a.currentBalance,
+    notes: a.notes,
+    created_at: a.createdAt,
+    updated_at: a.updatedAt,
+  };
+}
