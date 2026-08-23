@@ -207,13 +207,27 @@
 
   <div id="app-shell" style="display: none;">
     <div class="app-layout">
-      <aside class="sidebar">
-        <button type="button" class="sidebar-brand brand" data-tab="ask" title="Home">
-          <span class="logomark"></span>Rekono
-        </button>
+      <!-- A top bar rather than a sidebar: thirteen destinations in one
+           vertical column read as an undifferentiated stack, and the
+           recent-uploads list and account footer had to fight the nav for
+           the same scarce vertical space. Grouping them into three menus
+           trades that for horizontal room, and hands the content area the
+           full window width. -->
+      <header class="topbar">
+        <div class="topbar-inner">
+          <button type="button" class="topbar-brand brand" data-tab="ask" title="Home">
+            <span class="logomark"></span>Rekono
+          </button>
 
-        <nav class="sidebar-nav">
-          <div class="sidebar-section-label">Documents</div>
+          <nav class="topbar-nav">
+            <button class="tab-btn topnav-link" data-tab="ask">Home</button>
+
+            <div class="topnav-group">
+              <button type="button" class="topnav-trigger" data-menu="documents" aria-expanded="false" aria-haspopup="true">
+                Documents
+                <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="topnav-menu" data-menu-for="documents" hidden>
           <button class="tab-btn" data-tab="upload">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M12 3l-3.5 3.5M12 3l3.5 3.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
             Upload
@@ -238,8 +252,15 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h3"/></svg>
             Tax Docs
           </button>
+              </div>
+            </div>
 
-          <div class="sidebar-section-label">Workflow</div>
+            <div class="topnav-group">
+              <button type="button" class="topnav-trigger" data-menu="workflow" aria-expanded="false" aria-haspopup="true">
+                Workflow
+                <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="topnav-menu" data-menu-for="workflow" hidden>
           <button class="tab-btn" data-tab="quickreview">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>
             Quick Review
@@ -260,8 +281,15 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 21h16"/></svg>
             Export
           </button>
+              </div>
+            </div>
 
-          <div class="sidebar-section-label">Admin</div>
+            <div class="topnav-group">
+              <button type="button" class="topnav-trigger" data-menu="admin" aria-expanded="false" aria-haspopup="true">
+                Admin
+                <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="topnav-menu" data-menu-for="admin" hidden>
           <button class="tab-btn" data-tab="team">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             Team
@@ -270,29 +298,36 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Settings
           </button>
-        </nav>
+              </div>
+            </div>
+          </nav>
 
-        <div class="sidebar-recents">
-          <div class="sidebar-section-label">Recent uploads</div>
-          <div id="sidebar-recent-uploads" class="sidebar-recent-list"></div>
+          <!-- Plan, usage, and account collapse into one control. All three
+               were separate always-visible blocks in the old sidebar footer;
+               none of them is something you read on every screen. -->
+          <div class="topnav-group topbar-account-group">
+            <button type="button" class="topbar-account" data-menu="account" aria-expanded="false" aria-haspopup="true" aria-label="Account menu">
+              <span id="topbar-avatar" class="topbar-avatar" aria-hidden="true"></span>
+              <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="topnav-menu topnav-menu-right account-menu" data-menu-for="account" hidden>
+              <div class="account-menu-head">
+                <span id="current-user-badge" class="account-menu-name"></span>
+                <div class="plan-badge-wrap">
+                  <span id="plan-badge" class="plan-badge"></span>
+                  <div id="plan-benefits-tooltip" class="plan-tooltip"></div>
+                </div>
+              </div>
+              <div id="doc-usage" class="doc-usage" style="display: none;">
+                <div class="doc-usage-bar"><div id="doc-usage-fill" class="doc-usage-fill"></div></div>
+                <span id="doc-usage-text" class="doc-usage-text"></span>
+              </div>
+              <button type="button" id="upgrade-btn" class="btn-upgrade" style="display: none;">Upgrade plan</button>
+              <button id="logout-btn" class="btn-logout">Sign out</button>
+            </div>
+          </div>
         </div>
-
-        <div class="sidebar-footer">
-          <div class="plan-badge-wrap">
-            <span id="plan-badge" class="plan-badge"></span>
-            <div id="plan-benefits-tooltip" class="plan-tooltip"></div>
-          </div>
-          <div id="doc-usage" class="doc-usage" style="display: none;">
-            <div class="doc-usage-bar"><div id="doc-usage-fill" class="doc-usage-fill"></div></div>
-            <span id="doc-usage-text" class="doc-usage-text"></span>
-          </div>
-          <button type="button" id="upgrade-btn" class="btn-upgrade" style="display: none;">Upgrade plan</button>
-          <div class="sidebar-user-row">
-            <span id="current-user-badge"></span>
-            <button id="logout-btn" class="btn-logout">Sign out</button>
-          </div>
-        </div>
-      </aside>
+      </header>
 
       <main class="app-main">
         <div id="demo-mode-banner" class="demo-mode-banner" style="display: none;">
@@ -363,6 +398,17 @@
                   <span class="dash-panel-note">Last 14 days</span>
                 </div>
                 <div id="dash-volume" class="dash-volume"></div>
+              </section>
+
+              <!-- Moved off the old sidebar, where it competed with thirteen
+                   nav items for vertical space. It's a list of your own
+                   recent work, which is dashboard content, not navigation. -->
+              <section class="dash-panel">
+                <div class="dash-panel-head">
+                  <h2>Recent uploads</h2>
+                  <span class="dash-panel-note">Latest first</span>
+                </div>
+                <div id="recent-uploads" class="recent-list"></div>
               </section>
 
               <section class="dash-panel">
