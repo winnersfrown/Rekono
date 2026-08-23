@@ -3770,11 +3770,24 @@ function greetingForHour(hour) {
 // doesn't tell you whether it's fine. Where there's a genuine problem
 // (overdue, failed) the sub-line is escalated to a warning tone rather than
 // being tucked into the same muted grey as everything else.
-function kpiCard({ label, value, sub, subTone = "", accent = "" }) {
+// `meter` is a 0-1 fill shown as a hairline bar under the value -- only
+// passed where a real denominator exists (the plan's document cap). There is
+// deliberately no delta badge here: the dashboard payload carries no
+// prior-period figures, and a "+12%" with nothing behind it is worse than no
+// badge at all. The one place a genuine comparison exists is the volume
+// panel, which computes it from its own 14-day series.
+function kpiCard({ label, value, sub, subTone = "", accent = "", meter = null }) {
+  const meterBar =
+    meter === null
+      ? ""
+      : `<span class="kpi-meter"><span class="kpi-meter-fill" style="width: ${Math.min(100, meter * 100).toFixed(
+          1
+        )}%"></span></span>`;
   return `
     <div class="kpi-card${accent ? ` kpi-${accent}` : ""}">
       <span class="kpi-label">${label}</span>
       <span class="kpi-value">${value}</span>
+      ${meterBar}
       <span class="kpi-sub${subTone ? ` kpi-sub-${subTone}` : ""}">${sub}</span>
     </div>`;
 }
@@ -3833,6 +3846,10 @@ function renderDashboardKpis(k) {
         ? `of ${k.document_cap.toLocaleString()} included this month`
         : "No cap on this plan",
       subTone: capPct >= 90 ? "bad" : "",
+      // Only where there's a real denominator -- an uncapped plan has
+      // nothing to be a fraction of.
+      meter: k.document_cap ? k.documents_used_this_month / k.document_cap : null,
+      accent: capPct >= 90 ? "bad" : "",
     }),
   ];
 
@@ -3878,8 +3895,28 @@ function renderVolumeChart(trend) {
   const fmtAxis = (iso) =>
     new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 
+  // A real week-over-week comparison, not a decorative one: the series is
+  // exactly 14 days, so its two halves are two complete 7-day windows. Shown
+  // only when the prior week actually had volume -- "+300%" off a base of 1,
+  // or any percentage at all off a base of 0, says nothing true.
+  const half = Math.floor(trend.length / 2);
+  const priorWeek = trend.slice(0, half).reduce((sum, d) => sum + d.count, 0);
+  const thisWeek = trend.slice(half).reduce((sum, d) => sum + d.count, 0);
+  const pctChange = priorWeek ? Math.round(((thisWeek - priorWeek) / priorWeek) * 100) : null;
+  const deltaBadge =
+    pctChange === null
+      ? ""
+      : `<span class="vol-delta vol-delta-${pctChange > 0 ? "up" : pctChange < 0 ? "down" : "flat"}">${
+          pctChange > 0 ? "↑" : pctChange < 0 ? "↓" : "±"
+        } ${Math.abs(pctChange)}%</span>
+         <span class="vol-delta-note">vs prior 7 days</span>`;
+
   el.innerHTML = `
-    <div class="vol-summary"><strong>${total}</strong> document${total === 1 ? "" : "s"} processed</div>
+    <div class="vol-summary">
+      <strong>${total}</strong>
+      <span class="vol-summary-unit">document${total === 1 ? "" : "s"} processed</span>
+      ${deltaBadge}
+    </div>
     <div class="vol-chart">${bars}</div>
     <div class="vol-axis"><span>${fmtAxis(first)}</span><span>${fmtAxis(last)}</span></div>`;
 }
@@ -4177,21 +4214,39 @@ function nwRenderTrend(trend, currentNetWorth) {
   rangeEl.textContent = `${nwFmtDate(trend[0].date)} – ${nwFmtDate(trend[trend.length - 1].date)}`;
 
   const values = trend.map((p) => p.net_worth);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 0);
-  // A perfectly flat series would divide by zero; give it a nominal span so
-  // it renders as a centered horizontal line instead of vanishing.
-  const span = max - min || Math.abs(max) || 1;
+  // Scaled to the data's own range, not anchored at zero. Someone whose net
+  // worth moved from $296k to $377k has a story the chart should show; a
+  // domain starting at 0 would render that as a flat line grazing the top of
+  // the panel. Zero is only pulled into the domain when the series actually
+  // crosses it, where the sign change is the most important thing on screen.
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const crossesZero = dataMin < 0 && dataMax > 0;
+  let min = crossesZero ? Math.min(dataMin, 0) : dataMin;
+  let max = crossesZero ? Math.max(dataMax, 0) : dataMax;
+  // A perfectly flat series has no range to scale to; give it a nominal one
+  // so it renders as a centered horizontal line instead of dividing by zero.
+  if (max === min) {
+    const nominal = Math.abs(max) * 0.1 || 1;
+    min -= nominal;
+    max += nominal;
+  }
+  // Breathing room so the peak and trough don't sit flush against the edges
+  // of the panel, where they read as clipped rather than as extremes.
+  const pad = (max - min) * 0.08;
+  min -= pad;
+  max += pad;
+  const span = max - min;
 
   const x = (i) => (i / (trend.length - 1)) * 100;
   const y = (v) => 100 - ((v - min) / span) * 100;
 
   const points = trend.map((p, i) => `${x(i).toFixed(2)},${y(p.net_worth).toFixed(2)}`).join(" ");
+  // Zero only earns a rule when the series straddles it (which is also the
+  // only case where it's inside the domain at all) -- on an all-positive
+  // chart it would sit off-canvas, and clamped to the floor it would just
+  // look like an axis that isn't one.
   const zeroY = y(0).toFixed(2);
-  // Zero only earns a rule when the series actually straddles it -- drawing
-  // it pinned to the floor of an all-positive chart just adds a line that
-  // looks like an axis and isn't one.
-  const crossesZero = min < 0 && max > 0;
   const last = trend[trend.length - 1];
 
   el.innerHTML = `

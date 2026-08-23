@@ -1401,6 +1401,25 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .kpi-sub { font-size: 0.76rem; color: var(--muted); }
 .kpi-sub-bad { color: var(--red); font-weight: 500; }
 
+/* Only rendered where a real denominator exists (see kpiCard's `meter`).
+   Sits between the value and its sub-line so the fraction reads as part of
+   the number rather than as a separate widget. */
+.kpi-meter {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+  margin: 0.1rem 0 0.05rem;
+}
+.kpi-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+.kpi-bad .kpi-meter-fill { background: var(--red); }
+
 .kpi-card.is-loading {
   min-height: 104px;
   background: var(--ink-850);
@@ -1457,8 +1476,40 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .linklike:hover { background: none; box-shadow: none; transform: none; color: var(--blue-deep); }
 
 /* ---------- volume chart ---------- */
-.vol-summary { font-size: 0.85rem; color: var(--paper-dim); margin-bottom: 0.7rem; }
-.vol-summary strong { font-family: var(--font-display); font-size: 1.05rem; color: var(--paper); }
+.vol-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--paper-dim);
+  margin-bottom: 0.7rem;
+}
+.vol-summary strong {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+}
+.vol-summary-unit { color: var(--muted); font-size: 0.82rem; }
+
+/* Direction is carried by the arrow glyph as well as the color, so the
+   badge still reads correctly to anyone who can't separate the two. */
+.vol-delta {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.12rem 0.42rem;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.vol-delta-up { background: rgba(23, 128, 72, 0.12); color: var(--green); }
+.vol-delta-down { background: rgba(150, 101, 15, 0.14); color: var(--amber); }
+.vol-delta-flat { background: var(--ink-800); color: var(--muted); }
+.vol-delta-note { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
 
 .vol-chart { display: flex; align-items: flex-end; gap: 4px; height: 96px; }
 .vol-bar-wrap { flex: 1; height: 100%; display: flex; align-items: flex-end; }

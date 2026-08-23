@@ -32,6 +32,8 @@ import {
   VendorDocument,
   Lease,
   TaxDocument,
+  NetWorthAccount,
+  NetWorthEntry,
 } from "./models/index.js";
 
 // ---- minimal hand-rolled single-page PDF builder ----
@@ -415,7 +417,49 @@ export async function seedDemoOrg() {
     overallConfidence: 0.58,
   });
 
+  await seedNetWorth(owner);
+
   return { org, user: owner };
+}
+
+// The Net Worth tab is personal, not org data, so it hangs off the demo's
+// owner rather than the demo organization. Seeded with eight monthly
+// readings rather than a single current balance: with one reading the trend
+// panel correctly says "add another to see a line", which is honest for a
+// real new account and useless in a sandbox meant to show what the feature
+// does.
+async function seedNetWorth(user) {
+  // Each account's balance at each of the eight months, oldest first. Hand-
+  // written rather than generated from a growth rate so the line has the
+  // shape a real one does -- the brokerage dips mid-series, the mortgage
+  // amortizes down at a believable pace, the card balance wanders.
+  const HISTORY = [
+    { name: "Everyday checking", category: "cash", notes: "", balances: [8200, 9100, 7400, 10250, 9800, 11400, 10900, 12300] },
+    { name: "High-yield savings", category: "cash", notes: "Emergency fund", balances: [24000, 24100, 26000, 26100, 28000, 28150, 30000, 30200] },
+    { name: "Brokerage", category: "investment", notes: "Index funds", balances: [71000, 74500, 69800, 72300, 78900, 81200, 79600, 86400] },
+    { name: "401(k)", category: "retirement", notes: "", balances: [108000, 111500, 109200, 114800, 119300, 123100, 126400, 132900] },
+    { name: "Condo", category: "property", notes: "County assessment", balances: [402000, 402000, 402000, 415000, 415000, 415000, 415000, 415000] },
+    { name: "Mortgage", category: "mortgage", notes: "", balances: [296400, 295300, 294200, 293100, 292000, 290800, 289600, 288300] },
+    { name: "Auto loan", category: "loan", notes: "", balances: [18900, 17600, 16300, 15000, 13700, 12400, 11100, 9800] },
+    { name: "Rewards card", category: "credit_card", notes: "Paid in full monthly", balances: [1850, 2400, 1200, 3100, 980, 2260, 1740, 2140] },
+  ];
+
+  // Roughly one reading a month, ending today -- 30-day steps rather than
+  // calendar months so this doesn't have to care what today's date is.
+  const dates = HISTORY[0].balances.map((_, i) => daysFromNow(-30 * (HISTORY[0].balances.length - 1 - i)));
+
+  for (const { name, category, notes, balances } of HISTORY) {
+    const account = await NetWorthAccount.create({
+      userId: user.id,
+      name,
+      category,
+      notes,
+      currentBalance: balances[balances.length - 1],
+    });
+    await NetWorthEntry.bulkCreate(
+      balances.map((balance, i) => ({ accountId: account.id, balance, asOfDate: dates[i] }))
+    );
+  }
 }
 
 // Renders something that actually looks like a vendor's invoice -- a
