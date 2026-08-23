@@ -115,7 +115,9 @@ function switchTab(name) {
   document.getElementById(`tab-${name}`).classList.add("active");
   // Coming back to the landing tab after approving/uploading elsewhere
   // should show the effect of that work, not a stale snapshot from login.
-  if (name === "ask") loadDashboard();
+  // Net Worth lives on this same tab (see index.html) rather than its own,
+  // so it loads alongside the org dashboard rather than on its own branch.
+  if (name === "ask") { loadDashboard(); loadNetWorth(); }
   if (name === "review") loadInvoices();
   if (name === "expenses") loadExpenses();
   if (name === "vendordocs") loadVendorDocs();
@@ -127,7 +129,6 @@ function switchTab(name) {
   if (name === "team") loadTeam();
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
-  if (name === "networth") loadNetWorth();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4429,6 +4430,7 @@ document.getElementById("nw-form").addEventListener("submit", async (e) => {
 function onAuthenticated() {
   loadRecentUploads();
   loadDashboard();
+  loadNetWorth();
   // Needed early (not just when the Settings tab is opened) so the invoice
   // detail panel's "Push to QuickBooks" button knows whether to show up.
   loadQuickbooksStatus();
