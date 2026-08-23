@@ -64,7 +64,7 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Data layer** (`models/`): Postgres in production (SQLite by default for local dev — no separate DB server needed to try it out) via Sequelize. Every extraction, human correction, approval/rejection, and match decision writes an `AuditLog` row — the audit trail that finance/compliance conversations will ask about. Every table that holds customer data (`Invoice`, `MatchSource`, `AuditLog`) carries an `orgId`, and every route filters by the authenticated user's org — enforced entirely in application code (every query scopes by `req.currentUser.orgId`, verified route-by-route; there's no database-level row-level security layer underneath it) and locked in by regression tests (`tests/orgIsolation.test.js` plus the cross-org tests alongside each feature) rather than by convention alone — see `auth.js` and `models/` (`Organization`, `User`).
 
-**Auth** (`auth.js`, `routes/auth.js`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User` (`role: "owner"`). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint and the Fly.io instructions below both do this for you) for any deployment with more than one replica.
+**Auth** (`auth.js`, `routes/auth.js`): email + password, bcrypt-hashed, stateless JWT bearer tokens (14-day expiry). Signup creates a new `Organization` plus its first `User` (`role: "owner"`). `SECRET_KEY` is read from the environment if set, otherwise auto-generated and persisted to a local file on first run — fine for a single instance, but set it explicitly (Render's Blueprint does this for you) for any deployment with more than one replica.
 
 **Team invites** (`seats.js`, `routes/team.js`): the org's owner can invite teammates by email, up to the plan's seat count (`plans.js`'s `seats` -- `null` means unlimited; a pending invite reserves a seat so the cap can't be oversubscribed before anyone accepts). The invite email links to `/?invite_token=...`, which lets the invitee set a name and password and creates a `role: "member"` User on the same org -- no separate signup, no second organization. Degrades the same way as the other Resend-gated flows: without `RESEND_API_KEY` configured, the invite still gets created and its link is handed back directly in the API response instead of emailed.
 
@@ -124,32 +124,9 @@ docker compose up --build
 
 Runs the app against Postgres instead of SQLite. Set `GEMINI_API_KEY` in your shell environment before `docker compose up` to enable LLM extraction.
 
-### Deploying a live instance
+### Deploying a live instance (Render)
 
-Everything above runs locally or in your own Docker Compose — nothing is publicly reachable until you deploy it somewhere. Two prepared options, both under **your own** account (neither requires giving anyone else credentials):
-
-#### Fly.io (has a free allowance)
-
-`fly.toml` targets [Fly.io](https://fly.io), whose free allowance includes persistent volumes — the piece most "free" PaaS tiers drop, which matters here since uploaded invoices need to survive restarts. Requires the [`flyctl` CLI](https://fly.io/docs/flyctl/install/) and `fly auth login` first.
-
-```bash
-fly apps create <your-unique-app-name>   # "rekono-api" is likely taken globally -- pick your own,
-                                          # then update the `app = "..."` line in fly.toml to match
-fly postgres create --name rekono-db     # a separate Postgres app, on the same free allowance
-fly postgres attach rekono-db            # wires DATABASE_URL into this app automatically
-fly volumes create rekono_storage --size 3
-fly secrets set SECRET_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-fly secrets set GEMINI_API_KEY=<your key>      # optional -- omit to run in heuristic/demo mode
-fly deploy
-```
-
-`fly.toml` pins `min_machines_running = 1` rather than letting Fly scale the app to zero: invoice processing runs on an in-process background worker thread, not tied to any single HTTP request, so a machine that stopped right after an upload would strand that job mid-pipeline. That does mean it's not fully $0 depending on Fly's current pricing, but should stay inexpensive at this scale.
-
-Your app is live at whatever URL `fly deploy` prints (`https://<your-app-name>.fly.dev` by default). Sign up from there to create the first organization and account.
-
-#### Render (free tier)
-
-`render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions the web service on Render's **free** plan. It deliberately does **not** provision Render's own Postgres — see "Database (Neon)" below for why — so you'll need a Postgres connection string from elsewhere (Neon's free tier is the recommended option) before deploying.
+Everything above runs locally or in your own Docker Compose — nothing is publicly reachable until you deploy it somewhere. `render.yaml` is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions the web service on Render's **free** plan. It deliberately does **not** provision Render's own Postgres — see "Database (Neon)" below for why — so you'll need a Postgres connection string from elsewhere (Neon's free tier is the recommended option) before deploying.
 
 1. Create a free Neon project (see "Database (Neon)" below) and copy its connection string.
 2. Push/fork this repo to your own GitHub.
@@ -165,10 +142,8 @@ One tradeoff that comes with staying on free: web services can't attach a persis
 
 1. Sign up at [neon.tech](https://neon.tech) (free tier, no credit card required) and create a project.
 2. From the project dashboard, copy the **connection string** (**Connect** → the pooled connection string is fine for this app's connection volume).
-3. Set `DATABASE_URL` to that connection string wherever the backend runs (Render/Fly dashboard, or `.env` locally) — no other code or config changes needed, since this app already talks to Postgres through Sequelize via `DATABASE_URL` alone.
+3. Set `DATABASE_URL` to that connection string wherever the backend runs (Render dashboard, or `.env` locally) — no other code or config changes needed, since this app already talks to Postgres through Sequelize via `DATABASE_URL` alone.
 4. On first boot against a fresh database, `initDb()` creates every table automatically (see `models/index.js`) — no manual migration step.
-
-Fly.io's own `fly postgres create` (see below) doesn't have this 30-day deletion problem, so Neon is optional there — only worth it if you'd rather not manage a separate Fly Postgres app.
 
 **If the deployed database ever gets into a broken schema state** that `initDb()`'s normal additive-only sync can't recover from on its own (its console logs will say so explicitly if this happens), there's a deliberately scary, explicitly-gated escape hatch: set `DANGEROUSLY_RESET_DB=true` in the web service's environment variables and redeploy. On boot, the app drops and recreates the entire `public` schema, then rebuilds every table fresh from the current models — **this permanently deletes all data**. Remove the env var again immediately after confirming it worked; it stays set across restarts otherwise, and every future boot would wipe the database again. This is meant for the "app is broken and there's nothing worth recovering" case (e.g. still in development), not a substitute for real backups or a real migration once there's data worth keeping.
 
@@ -307,7 +282,7 @@ Every secret this app uses (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHO
 - `.env` is git-ignored (`.gitignore`) and `.env.example` -- the only env file actually committed -- contains no real values, just variable names.
 - The two OAuth/webhook secrets that do get sent somewhere (`GOOGLE_CLIENT_SECRET` to Google's token endpoint, `STRIPE_WEBHOOK_SECRET` used to verify incoming signatures) are only ever used in server-to-server calls, never returned to a client.
 
-If you're deploying this yourself: the only place these values should ever live is your platform's secret store (Render/Fly's dashboard env vars, or a local `.env` that stays untracked) -- never hardcoded into a file that gets committed. `git log -p | grep`-ing for key-shaped strings before a `git push` is a cheap habit if you're ever unsure whether one slipped in.
+If you're deploying this yourself: the only place these values should ever live is your platform's secret store (Render's dashboard env vars, or a local `.env` that stays untracked) -- never hardcoded into a file that gets committed. `git log -p | grep`-ing for key-shaped strings before a `git push` is a cheap habit if you're ever unsure whether one slipped in.
 
 ### Hardening
 
@@ -331,7 +306,7 @@ No software is ever fully "unhackable" -- this is a genuine, tested hardening pa
 
 1. Sign up at [resend.com](https://resend.com) (free tier: 3,000 emails/month, 100/day).
 2. Get an API key from the dashboard (**API Keys → Create API Key**).
-3. Set `RESEND_API_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally).
+3. Set `RESEND_API_KEY` on the deployed backend (Render dashboard, or `.env` locally).
 4. By default, `CONTACT_FROM_EMAIL` is `onboarding@resend.dev` -- Resend's shared sandbox sender, which works without any domain setup as long as `CONTACT_TO_EMAIL` (defaults to `wfrownusa@yahoo.com`) is the same address you signed up to Resend with. To send from your own domain instead, verify it in Resend (**Domains** tab) and set `CONTACT_FROM_EMAIL` to an address at that domain.
 
 ### Plans & billing (Stripe)
@@ -339,7 +314,7 @@ No software is ever fully "unhackable" -- this is a genuine, tested hardening pa
 Paid-plan checkout, the billing-management portal, and the onboarding wizard's paid-plan path all need `STRIPE_SECRET_KEY` set, or they respond `503` (Free-plan onboarding and every other route work regardless -- billing is the one thing this gates).
 
 1. Sign up at [stripe.com](https://stripe.com) and grab your **test mode** secret key first (**Developers → API keys**) to try the flow safely -- it's a normal Checkout page, just backed by [Stripe's test card numbers](https://stripe.com/docs/testing) instead of real money.
-2. Set `STRIPE_SECRET_KEY` on the deployed backend (Render/Fly dashboard, or `.env` locally). That alone is enough for checkout and the billing portal to work -- no Products/Prices need to be created in the Stripe dashboard, since `routes/billing.js` builds the price inline from `plans.js` at checkout time.
+2. Set `STRIPE_SECRET_KEY` on the deployed backend (Render dashboard, or `.env` locally). That alone is enough for checkout and the billing portal to work -- no Products/Prices need to be created in the Stripe dashboard, since `routes/billing.js` builds the price inline from `plans.js` at checkout time.
 3. For the webhook (keeps plan status in sync with renewals/cancellations after the initial checkout): in Stripe, **Developers → Webhooks → Add endpoint**, pointed at `https://<your-deployed-url>/api/billing/webhook`, listening for `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`. Copy the endpoint's **Signing secret** into `STRIPE_WEBHOOK_SECRET`.
 4. Switch to live mode keys (both the secret key and a live-mode webhook endpoint/secret) once you're ready to accept real payments -- test and live are entirely separate in Stripe, including their webhooks.
 5. Plan prices/caps live in `backend/src/plans.js`, matching the marketing site's pricing section -- change both together if either changes.
@@ -352,7 +327,7 @@ The "Sign in with Google" button needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`
 1. In the [Google Cloud Console](https://console.cloud.google.com), create a project (or reuse one) and go to **APIs & Services → OAuth consent screen**. Fill in the required fields (app name, support email); external + testing mode is fine to start.
 2. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**, application type **Web application**.
 3. Under **Authorized redirect URIs**, add `https://<your-deployed-url>/api/auth/google/callback` (and `http://localhost:8000/api/auth/google/callback` too, for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/auth/google/callback`.
-4. Copy the generated **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Render/Fly dashboard, or `.env` locally).
+4. Copy the generated **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Render dashboard, or `.env` locally).
 5. No new database columns or account-linking table: a Google sign-in is matched to an existing account purely by verified email, and creates a new org + user (same as a normal signup, sent through the same onboarding wizard) if there's no match yet. See `completeGoogleLogin` in `routes/auth.js`.
 
 ### Demo mode
