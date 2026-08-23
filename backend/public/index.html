@@ -270,6 +270,14 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Settings
           </button>
+
+          <!-- Its own section on purpose, not filed under Admin or Workflow:
+               this is the one tab in the app that isn't organization data. -->
+          <div class="sidebar-section-label">Personal</div>
+          <button class="tab-btn" data-tab="networth">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5.5-5.5 3.5 3.5L21 6"/><path d="M15 6h6v6"/></svg>
+            Net Worth
+          </button>
         </nav>
 
         <div class="sidebar-recents">
@@ -1004,6 +1012,99 @@
             <div id="settings-sampling-status" class="hint"></div>
 
             <div id="settings-qa-queue" style="margin-top: 1rem;"></div>
+          </div>
+        </section>
+
+        <section id="tab-networth" class="tab-panel">
+          <header class="dash-head">
+            <div class="dash-greeting">
+              <h1>Net Worth</h1>
+              <p class="dash-greeting-sub">
+                Your own assets and liabilities — private to your login, not shared with your organization.
+              </p>
+            </div>
+          </header>
+
+          <div id="nw-error" class="dash-error" style="display: none;"></div>
+
+          <div id="nw-kpis" class="dash-kpis nw-kpis" aria-busy="true">
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+          </div>
+
+          <div class="dash-grid">
+            <div class="dash-col-main">
+              <section class="dash-panel">
+                <div class="dash-panel-head">
+                  <h2>Net worth over time</h2>
+                  <span class="dash-panel-note" id="nw-trend-range"></span>
+                </div>
+                <div id="nw-trend" class="nw-trend"></div>
+              </section>
+
+              <section class="dash-panel">
+                <div class="dash-panel-head">
+                  <h2>Assets</h2>
+                  <span class="dash-panel-note" id="nw-assets-total"></span>
+                </div>
+                <div id="nw-assets" class="nw-account-list"></div>
+              </section>
+
+              <section class="dash-panel">
+                <div class="dash-panel-head">
+                  <h2>Liabilities</h2>
+                  <span class="dash-panel-note" id="nw-liabilities-total"></span>
+                </div>
+                <div id="nw-liabilities" class="nw-account-list"></div>
+              </section>
+            </div>
+
+            <aside class="dash-col-side">
+              <section class="dash-panel">
+                <div class="dash-panel-head"><h2 id="nw-form-title">Add an account</h2></div>
+                <form id="nw-form" class="nw-form">
+                  <input type="hidden" id="nw-form-id" />
+                  <label class="nw-field">
+                    <span>Name</span>
+                    <input type="text" id="nw-name" maxlength="256" placeholder="Chase checking" required />
+                  </label>
+                  <label class="nw-field">
+                    <span>Category</span>
+                    <select id="nw-category" required>
+                      <optgroup label="Assets">
+                        <option value="cash">Cash</option>
+                        <option value="investment">Investment</option>
+                        <option value="retirement">Retirement</option>
+                        <option value="property">Property</option>
+                        <option value="vehicle">Vehicle</option>
+                        <option value="other_asset">Other asset</option>
+                      </optgroup>
+                      <optgroup label="Liabilities">
+                        <option value="credit_card">Credit card</option>
+                        <option value="loan">Loan</option>
+                        <option value="mortgage">Mortgage</option>
+                        <option value="other_liability">Other liability</option>
+                      </optgroup>
+                    </select>
+                  </label>
+                  <label class="nw-field">
+                    <span>Balance</span>
+                    <input type="number" id="nw-balance" step="0.01" placeholder="0.00" required />
+                    <span class="nw-field-hint">Enter what you owe as a positive number — it's subtracted automatically.</span>
+                  </label>
+                  <label class="nw-field">
+                    <span>Notes</span>
+                    <textarea id="nw-notes" rows="2" maxlength="4000" placeholder="Optional"></textarea>
+                  </label>
+                  <div class="nw-form-actions">
+                    <button type="submit" id="nw-submit">Add account</button>
+                    <button type="button" id="nw-cancel" class="btn-logout" style="display: none;">Cancel</button>
+                  </div>
+                </form>
+                <div id="nw-form-status" class="hint"></div>
+              </section>
+            </aside>
           </div>
         </section>
       </main>
