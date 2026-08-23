@@ -135,33 +135,34 @@ export async function seedDemoOrg() {
 
   const poEntryAcme = await MatchEntry.create({
     sourceId: poSource.id,
-    vendor: "Acme Office Supplies",
+    vendor: "Pinehurst Office Supply",
     amount: 1284.5,
     entryDate: daysFromNow(-14),
     reference: "PO-5521",
-    rawRow: { vendor: "Acme Office Supplies", amount: 1284.5, reference: "PO-5521" },
+    rawRow: { vendor: "Pinehurst Office Supply", amount: 1284.5, reference: "PO-5521" },
   });
   await MatchEntry.create({
     sourceId: poSource.id,
-    vendor: "Fabrikam Design Co",
+    vendor: "Birchwood Creative Studio",
     amount: 760,
     entryDate: daysFromNow(-3),
     reference: "PO-5588",
-    rawRow: { vendor: "Fabrikam Design Co", amount: 760, reference: "PO-5588" },
+    rawRow: { vendor: "Birchwood Creative Studio", amount: 760, reference: "PO-5588" },
   });
   const bankEntryGlobex = await MatchEntry.create({
     sourceId: bankSource.id,
-    vendor: "Globex Cloud Hosting",
+    vendor: "Ridgeline Cloud Services",
     amount: 4950,
     entryDate: daysFromNow(-6),
     reference: "",
-    rawRow: { vendor: "Globex Cloud Hosting", amount: 4950 },
+    rawRow: { vendor: "Ridgeline Cloud Services", amount: 4950 },
   });
 
   // ---- invoices ----
   const invoiceAcme = await seedInvoice(org, owner, {
     status: "approved",
-    vendorName: "Acme Office Supplies",
+    vendorName: "Pinehurst Office Supply",
+    vendorAddress: "4420 Redwood Ave, Suite 100, Portland, OR 97201",
     invoiceNumber: "INV-10432",
     invoiceDate: daysFromNow(-16),
     dueDate: daysFromNow(14),
@@ -174,7 +175,7 @@ export async function seedDemoOrg() {
     crossCheckDetail: "Line items (1190) match subtotal (1190); subtotal + tax matches total.",
     lineItems: [
       { description: "Standing desks (qty 4)", quantity: 4, unitPrice: 220, amount: 880 },
-      { description: "Ergonomic chairs (qty 2)", quantity: 2, unitPrice: 155, amount: 310 },
+      { description: "Ergonomic task chairs (qty 2)", quantity: 2, unitPrice: 155, amount: 310 },
     ],
   });
   await MatchResult.create({
@@ -182,12 +183,13 @@ export async function seedDemoOrg() {
     matchEntryId: poEntryAcme.id,
     status: "matched",
     score: 97.2,
-    reasoning: "vendor 'Acme Office Supplies' vs 'Acme Office Supplies' = 100/100; amount diff $0.00 (within tolerance); PO/reference number matches exactly.",
+    reasoning: "vendor 'Pinehurst Office Supply' vs 'Pinehurst Office Supply' = 100/100; amount diff $0.00 (within tolerance); PO/reference number matches exactly.",
   });
 
   const invoiceGlobex = await seedInvoice(org, owner, {
     status: "approved",
-    vendorName: "Globex Cloud Hosting",
+    vendorName: "Ridgeline Cloud Services",
+    vendorAddress: "2100 Harbor Blvd, San Jose, CA 95131",
     invoiceNumber: "INV-88213",
     invoiceDate: daysFromNow(-9),
     dueDate: daysFromNow(21),
@@ -197,7 +199,7 @@ export async function seedDemoOrg() {
     overallConfidence: 0.94,
     crossCheckPassed: true,
     crossCheckDetail: "Line items (4500) match subtotal (4500); subtotal + tax matches total.",
-    lineItems: [{ description: "Cloud infrastructure - August", quantity: 1, unitPrice: 4500, amount: 4500 }],
+    lineItems: [{ description: "Compute & storage, production environment (Aug 1-31)", quantity: 1, unitPrice: 4500, amount: 4500 }],
     quickbooksBillId: "bill_9F3K21",
     quickbooksExpenseAccountName: "Software & Cloud Services",
     quickbooksPaidAt: new Date(Date.now() - 2 * 86400000),
@@ -209,12 +211,13 @@ export async function seedDemoOrg() {
     matchEntryId: bankEntryGlobex.id,
     status: "matched",
     score: 95.0,
-    reasoning: "vendor 'Globex Cloud Hosting' vs 'Globex Cloud Hosting' = 100/100; amount diff $0.00 (within tolerance); date diff 3d (within 5d window).",
+    reasoning: "vendor 'Ridgeline Cloud Services' vs 'Ridgeline Cloud Services' = 100/100; amount diff $0.00 (within tolerance); date diff 3d (within 5d window).",
   });
 
   await seedInvoice(org, owner, {
     status: "needs_review",
-    vendorName: "Northwind Logistics",
+    vendorName: "Cascade Freight & Logistics",
+    vendorAddress: "880 Dockside Rd, Tacoma, WA 98421",
     invoiceNumber: "",
     invoiceDate: daysFromNow(-2),
     total: 2310.75,
@@ -227,14 +230,21 @@ export async function seedDemoOrg() {
 
   const duplicateOfAcme = await seedInvoice(org, member, {
     status: "needs_review",
-    vendorName: "Acme Office Supplies",
+    vendorName: "Pinehurst Office Supply",
+    vendorAddress: "4420 Redwood Ave, Suite 100, Portland, OR 97201",
     invoiceNumber: "INV-10432",
     invoiceDate: daysFromNow(-1),
+    poReference: "PO-5521",
+    subtotal: 1190.0,
+    tax: 94.5,
     total: 1284.5,
     overallConfidence: 0.91,
     crossCheckPassed: true,
     crossCheckDetail: "Line items (1190) match subtotal (1190); subtotal + tax matches total.",
-    lineItems: [{ description: "Standing desks (qty 4)", quantity: 4, unitPrice: 220, amount: 880 }],
+    lineItems: [
+      { description: "Standing desks (qty 4)", quantity: 4, unitPrice: 220, amount: 880 },
+      { description: "Ergonomic task chairs (qty 2)", quantity: 2, unitPrice: 155, amount: 310 },
+    ],
   });
   duplicateOfAcme.duplicateOfInvoiceId = invoiceAcme.id;
   duplicateOfAcme.duplicateOfFilename = invoiceAcme.originalFilename;
@@ -242,7 +252,8 @@ export async function seedDemoOrg() {
 
   await seedInvoice(org, member, {
     status: "extracted",
-    vendorName: "Fabrikam Design Co",
+    vendorName: "Birchwood Creative Studio",
+    vendorAddress: "12 Elm Street, Studio 4, Austin, TX 78701",
     invoiceNumber: "INV-2291",
     invoiceDate: daysFromNow(-3),
     dueDate: daysFromNow(27),
@@ -253,19 +264,21 @@ export async function seedDemoOrg() {
     overallConfidence: 0.93,
     crossCheckPassed: true,
     crossCheckDetail: "Line items (700) match subtotal (700); subtotal + tax matches total.",
-    lineItems: [{ description: "Brand refresh - logo & signage design", quantity: 1, unitPrice: 700, amount: 700 }],
+    lineItems: [{ description: "Brand refresh: logo and signage design", quantity: 1, unitPrice: 700, amount: 700 }],
   });
 
   await seedInvoice(org, owner, {
     status: "rejected",
     vendorName: "Southbridge Consulting LLC",
+    vendorAddress: "1 Financial Plaza, Hartford, CT 06103",
     invoiceNumber: "INV-004",
     invoiceDate: daysFromNow(-20),
+    dueDate: daysFromNow(10),
     total: 8200,
     overallConfidence: 0.55,
     crossCheckPassed: false,
     crossCheckDetail: "Line items sum to 6100, which does not match total (8200).",
-    lineItems: [{ description: "Advisory retainer", quantity: 1, unitPrice: 6100, amount: 6100 }],
+    lineItems: [{ description: "Advisory retainer, Q3", quantity: 1, unitPrice: 6100, amount: 6100 }],
   });
 
   // ---- expense receipts ----
@@ -309,7 +322,7 @@ export async function seedDemoOrg() {
   // ---- vendor documents ----
   await seedVendorDocument(org, owner, {
     status: "approved",
-    vendorName: "Northwind Logistics",
+    vendorName: "Cascade Freight & Logistics",
     documentType: "W-9",
     effectiveDate: daysFromNow(-200),
     referenceNumber: "TIN ***-**-4821",
@@ -405,13 +418,37 @@ export async function seedDemoOrg() {
   return { org, user: owner };
 }
 
-async function seedInvoice(org, actorUser, overrides) {
-  const storagePath = writeDemoFile([
-    `INVOICE - ${overrides.vendorName}`,
-    `Invoice #: ${overrides.invoiceNumber || "-"}`,
-    `Date: ${overrides.invoiceDate || "-"}`,
-    `Total: $${overrides.total ?? "-"}`,
-  ]);
+// Renders something that actually looks like a vendor's invoice -- a
+// letterhead, a Bill To, the line-item table, and the subtotal/tax/total
+// breakdown -- rather than four bare label/value lines. The document
+// preview pane is the first thing anyone clicks in the demo, right next
+// to the "extracted" fields it's supposed to have come from; four lines
+// of "Invoice #: X" made that comparison look nothing like the real
+// upload-and-extract experience the product actually delivers.
+function formatInvoiceDoc(org, { vendorName, vendorAddress, invoiceNumber, invoiceDate, dueDate, poReference, lineItems, subtotal, tax, total }) {
+  const money = (n) => `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const lines = [vendorName];
+  if (vendorAddress) lines.push(vendorAddress);
+  lines.push("", "INVOICE");
+  lines.push(`Invoice #: ${invoiceNumber || "-"}`);
+  lines.push(`Date: ${invoiceDate || "-"}`);
+  if (dueDate) lines.push(`Due: ${dueDate}`);
+  if (poReference) lines.push(`PO #: ${poReference}`);
+  lines.push("", `Bill To: ${org.name}`, "");
+
+  if (lineItems && lineItems.length) {
+    for (const li of lineItems) lines.push(`  ${li.description}: ${money(li.amount)}`);
+    lines.push("");
+    if (subtotal !== undefined) lines.push(`  Subtotal: ${money(subtotal)}`);
+    if (tax !== undefined) lines.push(`  Tax: ${money(tax)}`);
+  }
+  lines.push(`  Total: ${money(total)}`);
+  lines.push("", "Terms: Net 30");
+  return lines;
+}
+
+async function seedInvoice(org, actorUser, { vendorAddress, ...overrides }) {
+  const storagePath = writeDemoFile(formatInvoiceDoc(org, { ...overrides, vendorAddress }));
   const originalFilename = `${overrides.vendorName.replace(/\s+/g, "_")}_${overrides.invoiceNumber || "invoice"}.pdf`;
 
   const invoice = await Invoice.create({
