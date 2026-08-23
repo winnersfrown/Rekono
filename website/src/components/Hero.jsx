@@ -1,21 +1,34 @@
-import { motion } from "framer-motion";
+import { useRef } from "react";
+import { motion, useScroll, useTransform } from "framer-motion";
 import { APP_URL, DEMO_URL, EASE } from "../lib/constants.js";
+import { INVOICE, INVOICE_FIELDS } from "../lib/invoiceExample.js";
 
-const FIELDS = [
-  { label: "VENDOR_NAME", value: "Dunmore Hardware Co.", conf: 98, flag: false },
-  { label: "PO_REFERENCE", value: "PO-4421", conf: 96, flag: false },
-  { label: "DUE_DATE", value: "02/14/2026", conf: 61, flag: true },
-  { label: "TAX", value: "$4.00", conf: 94, flag: false },
-];
+function DocMock({ heroRef }) {
+  // A light parallax exit as the hero scrolls past, not just a hard cut to
+  // ProofStrip below it -- the card fades and lifts slightly faster than
+  // the scroll itself, foreshadowing that it's about to keep moving through
+  // the pipeline sequence further down the page. offset starts at "start
+  // start" (not "start end") because this should only begin once the hero
+  // is actually being scrolled *away from*, not while it's still the first
+  // thing in view.
+  const { scrollYProgress } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
+  const exitOpacity = useTransform(scrollYProgress, [0, 1], [1, 0.25]);
+  const exitY = useTransform(scrollYProgress, [0, 1], [0, -60]);
 
-function DocMock() {
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.94, y: 30 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
-      className="glass-panel-strong relative w-full max-w-[420px] rounded-2xl p-6"
-    >
+    // A separate outer element from the entrance-animated one below, same
+    // reason as the settle/drift split further down: this node owns the
+    // scroll-driven exit (opacity/y as external motion values), the inner
+    // one owns the mount-time entrance (opacity/y/scale as a tween) --
+    // animating and externally driving the same property on the same node
+    // fight each other, so each transform channel gets its own element.
+    <motion.div style={{ opacity: exitOpacity, y: exitY }}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 30 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
+        className="glass-panel-strong relative w-full max-w-[420px] rounded-2xl p-6"
+      >
       {/* A slow, continuous drift once the entrance settles -- the one
           place motion never stops, because this card is the hero's thesis:
           the product itself, always doing something, not a static
@@ -32,16 +45,16 @@ function DocMock() {
       >
         <div className="flex items-start justify-between border-b border-line-soft pb-4">
           <div>
-            <span className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">Invoice · INV-2026-0007</span>
-            <div className="mt-1 font-display text-lg font-bold text-paper">Dunmore Hardware Co.</div>
+            <span className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">Invoice · {INVOICE.number}</span>
+            <div className="mt-1 font-display text-lg font-bold text-paper">{INVOICE.vendor}</div>
           </div>
-          <span className="font-mono text-[0.7rem] text-muted">01/15/2026</span>
+          <span className="font-mono text-[0.7rem] text-muted">{INVOICE.date}</span>
         </div>
 
         <div className="flex flex-col gap-3 py-4">
-          {FIELDS.map((f, i) => (
+          {INVOICE_FIELDS.map((f, i) => (
             <motion.div
-              key={f.label}
+              key={f.key}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.5 + i * 0.12, duration: 0.4, ease: EASE }}
@@ -74,16 +87,19 @@ function DocMock() {
 
         <div className="mt-4 flex items-center justify-between border-t border-line-soft pt-4">
           <span className="text-[0.8rem] text-muted">Total · cross-checked against line items</span>
-          <span className="tabular-nums font-display text-xl font-bold text-paper">$54.00</span>
+          <span className="tabular-nums font-display text-xl font-bold text-paper">{INVOICE.total}</span>
         </div>
+      </motion.div>
       </motion.div>
     </motion.div>
   );
 }
 
 export default function Hero() {
+  const heroRef = useRef(null);
+
   return (
-    <section className="relative overflow-hidden pt-16 pb-20 md:pt-24 md:pb-28">
+    <section ref={heroRef} className="relative overflow-hidden pt-16 pb-20 md:pt-24 md:pb-28">
       <div className="mx-auto grid max-w-content items-center gap-14 px-7 md:grid-cols-[1.05fr_0.95fr] md:gap-10">
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, ease: EASE }}>
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/60 px-3 py-1 font-mono text-[0.76rem] uppercase tracking-widest text-blue-bright">
@@ -120,7 +136,7 @@ export default function Hero() {
         </motion.div>
 
         <div className="flex justify-center md:justify-end">
-          <DocMock />
+          <DocMock heroRef={heroRef} />
         </div>
       </div>
     </section>
