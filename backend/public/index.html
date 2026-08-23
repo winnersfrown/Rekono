@@ -344,6 +344,27 @@
             </div>
 
             <aside class="dash-col-side">
+              <!-- The one number from the Net Worth feature worth surfacing
+                   without an extra click, so both dashboards fit on one
+                   screen instead of the personal one forcing a scroll past
+                   the org one. Everything else -- full trend chart, account
+                   lists, add-account form -- lives behind the toggle below,
+                   collapsed by default. -->
+              <section class="dash-panel dash-panel-nw">
+                <div class="dash-panel-head">
+                  <h2>Net Worth</h2>
+                  <span class="dash-panel-note">Personal</span>
+                </div>
+                <div id="nw-error" class="dash-error" style="display: none;"></div>
+                <div id="nw-summary" class="nw-summary" aria-busy="true">
+                  <div class="kpi-card is-loading" style="min-height: 84px;"></div>
+                </div>
+                <button type="button" id="nw-toggle" class="nw-toggle-btn" aria-expanded="false" aria-controls="nw-details">
+                  <span id="nw-toggle-label">Manage accounts</span>
+                  <svg class="nw-toggle-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+              </section>
+
               <section class="dash-panel">
                 <div class="dash-panel-head"><h2>Quick actions</h2></div>
                 <div class="dash-quick-actions">
@@ -393,102 +414,92 @@
             </aside>
           </div>
 
-          <!-- Deliberately on Home, not a separate tab: this is the one
-               section on this screen that isn't organization data -- it's
-               personal to the signed-in user (see routes/netWorth.js), so it
-               gets its own divider and label rather than blending into the
-               company AP metrics above it. -->
-          <div class="dash-section-divider">
-            <span class="dash-section-label">Personal</span>
-          </div>
-
-          <header class="dash-head dash-head-tight">
-            <div class="dash-greeting">
-              <h2>Your Net Worth</h2>
-              <p class="dash-greeting-sub">Private to your login — not shared with your organization.</p>
-            </div>
-          </header>
-
-          <div id="nw-error" class="dash-error" style="display: none;"></div>
-
-          <div id="nw-kpis" class="dash-kpis nw-kpis" aria-busy="true">
-            <div class="kpi-card is-loading"></div>
-            <div class="kpi-card is-loading"></div>
-            <div class="kpi-card is-loading"></div>
-          </div>
-
-          <div class="dash-grid">
-            <div class="dash-col-main">
-              <section class="dash-panel">
-                <div class="dash-panel-head">
-                  <h2>Net worth over time</h2>
-                  <span class="dash-panel-note" id="nw-trend-range"></span>
-                </div>
-                <div id="nw-trend" class="nw-trend"></div>
-              </section>
-
-              <section class="dash-panel">
-                <div class="dash-panel-head">
-                  <h2>Assets</h2>
-                  <span class="dash-panel-note" id="nw-assets-total"></span>
-                </div>
-                <div id="nw-assets" class="nw-account-list"></div>
-              </section>
-
-              <section class="dash-panel">
-                <div class="dash-panel-head">
-                  <h2>Liabilities</h2>
-                  <span class="dash-panel-note" id="nw-liabilities-total"></span>
-                </div>
-                <div id="nw-liabilities" class="nw-account-list"></div>
-              </section>
+          <!-- Collapsed by default -- the compact card in the side rail
+               above already surfaces the one number that matters at a
+               glance, so the full breakdown (which is a lot of vertical
+               space: a chart, two account lists, a form) only appears once
+               someone actually asks for it via the toggle button. -->
+          <div id="nw-details" class="nw-details" hidden>
+            <!-- Personal, not organization data (see routes/netWorth.js) --
+                 gets its own divider rather than blending into the company
+                 AP metrics above it. -->
+            <div class="dash-section-divider">
+              <span class="dash-section-label">Personal</span>
             </div>
 
-            <aside class="dash-col-side">
-              <section class="dash-panel">
-                <div class="dash-panel-head"><h2 id="nw-form-title">Add an account</h2></div>
-                <form id="nw-form" class="nw-form">
-                  <input type="hidden" id="nw-form-id" />
-                  <label class="nw-field">
-                    <span>Name</span>
-                    <input type="text" id="nw-name" maxlength="256" placeholder="Chase checking" required />
-                  </label>
-                  <label class="nw-field">
-                    <span>Category</span>
-                    <select id="nw-category" required>
-                      <optgroup label="Assets">
-                        <option value="cash">Cash</option>
-                        <option value="investment">Investment</option>
-                        <option value="retirement">Retirement</option>
-                        <option value="property">Property</option>
-                        <option value="vehicle">Vehicle</option>
-                        <option value="other_asset">Other asset</option>
-                      </optgroup>
-                      <optgroup label="Liabilities">
-                        <option value="credit_card">Credit card</option>
-                        <option value="loan">Loan</option>
-                        <option value="mortgage">Mortgage</option>
-                        <option value="other_liability">Other liability</option>
-                      </optgroup>
-                    </select>
-                  </label>
-                  <label class="nw-field">
-                    <span>Balance</span>
-                    <input type="number" id="nw-balance" step="0.01" placeholder="0.00" required />
-                    <span class="nw-field-hint">Enter what you owe as a positive number — it's subtracted automatically.</span>
-                  </label>
-                  <label class="nw-field">
-                    <span>Notes</span>
-                    <textarea id="nw-notes" rows="2" maxlength="4000" placeholder="Optional"></textarea>
-                  </label>
-                  <div class="nw-form-actions">
-                    <button type="submit" id="nw-submit">Add account</button>
-                    <button type="button" id="nw-cancel" class="btn-logout" style="display: none;">Cancel</button>
+            <div class="dash-grid">
+              <div class="dash-col-main">
+                <section class="dash-panel">
+                  <div class="dash-panel-head">
+                    <h2>Net worth over time</h2>
+                    <span class="dash-panel-note" id="nw-trend-range"></span>
                   </div>
-                </form>
-                <div id="nw-form-status" class="hint"></div>
-              </section>
-            </aside>
+                  <div id="nw-trend" class="nw-trend"></div>
+                </section>
+
+                <section class="dash-panel">
+                  <div class="dash-panel-head">
+                    <h2>Assets</h2>
+                    <span class="dash-panel-note" id="nw-assets-total"></span>
+                  </div>
+                  <div id="nw-assets" class="nw-account-list"></div>
+                </section>
+
+                <section class="dash-panel">
+                  <div class="dash-panel-head">
+                    <h2>Liabilities</h2>
+                    <span class="dash-panel-note" id="nw-liabilities-total"></span>
+                  </div>
+                  <div id="nw-liabilities" class="nw-account-list"></div>
+                </section>
+              </div>
+
+              <aside class="dash-col-side">
+                <section class="dash-panel">
+                  <div class="dash-panel-head"><h2 id="nw-form-title">Add an account</h2></div>
+                  <form id="nw-form" class="nw-form">
+                    <input type="hidden" id="nw-form-id" />
+                    <label class="nw-field">
+                      <span>Name</span>
+                      <input type="text" id="nw-name" maxlength="256" placeholder="Chase checking" required />
+                    </label>
+                    <label class="nw-field">
+                      <span>Category</span>
+                      <select id="nw-category" required>
+                        <optgroup label="Assets">
+                          <option value="cash">Cash</option>
+                          <option value="investment">Investment</option>
+                          <option value="retirement">Retirement</option>
+                          <option value="property">Property</option>
+                          <option value="vehicle">Vehicle</option>
+                          <option value="other_asset">Other asset</option>
+                        </optgroup>
+                        <optgroup label="Liabilities">
+                          <option value="credit_card">Credit card</option>
+                          <option value="loan">Loan</option>
+                          <option value="mortgage">Mortgage</option>
+                          <option value="other_liability">Other liability</option>
+                        </optgroup>
+                      </select>
+                    </label>
+                    <label class="nw-field">
+                      <span>Balance</span>
+                      <input type="number" id="nw-balance" step="0.01" placeholder="0.00" required />
+                      <span class="nw-field-hint">Enter what you owe as a positive number — it's subtracted automatically.</span>
+                    </label>
+                    <label class="nw-field">
+                      <span>Notes</span>
+                      <textarea id="nw-notes" rows="2" maxlength="4000" placeholder="Optional"></textarea>
+                    </label>
+                    <div class="nw-form-actions">
+                      <button type="submit" id="nw-submit">Add account</button>
+                      <button type="button" id="nw-cancel" class="btn-logout" style="display: none;">Cancel</button>
+                    </div>
+                  </form>
+                  <div id="nw-form-status" class="hint"></div>
+                </section>
+              </aside>
+            </div>
           </div>
         </section>
 

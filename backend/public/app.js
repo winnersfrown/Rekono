@@ -4135,8 +4135,15 @@ function nwFmtDelta(v) {
   return `${sign}${fmtCompactMoney(Math.abs(v))}`;
 }
 
-function nwRenderKpis(data) {
-  const el = document.getElementById("nw-kpis");
+// The compact card that lives in the Home dashboard's side rail -- the one
+// number from this whole feature worth surfacing without an extra click.
+// Everything else (full trend chart, account lists, add-account form) lives
+// behind the "Manage accounts" toggle, collapsed by default: two genuinely
+// different kinds of data -- the org's AP metrics and the user's own
+// accounts -- sharing one screen without one of them forcing a scroll past
+// the other.
+function nwRenderSummary(data) {
+  const el = document.getElementById("nw-summary");
   el.removeAttribute("aria-busy");
 
   const trend = data.trend || [];
@@ -4147,38 +4154,68 @@ function nwRenderKpis(data) {
   const first = trend.length ? trend[0] : null;
   const change = first ? data.net_worth - first.net_worth : 0;
   const hasHistory = trend.length > 1;
-
   const changeTone = change > 0 ? "good" : change < 0 ? "bad" : "";
 
-  el.innerHTML = [
-    `<div class="kpi-card kpi-nw-primary">
-       <span class="kpi-label">Net worth</span>
-       <span class="kpi-value">${fmtCompactMoney(data.net_worth)}</span>
-       <span class="kpi-sub">${
-         hasHistory
-           ? `<span class="nw-delta nw-delta-${changeTone || "flat"}">${nwFmtDelta(change)}</span> since ${nwFmtDate(
-               first.date
-             )}`
-           : "Add a second reading to see a trend"
-       }</span>
-     </div>`,
-    kpiCard({
-      label: "Assets",
-      value: fmtCompactMoney(data.total_assets),
-      sub: `${data.accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category)).length} account${
-        data.accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category)).length === 1 ? "" : "s"
-      }`,
-      accent: "good",
-    }),
-    kpiCard({
-      label: "Liabilities",
-      value: fmtCompactMoney(data.total_liabilities),
-      sub: `${data.accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category)).length} account${
-        data.accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category)).length === 1 ? "" : "s"
-      }`,
-      accent: data.total_liabilities > 0 ? "warn" : "",
-    }),
-  ].join("");
+  const sub = hasHistory
+    ? `<span class="nw-delta nw-delta-${changeTone || "flat"}">${nwFmtDelta(change)}</span> since ${nwFmtDate(
+        first.date
+      )}`
+    : data.accounts.length
+    ? "Add a second reading to see a trend"
+    : "No accounts yet";
+
+  el.innerHTML = `
+    <div class="nw-summary-value">${fmtCompactMoney(data.net_worth)}</div>
+    <div class="nw-summary-sub">${sub}</div>
+    ${nwSparklineMarkup(trend)}`;
+}
+
+// Shared by the full trend chart and the sidebar sparkline: scaled to the
+// series' own range rather than anchored at zero (a $296k-to-$377k climb
+// against a zero-based domain is a flat line grazing the top of the chart),
+// with zero pulled into the domain only when the series actually crosses
+// it -- the one case where the sign change is worth showing at all.
+function nwYDomain(values) {
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const crossesZero = dataMin < 0 && dataMax > 0;
+  let min = crossesZero ? Math.min(dataMin, 0) : dataMin;
+  let max = crossesZero ? Math.max(dataMax, 0) : dataMax;
+  // A perfectly flat series has no range to scale to; give it a nominal one
+  // so it renders as a centered horizontal line instead of dividing by zero.
+  if (max === min) {
+    const nominal = Math.abs(max) * 0.1 || 1;
+    min -= nominal;
+    max += nominal;
+  }
+  // Breathing room so the peak and trough don't sit flush against the edges.
+  const pad = (max - min) * 0.08;
+  return { min: min - pad, max: max + pad, crossesZero };
+}
+
+// A quieter, axis-less relative of nwRenderTrend below -- same shape, same
+// scaling rule, sized to sit next to a headline number in a sidebar card
+// rather than fill a full panel. Renders nothing when there's not yet a
+// second reading to draw a line between.
+function nwSparklineMarkup(trend) {
+  if (trend.length < 2) return "";
+  const values = trend.map((p) => p.net_worth);
+  const { min, max } = nwYDomain(values);
+  const span = max - min;
+  const x = (i) => (i / (trend.length - 1)) * 100;
+  const y = (v) => 32 - ((v - min) / span) * 32;
+  const points = trend.map((p, i) => `${x(i).toFixed(2)},${y(p.net_worth).toFixed(2)}`).join(" ");
+  return `
+    <svg class="nw-sparkline" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="nw-spark-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.25" />
+          <stop offset="100%" stop-color="var(--blue)" stop-opacity="0" />
+        </linearGradient>
+      </defs>
+      <polygon points="0,32 ${points} 100,32" fill="url(#nw-spark-fill)" />
+      <polyline class="nw-sparkline-line" points="${points}" />
+    </svg>`;
 }
 
 function nwFmtDate(iso) {
@@ -4215,28 +4252,7 @@ function nwRenderTrend(trend, currentNetWorth) {
   rangeEl.textContent = `${nwFmtDate(trend[0].date)} – ${nwFmtDate(trend[trend.length - 1].date)}`;
 
   const values = trend.map((p) => p.net_worth);
-  // Scaled to the data's own range, not anchored at zero. Someone whose net
-  // worth moved from $296k to $377k has a story the chart should show; a
-  // domain starting at 0 would render that as a flat line grazing the top of
-  // the panel. Zero is only pulled into the domain when the series actually
-  // crosses it, where the sign change is the most important thing on screen.
-  const dataMin = Math.min(...values);
-  const dataMax = Math.max(...values);
-  const crossesZero = dataMin < 0 && dataMax > 0;
-  let min = crossesZero ? Math.min(dataMin, 0) : dataMin;
-  let max = crossesZero ? Math.max(dataMax, 0) : dataMax;
-  // A perfectly flat series has no range to scale to; give it a nominal one
-  // so it renders as a centered horizontal line instead of dividing by zero.
-  if (max === min) {
-    const nominal = Math.abs(max) * 0.1 || 1;
-    min -= nominal;
-    max += nominal;
-  }
-  // Breathing room so the peak and trough don't sit flush against the edges
-  // of the panel, where they read as clipped rather than as extremes.
-  const pad = (max - min) * 0.08;
-  min -= pad;
-  max += pad;
+  const { min, max, crossesZero } = nwYDomain(values);
   const span = max - min;
 
   const x = (i) => (i / (trend.length - 1)) * 100;
@@ -4289,9 +4305,13 @@ function nwAccountRow(a) {
     </div>`;
 }
 
-function nwRenderAccounts(accounts) {
-  const assets = accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category));
-  const liabilities = accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category));
+// Takes the whole payload (not just the account list) so the dollar totals
+// in each panel's note come straight off the server's own arithmetic --
+// same "server counts, client displays" rule the org dashboard's numbers
+// follow -- rather than being re-summed client-side from the account rows.
+function nwRenderAccounts(data) {
+  const assets = data.accounts.filter((a) => !NW_LIABILITY_CATEGORIES.has(a.category));
+  const liabilities = data.accounts.filter((a) => NW_LIABILITY_CATEGORIES.has(a.category));
 
   const fill = (elId, rows, emptyText) => {
     document.getElementById(elId).innerHTML = rows.length
@@ -4302,18 +4322,16 @@ function nwRenderAccounts(accounts) {
   fill("nw-assets", assets, "No assets yet.");
   fill("nw-liabilities", liabilities, "No liabilities — nice.");
 
-  document.getElementById("nw-assets-total").textContent = assets.length
-    ? `${assets.length} account${assets.length === 1 ? "" : "s"}`
-    : "";
-  document.getElementById("nw-liabilities-total").textContent = liabilities.length
-    ? `${liabilities.length} account${liabilities.length === 1 ? "" : "s"}`
-    : "";
+  const note = (total, list) =>
+    list.length ? `${fmtCompactMoney(total)} · ${list.length} account${list.length === 1 ? "" : "s"}` : "";
+  document.getElementById("nw-assets-total").textContent = note(data.total_assets, assets);
+  document.getElementById("nw-liabilities-total").textContent = note(data.total_liabilities, liabilities);
 
   document.querySelectorAll(".nw-edit").forEach((b) =>
-    b.addEventListener("click", () => nwStartEdit(accounts.find((a) => a.id === b.dataset.id)))
+    b.addEventListener("click", () => nwStartEdit(data.accounts.find((a) => a.id === b.dataset.id)))
   );
   document.querySelectorAll(".nw-delete").forEach((b) =>
-    b.addEventListener("click", () => nwDeleteAccount(accounts.find((a) => a.id === b.dataset.id)))
+    b.addEventListener("click", () => nwDeleteAccount(data.accounts.find((a) => a.id === b.dataset.id)))
   );
 }
 
@@ -4324,14 +4342,28 @@ async function loadNetWorth() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Could not load your net worth.");
 
-    nwRenderKpis(data);
+    nwRenderSummary(data);
     nwRenderTrend(data.trend || [], data.net_worth);
-    nwRenderAccounts(data.accounts);
+    nwRenderAccounts(data);
   } catch (err) {
     nwSetError(String(err.message || err));
-    document.getElementById("nw-kpis").innerHTML = "";
+    document.getElementById("nw-summary").innerHTML = "";
   }
 }
+
+// Collapsed by default (see index.html's `hidden` on #nw-details) so the
+// full breakdown only takes up screen space once someone actually asks for
+// it -- the compact card above already carries the one number that matters
+// at a glance.
+const nwToggleBtn = document.getElementById("nw-toggle");
+const nwDetailsEl = document.getElementById("nw-details");
+nwToggleBtn.addEventListener("click", () => {
+  const expanding = nwDetailsEl.hidden;
+  nwDetailsEl.hidden = !expanding;
+  nwToggleBtn.setAttribute("aria-expanded", String(expanding));
+  document.getElementById("nw-toggle-label").textContent = expanding ? "Hide accounts" : "Manage accounts";
+  if (expanding) nwDetailsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+});
 
 function nwStartEdit(account) {
   if (!account) return;

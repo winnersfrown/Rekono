@@ -1698,19 +1698,63 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   .dash-grid { grid-template-columns: 1fr; }
 }
 
-/* ---------- Net Worth (personal tab) ---------- */
+/* ---------- Net Worth (personal, on the Home tab) ---------- */
 /* Reuses the dashboard's own .dash-grid / .dash-panel / .kpi-card system
    rather than introducing a parallel one -- it's a different subject, but
    it's the same kind of screen, and a second visual language for it would
-   read as a bolted-on second app. Three KPIs instead of six, so the row is
-   explicitly 3-up rather than inheriting the 6-up default. */
-.nw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 1240px) { .nw-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 720px) { .nw-kpis { grid-template-columns: 1fr; } }
+   read as a bolted-on second app. */
 
-/* The headline number on this tab -- the one figure the whole tab exists to
-   answer -- so it gets a size the two supporting cards don't. */
-.kpi-nw-primary .kpi-value { font-size: 2.1rem; }
+/* The compact card in the side rail: a headline figure, a delta, and a
+   sparkline, sized to sit next to Quick actions rather than fill a full
+   panel -- the org dashboard and this one both need to fit on screen
+   together, so this card carries the whole feature until someone asks for
+   more via the toggle below it. --glass-tint is the same "this card is
+   worth a second look" treatment the marketing site uses on its own
+   featured cards, reused here rather than invented fresh. */
+.dash-panel-nw { background: var(--glass-tint); }
+
+.nw-summary-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  color: var(--paper);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 0.3rem;
+}
+.nw-summary-sub { font-size: 0.76rem; color: var(--muted); margin-bottom: 0.6rem; }
+
+.nw-sparkline { display: block; width: 100%; height: 32px; overflow: visible; }
+.nw-sparkline-line {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.nw-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.15rem;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.nw-toggle-btn:hover { background: var(--ink-850); border-color: var(--blue); box-shadow: none; transform: none; }
+.nw-toggle-chevron { flex: none; transition: transform 0.15s var(--ease); }
+.nw-toggle-btn[aria-expanded="true"] .nw-toggle-chevron { transform: rotate(180deg); }
+
+.nw-details { margin-top: 0; }
 
 .nw-delta {
   font-family: var(--font-mono);
