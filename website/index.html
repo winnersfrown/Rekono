@@ -396,7 +396,11 @@
   }
   .field-row:last-of-type { border-bottom: none; }
   .field-row .label { color: var(--muted); font-family: var(--font-mono); font-size: 0.78rem; }
-  .field-row .value { font-family: var(--font-mono); color: var(--paper); }
+  .field-row .value {
+    font-family: var(--font-mono);
+    color: var(--paper);
+    font-variant-numeric: tabular-nums;
+  }
   .field-row .conf {
     font-family: var(--font-mono);
     font-size: 0.72rem;
@@ -714,7 +718,7 @@
      (0,1,0) and loses regardless of source order, so this has to match or
      beat two classes to actually hide the annual price by default. */
   .price-card .price-annual { display: none; }
-  .price-annual-detail { display: none; font-size: 0.78rem; color: var(--muted); margin: -2px 0 20px; }
+  .price-annual-detail { display: none; font-size: 0.78rem; color: var(--muted); margin: -2px 0 20px; font-variant-numeric: tabular-nums; }
   .price-annual-detail .save { color: var(--green); }
   .pricing-grid.is-annual .price-card .price-monthly { display: none; }
   .pricing-grid.is-annual .price-card .price-annual { display: flex; }
