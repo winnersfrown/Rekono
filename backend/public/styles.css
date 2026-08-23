@@ -677,18 +677,21 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .plan-tooltip {
   display: none;
   position: absolute;
-  left: 100%;
-  bottom: 0;
-  margin-left: 10px;
+  /* Opens leftward: the plan badge now sits inside the account menu at the
+     top-right of the window, so the old left:100% (correct beside a left
+     sidebar) would push this straight off the right edge. */
+  right: 100%;
+  top: 0;
+  margin-right: 10px;
   width: 210px;
   z-index: 5;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  /* Opaque for the same reason as .topnav-menu -- this now renders inside
+     the account menu, which is itself inside the filtered top bar. */
+  background: var(--ink-900);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0.75rem 0.85rem;
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--shadow-lg);
 }
 .plan-badge-wrap:hover .plan-tooltip { display: block; animation: fade-in 0.12s ease; }
 
@@ -720,9 +723,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 }
 
 @media (max-width: 720px) {
-  /* Not enough room to the right of the sidebar on narrow/stacked
-     layouts -- open upward over the sidebar itself instead of off-screen. */
-  .plan-tooltip { left: 0; right: 0; width: auto; bottom: 100%; margin-left: 0; margin-bottom: 10px; }
+  /* No room to either side of a menu that's already near the window edge --
+     drop it below the badge and let it use the menu's full width instead. */
+  .plan-tooltip { left: 0; right: 0; top: 100%; width: auto; margin-right: 0; margin-top: 8px; }
 }
 
 .doc-usage { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -976,91 +979,169 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   box-shadow: 0 8px 24px -6px rgba(242, 84, 91, 0.4);
 }
 
-/* ---------- app sidebar layout ---------- */
-.app-layout { display: flex; min-height: 100vh; align-items: stretch; }
+/* ---------- app shell: top bar ---------- */
+/* A top bar rather than a left sidebar. Thirteen destinations in one
+   vertical column read as an undifferentiated stack, and the recent-uploads
+   list and account footer had to compete with the nav for the same scarce
+   vertical space. Three grouped menus spend horizontal room instead, which
+   the app had to spare, and hand the content area the full window width. */
+.app-layout { display: flex; flex-direction: column; min-height: 100vh; }
 
-.sidebar {
-  width: 264px;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-right: 1px solid var(--glass-border);
-  padding: 1.1rem 0.8rem;
-  /* Sticky, not a capped-height layout with .app-main scrolling internally
-     (an earlier attempt at this): that approach kept the sidebar in place
-     but gave .app-main -- which is itself centered under a max-width --
-     its OWN scrollbar, sitting well short of the actual browser-window
-     edge instead of a normal page scrollbar. Sticky lets the real page
-     scroll (so its scrollbar sits exactly where a scrollbar normally
-     does) while this element simply stays pinned as that happens. */
+.topbar {
   position: sticky;
   top: 0;
-  height: 100vh;
-  z-index: 1;
+  z-index: 20;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-border);
 }
 
-/* A real button now (clicking it goes home), reset back to looking like
-   the plain wordmark it always was -- no border/background of its own
-   until hovered, which is what actually signals it's clickable. */
-.sidebar-brand {
-  width: 100%;
-  padding: 0.4rem 0.5rem 1.1rem;
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0.55rem 2.2rem;
+}
+
+/* A real button (clicking it goes home), reset back to looking like the
+   plain wordmark it always was -- no border/background of its own until
+   hovered, which is what actually signals it's clickable. */
+.topbar-brand {
+  flex: none;
+  padding: 0.3rem 0.15rem;
   background: none;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  text-align: left;
   transition: opacity 0.15s ease;
 }
-.sidebar-brand:hover { opacity: 0.75; }
+.topbar-brand:hover { opacity: 0.75; background: none; box-shadow: none; transform: none; }
 
-.sidebar .tab-btn { display: flex; align-items: center; gap: 0.6rem; width: 100%; text-align: left; }
-.sidebar .tab-btn svg { flex: none; opacity: 0.85; }
-.sidebar .tab-btn.active svg { opacity: 1; color: var(--blue-bright); }
+.topbar-nav { display: flex; align-items: center; gap: 0.15rem; flex: 1; min-width: 0; }
 
-.sidebar-nav {
+/* Anchor for the absolutely-positioned menu below each trigger. */
+.topnav-group { position: relative; }
+
+.topnav-link, .topnav-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.87rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.topnav-link:hover, .topnav-trigger:hover {
+  color: var(--paper);
+  background: rgba(75, 134, 247, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+/* Two different states worth distinguishing: .active is the Home link when
+   Home is the current tab, .has-active is a *menu* that contains it (set by
+   switchTab). Without the second one the bar would show no indication of
+   where you are whenever the current tab lives inside a collapsed menu. */
+.topnav-link.active,
+.topnav-trigger.has-active {
+  color: var(--paper);
+  background: rgba(75, 134, 247, 0.1);
+}
+.topnav-trigger[aria-expanded="true"] { color: var(--paper); background: rgba(75, 134, 247, 0.1); }
+.topnav-chevron { flex: none; opacity: 0.6; transition: transform 0.15s var(--ease); }
+.topnav-trigger[aria-expanded="true"] .topnav-chevron { transform: rotate(180deg); }
+
+.topnav-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  z-index: 30;
+  min-width: 210px;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding-bottom: 0.85rem;
-  border-bottom: 1px solid var(--line-soft);
-  margin-bottom: 0.85rem;
+  gap: 0.1rem;
+  padding: 0.35rem;
+  border-radius: 11px;
+  /* Opaque, not the glass treatment used elsewhere. A backdrop-filter
+     nested inside another one (the top bar's) has nothing left to blur --
+     its backdrop is the parent's already-composited output -- so a
+     translucent background here just lets page text bleed through the
+     menu. A dropdown has to be readable above all else. */
+  background: var(--ink-900);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  animation: fade-in 0.12s ease;
+}
+/* The account menu sits at the right edge, so it opens leftward -- anchored
+   left it would run off the window. */
+.topnav-menu-right { left: auto; right: 0; }
+.topnav-menu[hidden] { display: none; }
+
+.topnav-menu .tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.topnav-menu .tab-btn svg { flex: none; opacity: 0.85; }
+.topnav-menu .tab-btn.active svg { opacity: 1; color: var(--blue-bright); }
+
+/* ---------- account menu ---------- */
+.topbar-account-group { flex: none; }
+
+.topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 0.2rem 0.35rem 0.2rem 0.2rem;
+  cursor: pointer;
+}
+.topbar-account:hover { background: rgba(75, 134, 247, 0.08); box-shadow: none; transform: none; }
+
+/* Initials are filled in by auth.js from the same name it already renders
+   into #current-user-badge -- no extra request, no avatar upload to store. */
+.topbar-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-/* Groups the nav into labeled clusters (Documents / Workflow / Admin)
-   instead of one flat 11-item list -- the extra top margin (beyond the
-   nav's own 0.15rem gap) is what actually reads as separate groups rather
-   than just another row. */
-.sidebar-nav .sidebar-section-label { margin-top: 0.7rem; padding: 0.3rem 0.5rem 0.2rem; }
-.sidebar-nav .sidebar-section-label:first-child { margin-top: 0; }
+.account-menu { min-width: 250px; padding: 0.7rem; gap: 0.6rem; }
+.account-menu-head { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+.account-menu-name { font-size: 0.88rem; font-weight: 600; color: var(--paper); }
+.account-menu .btn-upgrade, .account-menu .btn-logout { width: 100%; }
 
-.sidebar-nav .tab-btn.active { position: relative; }
-.sidebar-nav .tab-btn.active::before {
-  content: "";
-  position: absolute;
-  left: -0.5rem; top: 50%; transform: translateY(-50%);
-  width: 3px; height: 60%;
-  background: var(--blue-bright);
-  border-radius: 0 3px 3px 0;
-}
+.recent-list { display: flex; flex-direction: column; gap: 0.15rem; }
 
-.sidebar-recents { flex: 1; overflow-y: auto; min-height: 0; }
-
-.sidebar-section-label {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  padding: 0.4rem 0.5rem;
-}
-
-.sidebar-recent-list { display: flex; flex-direction: column; gap: 0.15rem; }
-
-.sidebar-recent-item {
+.recent-item {
   display: flex;
   align-items: center;
   gap: 0.15rem;
@@ -1068,9 +1149,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   border-radius: 7px;
   transition: background 0.15s ease;
 }
-.sidebar-recent-item:hover { background: rgba(75, 134, 247, 0.08); }
+.recent-item:hover { background: rgba(75, 134, 247, 0.08); }
 
-.sidebar-recent-open {
+.recent-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1088,10 +1169,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   cursor: pointer;
   text-align: left;
 }
-.sidebar-recent-item:hover .sidebar-recent-open { color: var(--paper); }
-.sidebar-recent-open:hover, .sidebar-recent-open:focus-visible { background: transparent; box-shadow: none; transform: none; }
-.sidebar-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-recent-empty {
+.recent-item:hover .recent-open { color: var(--paper); }
+.recent-open:hover, .recent-open:focus-visible { background: transparent; box-shadow: none; transform: none; }
+.recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1100,10 +1181,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   margin: 0;
   text-align: center;
 }
-.sidebar-recent-empty svg { color: var(--muted); opacity: 0.45; }
-.sidebar-recent-empty .hint { margin: 0; font-size: 0.78rem; }
+.recent-empty svg { color: var(--muted); opacity: 0.45; }
+.recent-empty .hint { margin: 0; font-size: 0.78rem; }
 
-.sidebar-recent-delete {
+.recent-delete {
   flex: none;
   width: 1.5rem;
   height: 1.5rem;
@@ -1119,7 +1200,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   font-size: 1rem;
   line-height: 1;
 }
-.sidebar-recent-delete:hover, .sidebar-recent-delete:focus-visible {
+.recent-delete:hover, .recent-delete:focus-visible {
   background: rgba(242, 84, 91, 0.14);
   color: var(--red);
   box-shadow: none;
@@ -1268,25 +1349,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 
 .reconcile-note { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
 
-.sidebar-footer {
-  border-top: 1px solid var(--line-soft);
-  padding-top: 0.85rem;
-  margin-top: 0.85rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.sidebar-user-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.app-main { flex: 1; min-width: 0; max-width: 1040px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; }
+.app-main { flex: 1; min-width: 0; max-width: 1400px; width: 100%; margin: 0 auto; padding: 1.8rem 2.2rem; }
 
 .demo-mode-banner {
   display: flex;
@@ -1898,7 +1961,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 
 /* ---------- Ask Rekono: floating widget ---------- */
 /* Fixed to the viewport on every tab (a sibling of .app-layout in the
-   markup, not nested inside it -- .sidebar/.app-panel's own
+   markup, not nested inside it -- .topbar/.app-panel's own
    backdrop-filter would otherwise create a containing block that traps
    position: fixed to their box instead of the real viewport corner).
    Collapsed to a small pill by default, expanding into a compact panel --
@@ -2017,24 +2080,27 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .ask-answer-error { border-color: var(--red); color: var(--red); }
 
 @media (max-width: 760px) {
-  .app-layout { flex-direction: column; }
-  /* The desktop rule pins the sidebar beside the content via position:
-     sticky -- stacked above content here instead, sticking it would just
-     glue it to the top of the screen as you scroll past it, permanently
-     covering whatever tab is open underneath. Static + auto-height lets
-     it scroll away normally, like any other stacked block. */
-  .sidebar { position: static; height: auto; width: 100%; border-right: none; border-bottom: 1px solid var(--line-soft); }
-  .sidebar-recents { max-height: 160px; }
+  /* The bar is short enough to stay pinned on a phone, but its contents
+     need to wrap and tighten: the brand and account control hold their
+     ends while the three menus wrap onto a second line if they must. */
+  .topbar-inner { flex-wrap: wrap; gap: 0.5rem 0.75rem; padding: 0.5rem 1.2rem; }
+  /* flex-basis, not width: the desktop rule's `flex: 1` sets flex-basis to
+     0%, which wins over `width` -- so `width: 100%` alone left the nav on
+     the first row and stranded the account avatar in the middle of it. */
+  .topbar-nav { order: 3; flex: 1 0 100%; overflow-x: auto; }
+  .topbar-account-group { margin-left: auto; }
+  .topnav-link, .topnav-trigger { padding: 0.4rem 0.55rem; font-size: 0.84rem; }
+  /* Anchored to the bar rather than each trigger, so a menu opening from a
+     trigger near the right edge can't run off-screen on a narrow window. */
+  .topnav-menu { left: 0; right: 0; min-width: 0; }
   .app-main { padding: 1.4rem 1.2rem; }
 
   .dash-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  /* The sidebar sits above content in normal flow here rather than beside
-     it, so opening the widget near the top of a page reliably lands it
-     over sidebar nav, not just page content -- the glass panel's
-     translucency (fine on desktop, where it opens over plain content)
-     would otherwise let nav labels bleed through underneath it. Solid
-     background instead, so it always reads as its own cleanly on top. */
+  /* The widget can land over the wrapped top bar on a short screen -- the
+     glass panel's translucency (fine on desktop, where it opens over plain
+     content) would let nav labels bleed through underneath it. Solid
+     background instead, so it always reads cleanly as its own thing. */
   .ask-widget-panel { background: var(--ink-900); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 

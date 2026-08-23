@@ -17,8 +17,22 @@ const PLAN_BENEFITS = {
   scale: ["10,000 documents/mo", "Unlimited seats", "Everything in Business", "Dedicated support channel", "Priority feature requests"],
 };
 
-// Shared by the sidebar plan badge and the Settings > Billing summary so
-// the two never drift out of sync with each other.
+// One or two letters for the top bar's account avatar. Falls back through
+// full name -> email -> "?", since full_name is optional on a User and an
+// avatar with nothing in it reads as a rendering bug rather than a control.
+function initialsFor(user) {
+  const name = (user.full_name || "").trim();
+  if (name) {
+    const parts = name.split(/\s+/);
+    const first = parts[0][0];
+    const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+    return (first + last).toUpperCase();
+  }
+  return (user.email || "?").trim().slice(0, 1).toUpperCase() || "?";
+}
+
+// Shared by the account menu's plan badge and the Settings > Billing summary
+// so the two never drift out of sync with each other.
 function planSummaryText(user) {
   const planName = PLAN_NAMES[user.plan] || user.plan;
   if (user.subscription_status === "trialing" && user.trial_ends_at) {
@@ -147,6 +161,12 @@ function showApp(user) {
   if (banner) banner.style.display = user.is_demo ? "flex" : "none";
   const badge = document.getElementById("current-user-badge");
   if (badge) badge.textContent = user.full_name || user.email;
+
+  // The account menu is collapsed behind this avatar, so it's the only thing
+  // identifying the signed-in user until it's opened. Initials come off the
+  // name already in hand -- no extra request, nothing to upload or store.
+  const avatar = document.getElementById("topbar-avatar");
+  if (avatar) avatar.textContent = initialsFor(user);
 
   const planBadge = document.getElementById("plan-badge");
   if (planBadge) planBadge.textContent = planSummaryText(user);
@@ -365,7 +385,7 @@ function closeUpgradeModal() {
 }
 
 // Called by apiFetch when an upload 402s with plan_cap_reached -- opens the
-// same modal the sidebar's Upgrade button does, with the cap-reached message
+// same modal the account menu's Upgrade button does, with the cap-reached message
 // surfaced in it, so hitting the limit leads straight to picking a bigger
 // plan instead of just an error message. If there's nowhere left to upgrade
 // to (already on the top tier), there's nothing useful to show here -- the
@@ -625,7 +645,7 @@ function handleCheckoutReturn(checkoutParam) {
   const isUpgrade = sessionStorage.getItem("rekono_checkout_context") === "upgrade";
   sessionStorage.removeItem("rekono_checkout_context");
 
-  // An already-onboarded user upgrading via the sidebar modal should land
+  // An already-onboarded user upgrading via the account-menu modal should land
   // back on their dashboard, not re-see the onboarding wizard -- retries on
   // failure go through the upgrade modal's own error banner too, since its
   // plan cards post to /api/billing/checkout (this path), not /api/onboarding.

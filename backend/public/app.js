@@ -102,16 +102,80 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && document.getElementById("confirm-modal").style.display !== "none") closeConfirmModal(false);
 });
 
+// ---- Top bar menus ----
+// Click to open, not hover: a hover menu over a nav this dense fires
+// constantly while the pointer crosses the bar on its way somewhere else,
+// and it's unusable on touch. Only one menu is open at a time.
+function closeAllMenus() {
+  document.querySelectorAll(".topnav-menu").forEach((m) => {
+    m.hidden = true;
+  });
+  document.querySelectorAll("[data-menu]").forEach((t) => t.setAttribute("aria-expanded", "false"));
+}
+
+function toggleMenu(name) {
+  const menu = document.querySelector(`.topnav-menu[data-menu-for="${name}"]`);
+  const trigger = document.querySelector(`[data-menu="${name}"]`);
+  if (!menu || !trigger) return;
+  const opening = menu.hidden;
+  closeAllMenus();
+  if (opening) {
+    menu.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+  }
+}
+
+document.querySelectorAll("[data-menu]").forEach((trigger) => {
+  trigger.addEventListener("click", (e) => {
+    // Without this the document-level close handler below sees the very
+    // click that opened the menu and shuts it again immediately.
+    e.stopPropagation();
+    toggleMenu(trigger.dataset.menu);
+  });
+});
+
+// A click anywhere outside an open menu dismisses it -- including on the
+// page content, which is the usual way people expect to back out. Clicks
+// *inside* a menu are left alone so the account menu's own controls
+// (Upgrade, Sign out) still work; the nav items close it via switchTab.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".topnav-menu")) closeAllMenus();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const open = document.querySelector(".topnav-menu:not([hidden])");
+  if (!open) return;
+  // Focus would otherwise be left on an element that just became
+  // display:none, which strands keyboard users at the top of the document.
+  const trigger = document.querySelector(`[data-menu="${open.dataset.menuFor}"]`);
+  closeAllMenus();
+  if (trigger) trigger.focus();
+});
+
 // ---- Tabs ----
-// Sidebar nav items and the ask-hero's quick-action shortcuts both switch
-// tabs via [data-tab], but only the sidebar nav (.tab-btn) gets the
-// persistent "active" highlight -- a quick-action button is a one-off
-// jump, not a place you "are".
+// Top-bar nav items and the dashboard's quick-action shortcuts both switch
+// tabs via [data-tab], but only the nav items (.tab-btn) get the persistent
+// "active" highlight -- a quick-action button is a one-off jump, not a place
+// you "are".
 function switchTab(name) {
   document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+  document.querySelectorAll(".topnav-trigger").forEach((t) => t.classList.remove("has-active"));
+
   const navBtn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
-  if (navBtn) navBtn.classList.add("active");
+  if (navBtn) {
+    navBtn.classList.add("active");
+    // Most destinations now live inside a collapsed menu, so highlighting
+    // only the item itself would leave the top bar with no visible
+    // indication of where you are. Mark the menu that contains it too.
+    const menu = navBtn.closest(".topnav-menu");
+    if (menu) {
+      const trigger = document.querySelector(`.topnav-trigger[data-menu="${menu.dataset.menuFor}"]`);
+      if (trigger) trigger.classList.add("has-active");
+    }
+  }
+  closeAllMenus();
   document.getElementById(`tab-${name}`).classList.add("active");
   // Coming back to the landing tab after approving/uploading elsewhere
   // should show the effect of that work, not a stale snapshot from login.
@@ -204,7 +268,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
 
   fileInput.value = "";
   // bootstrapApp() already re-runs loadRecentUploads() via onAuthenticated()
-  // once it re-confirms the session, alongside refreshing the sidebar's
+  // once it re-confirms the session, alongside refreshing the account menu's
   // "documents used this month" count -- calling loadRecentUploads() here
   // too would just fire the same GET /api/invoices twice per upload, and
   // doing it once after the whole batch (rather than per file) avoids firing
@@ -228,29 +292,29 @@ async function loadRecentUploads() {
 }
 
 function renderRecentUploads(invoices) {
-  const el = document.getElementById("sidebar-recent-uploads");
+  const el = document.getElementById("recent-uploads");
   el.innerHTML = invoices.map((inv) => (
-    `<div class="sidebar-recent-item">
-      <button type="button" class="sidebar-recent-open" data-id="${inv.id}">
-        <span class="sidebar-recent-name">${escapeHtml(inv.original_filename)}</span>
+    `<div class="recent-item">
+      <button type="button" class="recent-open" data-id="${inv.id}">
+        <span class="recent-name">${escapeHtml(inv.original_filename)}</span>
         <span class="badge status-${inv.status}">${inv.status}</span>
       </button>
-      <button type="button" class="sidebar-recent-delete" data-id="${inv.id}" title="Delete" aria-label="Delete ${escapeHtml(inv.original_filename)}">&times;</button>
+      <button type="button" class="recent-delete" data-id="${inv.id}" title="Delete" aria-label="Delete ${escapeHtml(inv.original_filename)}">&times;</button>
     </div>`
   )).join("") || `
-    <div class="sidebar-recent-empty">
+    <div class="recent-empty">
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11M12 3l-3.5 3.5M12 3l3.5 3.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
       <p class="hint">Nothing uploaded yet.</p>
     </div>
   `;
 
-  el.querySelectorAll(".sidebar-recent-open").forEach((btn) => {
+  el.querySelectorAll(".recent-open").forEach((btn) => {
     btn.addEventListener("click", () => {
       switchTab("review");
       selectInvoice(btn.dataset.id);
     });
   });
-  el.querySelectorAll(".sidebar-recent-delete").forEach((btn) => {
+  el.querySelectorAll(".recent-delete").forEach((btn) => {
     btn.addEventListener("click", () => deleteInvoice(btn.dataset.id));
   });
 }
@@ -831,7 +895,7 @@ async function saveExpenseAccountCorrection(id, selectEl) {
 
 // No status restriction on the backend -- a document can be deleted at any
 // point in review, whenever the user decides they don't want it around
-// anymore. Callable from either the sidebar's recent-uploads list or the
+// anymore. Callable from either the dashboard's recent-uploads list or the
 // review-detail panel, so both need refreshing regardless of which one this
 // was clicked from.
 async function deleteInvoice(id) {
@@ -909,7 +973,7 @@ document.getElementById("expense-upload-form").addEventListener("submit", async 
   if (uploaded) {
     invalidateCache("/api/expenses?");
     loadExpenses();
-    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+    bootstrapApp(); // refresh the account menu's shared "documents used this month" count
   }
 });
 
@@ -1253,7 +1317,7 @@ document.getElementById("vendordoc-upload-form").addEventListener("submit", asyn
   if (uploaded) {
     invalidateCache("/api/vendor-documents?");
     loadVendorDocs();
-    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+    bootstrapApp(); // refresh the account menu's shared "documents used this month" count
   }
 });
 
@@ -1639,7 +1703,7 @@ document.getElementById("lease-upload-form").addEventListener("submit", async (e
   if (uploaded) {
     invalidateCache("/api/leases?");
     loadLeases();
-    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+    bootstrapApp(); // refresh the account menu's shared "documents used this month" count
   }
 });
 
@@ -2033,7 +2097,7 @@ document.getElementById("taxdoc-upload-form").addEventListener("submit", async (
   if (uploaded) {
     invalidateCache("/api/tax-documents?");
     loadTaxDocs();
-    bootstrapApp(); // refresh the sidebar's shared "documents used this month" count
+    bootstrapApp(); // refresh the account menu's shared "documents used this month" count
   }
 });
 
@@ -3328,7 +3392,7 @@ document.getElementById("settings-account-form").addEventListener("submit", asyn
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
     if (res.ok) {
       invalidateCache("__org_settings__");
-      showApp(body); // refreshes the sidebar name badge too
+      showApp(body); // refreshes the account menu's name badge too
     }
   } catch (err) {
     statusEl.textContent = err.message || String(err);
@@ -4170,7 +4234,7 @@ function nwRenderSummary(data) {
     ${nwSparklineMarkup(trend)}`;
 }
 
-// Shared by the full trend chart and the sidebar sparkline: scaled to the
+// Shared by the full trend chart and the dashboard sparkline: scaled to the
 // series' own range rather than anchored at zero (a $296k-to-$377k climb
 // against a zero-based domain is a flat line grazing the top of the chart),
 // with zero pulled into the domain only when the series actually crosses
@@ -4194,7 +4258,7 @@ function nwYDomain(values) {
 }
 
 // A quieter, axis-less relative of nwRenderTrend below -- same shape, same
-// scaling rule, sized to sit next to a headline number in a sidebar card
+// scaling rule, sized to sit next to a headline number in a dashboard card
 // rather than fill a full panel. Renders nothing when there's not yet a
 // second reading to draw a line between.
 function nwSparklineMarkup(trend) {
