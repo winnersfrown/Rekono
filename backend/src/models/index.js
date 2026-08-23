@@ -19,6 +19,8 @@ import { ClosePeriod } from "./ClosePeriod.js";
 import { CloseTask } from "./CloseTask.js";
 import { Transaction } from "./Transaction.js";
 import { MerchantCategory } from "./MerchantCategory.js";
+import { NetWorthAccount } from "./NetWorthAccount.js";
+import { NetWorthEntry } from "./NetWorthEntry.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -71,6 +73,16 @@ MatchSource.hasMany(MatchEntry, {
 MatchEntry.belongsTo(MatchSource, { foreignKey: "sourceId", as: "source" });
 
 MatchResult.belongsTo(MatchEntry, { foreignKey: "matchEntryId", as: "matchEntry" });
+
+// Deleting an account takes its balance history with it -- a snapshot has
+// no meaning without the account it was a snapshot of.
+NetWorthAccount.hasMany(NetWorthEntry, {
+  foreignKey: "accountId",
+  as: "entries",
+  onDelete: "CASCADE",
+  hooks: true,
+});
+NetWorthEntry.belongsTo(NetWorthAccount, { foreignKey: "accountId" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -161,4 +173,6 @@ export {
   CloseTask,
   Transaction,
   MerchantCategory,
+  NetWorthAccount,
+  NetWorthEntry,
 };
