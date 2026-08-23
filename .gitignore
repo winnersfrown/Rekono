@@ -11,3 +11,12 @@ storage/
 *.egg-info/
 .DS_Store
 node_modules/
+
+# playwright-cli's session artifacts (snapshots, console logs) and its
+# local config file -- the config is where a Claude Code sandbox session
+# points executablePath at the container's pre-installed browser and
+# disables Chromium's sandbox (required running as root in a container),
+# neither of which should silently apply to a real contributor's machine.
+# See .claude/skills/playwright-cli/NOTICE.md for the config to recreate.
+.playwright-cli/
+.playwright/
