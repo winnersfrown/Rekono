@@ -318,12 +318,25 @@
 
           <div class="dash-grid">
             <div class="dash-col-main">
-              <section class="dash-panel">
+              <!-- Given top billing over Processing volume (which now lives
+                   in the side rail below) at the user's explicit request:
+                   personal net worth outranks a document-count chart for
+                   this screen's main slot. Still the same compact
+                   card-plus-toggle component as before -- it just renders
+                   at main-column width now, which only helps the sparkline. -->
+              <section class="dash-panel dash-panel-nw">
                 <div class="dash-panel-head">
-                  <h2>Processing volume</h2>
-                  <span class="dash-panel-note">Last 14 days</span>
+                  <h2>Net Worth</h2>
+                  <span class="dash-panel-note">Personal</span>
                 </div>
-                <div id="dash-volume" class="dash-volume"></div>
+                <div id="nw-error" class="dash-error" style="display: none;"></div>
+                <div id="nw-summary" class="nw-summary" aria-busy="true">
+                  <div class="kpi-card is-loading" style="min-height: 84px;"></div>
+                </div>
+                <button type="button" id="nw-toggle" class="nw-toggle-btn" aria-expanded="false" aria-controls="nw-details">
+                  <span id="nw-toggle-label">Manage accounts</span>
+                  <svg class="nw-toggle-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
               </section>
 
               <section class="dash-panel">
@@ -344,25 +357,12 @@
             </div>
 
             <aside class="dash-col-side">
-              <!-- The one number from the Net Worth feature worth surfacing
-                   without an extra click, so both dashboards fit on one
-                   screen instead of the personal one forcing a scroll past
-                   the org one. Everything else -- full trend chart, account
-                   lists, add-account form -- lives behind the toggle below,
-                   collapsed by default. -->
-              <section class="dash-panel dash-panel-nw">
+              <section class="dash-panel">
                 <div class="dash-panel-head">
-                  <h2>Net Worth</h2>
-                  <span class="dash-panel-note">Personal</span>
+                  <h2>Processing volume</h2>
+                  <span class="dash-panel-note">Last 14 days</span>
                 </div>
-                <div id="nw-error" class="dash-error" style="display: none;"></div>
-                <div id="nw-summary" class="nw-summary" aria-busy="true">
-                  <div class="kpi-card is-loading" style="min-height: 84px;"></div>
-                </div>
-                <button type="button" id="nw-toggle" class="nw-toggle-btn" aria-expanded="false" aria-controls="nw-details">
-                  <span id="nw-toggle-label">Manage accounts</span>
-                  <svg class="nw-toggle-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-                </button>
+                <div id="dash-volume" class="dash-volume"></div>
               </section>
 
               <section class="dash-panel">
