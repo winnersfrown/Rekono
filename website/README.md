@@ -39,12 +39,25 @@ pipeline) isn't something scriptable from inside a coding session; it's a
 repository setting only an owner can flip in GitHub's UI. Rather than block
 on that, `vite.config.js` is set up to build straight into the repo root
 (`base: '/Rekono/'`, `outDir: '../'`, `emptyOutDir: false`): running the
-build command above regenerates `/index.html`, `/assets/*.js`, `/assets/*.css`,
-`/fonts/*.woff2`, and `/og-image.png` at the repo root -- the same static
-files GitHub Pages already serves today. `robots.txt`, `sitemap.xml`, and
-`404.html` are untouched by the build (`emptyOutDir: false` means it only
-ever writes the specific files it generates, never clears the directory
-first), so they stay hand-maintained at the root exactly as before.
+build command above regenerates `/index.html`, `/assets/index.js`,
+`/assets/index.css`, `/fonts/*.woff2`, the favicon/icon files, and
+`/og-image.png` at the repo root -- the same static files GitHub Pages
+already serves today. `robots.txt`, `sitemap.xml`, and `404.html` are
+untouched by the build (`emptyOutDir: false` means it only ever writes the
+specific files it generates, never clears the directory first), so they
+stay hand-maintained at the root exactly as before.
+
+**`assets/index.js` and `assets/index.css` are fixed filenames, not Vite's
+default content hash** (`index-Cx7fK2.js`, a new one every build) -- see the
+comment in `vite.config.js`. `emptyOutDir: false` means nothing ever deletes
+the previous build's output before writing the new one; with hashed names
+that would mean every rebuild adds one more orphaned, unreferenced bundle to
+`assets/` forever, since there'd be no cleanup step to remove the old
+filename once `index.html` stops pointing at it. Fixed names make each
+build overwrite the same two files in place instead. The trade-off (no
+hash-based long-term browser caching on the JS/CSS bundle) doesn't cost
+much here: `index.html` itself is committed fresh on every deploy and
+already forces a re-fetch of whatever it currently references.
 
 **The workflow for any content or design change is therefore:** edit files
 under `website/src/`, run `npm run build`, then commit both the source
@@ -98,6 +111,44 @@ literally copied from it. Every component here is original, hand-built on
 the same underlying stack 21st.dev itself uses (Tailwind + Framer Motion),
 carrying Rekono's actual copy and design tokens rather than a generic
 template's.
+
+## Logo & favicons
+
+The brand mark (`src/components/Logomark.jsx`, and the standalone
+`public/favicon.svg` used for the favicon/app icons) is an "R" traced
+directly from Bitter Bold's own glyph outline -- the exact typeface and
+weight the "Rekono" wordmark next to it is already set in, not a generic
+geometric letterform or icon-font glyph. It's shipped as a static SVG
+`<path>`, not live `<text>`, because a favicon or home-screen icon has no
+guarantee the page's own `@font-face` has loaded, or ever will.
+
+To regenerate it (e.g. if the wordmark's weight or typeface ever changes),
+trace the glyph out of the actual font file with `fontTools`:
+
+```python
+from fontTools.ttLib import TTFont
+from fontTools.varLib.instancer import instantiateVariableFont
+from fontTools.pens.svgPathPen import SVGPathPen
+
+font = TTFont("public/fonts/bitter-600.woff2")
+instantiateVariableFont(font, {"wght": 800}, inplace=True)  # match .brand's weight
+glyph_set = font.getGlyphSet()
+glyph = glyph_set[font.getBestCmap()[ord("R")]]
+pen = SVGPathPen(glyph_set)
+glyph.draw(pen)
+# pen.getCommands() is the raw path -- center it in a 32x32 box (flip Y,
+# scale, translate) the same way Logomark.jsx's `transform` does.
+```
+
+`favicon-32.png`, `favicon-16.png`, `apple-touch-icon.png` (180x180,
+full-bleed, no rounded corners -- iOS applies its own squircle mask, so a
+pre-rounded icon there double-rounds and gets an awkward transparent
+margin), and `icon-192.png`/`icon-512.png` (referenced by `manifest.json`)
+are all rendered from that same SVG via a headless browser screenshot, not
+hand-exported -- regenerate them the same way if the mark ever changes.
+`og-image.png` (the social-preview card) embeds the same mark inline
+alongside the headline copy; see its own generation note in the repo's
+commit history if it needs a refresh.
 
 ## Analytics (optional)
 

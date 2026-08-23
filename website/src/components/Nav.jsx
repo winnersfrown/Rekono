@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { APP_URL } from "../lib/constants.js";
+import Logomark from "./Logomark.jsx";
 
 const LINKS = [
   { href: "#how-it-works", label: "How It Works" },
@@ -41,7 +42,7 @@ export default function Nav() {
     >
       <div className="mx-auto flex max-w-content items-center justify-between px-7 py-4">
         <a href="#top" className="flex items-center gap-2 font-display text-lg font-bold text-paper">
-          <span className="inline-block h-[18px] w-[18px] rounded-[5px] bg-gradient-to-br from-blue to-blue-deep shadow-glow" />
+          <Logomark className="h-[26px] w-[26px] shadow-glow" />
           Rekono
         </a>
 

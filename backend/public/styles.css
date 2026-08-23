@@ -131,20 +131,16 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; colo
   gap: 9px;
 }
 
+/* The mark itself (an "R" traced from Bitter Bold's own glyph outline --
+   see website/src/components/Logomark.jsx for the source-of-truth comment)
+   now comes from /favicon.svg via an <img> tag; this is just its sizing. A
+   real image rather than a CSS-drawn shape, since the glyph's actual curves
+   aren't expressible as a couple of border/box-shadow tricks the old
+   three-bar placeholder got away with. */
 .logomark {
-  width: 18px; height: 18px;
-  border: 1.6px solid var(--blue-bright);
-  border-radius: 3px;
-  position: relative;
+  width: 22px;
+  height: 22px;
   flex: none;
-}
-.logomark::after {
-  content: "";
-  position: absolute;
-  left: 3px; right: 3px; top: 46%;
-  height: 1.6px;
-  background: var(--blue-bright);
-  box-shadow: 0 -5px 0 -4.3px var(--blue-bright), 0 5px 0 -4.3px var(--blue-bright);
 }
 
 .tab-btn, .filter-btn {
