@@ -78,7 +78,10 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; font-size: 15px; }
+/* 16px, not the 15px this shipped with -- that 15px shrank every
+   rem-based size on the page (headings, body text, buttons, badges)
+   by 6%, which read as the whole site feeling a size too small. */
+html { scroll-behavior: smooth; font-size: 16px; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
@@ -88,7 +91,7 @@ body {
   background: var(--ink-950);
   color: var(--paper);
   font-family: "IBM Plex Sans", -apple-system, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   position: relative;

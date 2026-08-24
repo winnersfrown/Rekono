@@ -83,7 +83,7 @@ function DocMock() {
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden pt-16 pb-20 md:pt-24 md:pb-28">
+    <section className="relative overflow-hidden pt-12 pb-16 md:pt-16 md:pb-20">
       <div className="mx-auto grid max-w-content items-center gap-14 px-7 md:grid-cols-[1.05fr_0.95fr] md:gap-10">
         <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, ease: EASE }}>
           <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/60 px-3 py-1 font-mono text-[0.76rem] uppercase tracking-widest text-blue-bright">
