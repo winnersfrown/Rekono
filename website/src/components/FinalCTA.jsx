@@ -3,8 +3,8 @@ import { APP_URL } from "../lib/constants.js";
 
 export default function FinalCTA({ onOpenContact }) {
   return (
-    <section id="final-cta" className="py-24">
-      <Reveal className="glass-tint mx-auto flex max-w-content flex-col items-center rounded-3xl px-7 py-16 text-center">
+    <section id="final-cta" className="py-16">
+      <Reveal className="glass-tint mx-auto flex max-w-content flex-col items-center rounded-3xl px-7 py-12 text-center">
         <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
           Get started
         </span>

@@ -22,7 +22,7 @@ const ITEMS = [
 
 export default function ProofStrip() {
   return (
-    <section className="border-y border-line-soft bg-white/40 py-14">
+    <section className="border-y border-line-soft bg-white/40 py-10">
       <motion.div
         variants={staggerContainer()}
         initial="hidden"

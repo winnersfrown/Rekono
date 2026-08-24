@@ -4,6 +4,30 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.4
+
+The marketing site read too small and too sparse -- both had a specific,
+fixable cause rather than being a matter of taste.
+
+**Too small:** `html`/`body` set `font-size: 15px`, 6% under the browser
+default. Every rem-based size on the page -- headings, body text, buttons,
+badges -- inherited that shrink uniformly. Back to 16px.
+
+**Too sparse:** every major section (`HowItWorks`, `Features`, `Pricing`,
+`FAQ`, `FinalCTA`) used `py-24` (96px top and bottom), so two adjacent
+sections stacked to nearly 200px of pure whitespace between them -- visible
+in a screenshot as a gap roughly as tall as the FAQ heading sitting above
+it. Cut to `py-16` (`ProofStrip` to `py-10`, `Hero`'s asymmetric top/bottom
+scaled down to match), which keeps each section legible as its own block
+without the page reading like mostly blank space between five lines of
+actual content.
+
+Verified with real screenshots (Playwright against the production build, an
+iPhone-width viewport matching the one in the report) at the hero and at
+the pricing-to-FAQ boundary specifically, since that's where the gap was
+most visible -- not just a visual guess that the numbers "should" look
+better.
+
 ## v1.3
 
 Adds `backend/scripts/check-llm.mjs`, a one-command preflight for whichever

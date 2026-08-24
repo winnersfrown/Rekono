@@ -83,7 +83,7 @@ export default function Pricing() {
   const [annual, setAnnual] = useState(false);
 
   return (
-    <section id="pricing" className="py-24">
+    <section id="pricing" className="py-16">
       <div className="mx-auto max-w-content px-7">
         <Reveal className="mx-auto max-w-2xl text-center">
           <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
