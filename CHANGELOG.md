@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.3
+
+Adds `backend/scripts/check-llm.mjs`, a one-command preflight for whichever
+LLM provider is configured. It calls `src/llm.js`'s `callTool` and
+`generateText` directly -- the same code path extraction, categorization,
+QuickBooks, and Ask Rekono all use -- so a pass here means those features
+actually work, not just that a request shape looks right.
+
+Exists because this sandbox can't verify that itself: `openrouter.ai` is
+policy-blocked at the proxy level (`connect_rejected`, confirmed via the
+proxy's own status endpoint), so v1.2 shipped with the wire format tested
+against a stub and a local fake server, but no live call. This script is
+what to run, with real credentials, wherever that block doesn't apply:
+
+```
+OPENROUTER_API_KEY=... OPENROUTER_MODEL=vendor/model-name node scripts/check-llm.mjs
+```
+
+Two checks: a forced tool call (adds two numbers via a `record_answer`
+schema, so a pass also confirms the model gets simple arithmetic right
+before it's trusted on invoice totals), then plain text. Failures are
+specific rather than generic -- a model with no tool-calling support gets
+told exactly that, since extraction, categorization, and both QuickBooks
+suggestions all depend on it and silently fall back to the heuristic
+extractor otherwise.
+
 ## v1.2
 
 Any LLM call in the app -- extraction for all five document types, merchant
