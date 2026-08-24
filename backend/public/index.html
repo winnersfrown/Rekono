@@ -1238,6 +1238,11 @@
     <div class="confirm-modal-card">
       <h2 id="confirm-modal-title"></h2>
       <p id="confirm-modal-message"></p>
+      <div id="confirm-modal-password-row" style="display: none;">
+        <label for="confirm-modal-password">Confirm your password</label>
+        <input type="password" id="confirm-modal-password" autocomplete="current-password" />
+        <p id="confirm-modal-password-error" class="confirm-modal-error" style="display: none;"></p>
+      </div>
       <div class="confirm-modal-actions">
         <button type="button" id="confirm-modal-cancel" class="modal-btn-cancel">Cancel</button>
         <button type="button" id="confirm-modal-confirm">OK</button>

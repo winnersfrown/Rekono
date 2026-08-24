@@ -8,7 +8,7 @@ import { Router } from "express";
 import { Resend } from "resend";
 import { z } from "zod";
 import * as auth from "../auth.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requireReauth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import { PLANS } from "../plans.js";
@@ -149,28 +149,35 @@ router.delete("/api/team/invites/:id", requireAuth, requireActivePlan, requireOw
   }
 });
 
-router.delete("/api/team/members/:userId", requireAuth, requireActivePlan, requireOwner, async (req, res, next) => {
-  try {
-    if (req.params.userId === req.currentUser.id) {
-      return res.status(400).json({ detail: "You can't remove yourself. Transfer ownership isn't supported yet." });
+router.delete(
+  "/api/team/members/:userId",
+  requireAuth,
+  requireActivePlan,
+  requireOwner,
+  requireReauth,
+  async (req, res, next) => {
+    try {
+      if (req.params.userId === req.currentUser.id) {
+        return res.status(400).json({ detail: "You can't remove yourself. Transfer ownership isn't supported yet." });
+      }
+      const member = await User.findOne({ where: { id: req.params.userId, orgId: req.currentUser.orgId } });
+      if (!member) return res.status(404).json({ detail: "Team member not found" });
+
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        action: "team_member_removed",
+        actor: req.currentUser.email,
+        details: { removed_email: member.email },
+      });
+
+      await member.destroy();
+      res.status(204).send();
+    } catch (err) {
+      next(err);
     }
-    const member = await User.findOne({ where: { id: req.params.userId, orgId: req.currentUser.orgId } });
-    if (!member) return res.status(404).json({ detail: "Team member not found" });
-
-    await AuditLog.create({
-      orgId: req.currentUser.orgId,
-      userId: req.currentUser.id,
-      action: "team_member_removed",
-      actor: req.currentUser.email,
-      details: { removed_email: member.email },
-    });
-
-    await member.destroy();
-    res.status(204).send();
-  } catch (err) {
-    next(err);
   }
-});
+);
 
 // ---- Public accept-invite endpoints (no auth -- the invitee doesn't have
 // an account yet) ----

@@ -145,7 +145,10 @@ test("POST /api/integrations/quickbooks/disconnect clears the connection", async
   const token = await signup(app, request);
   await connectOrg({ quickbooksDefaultExpenseAccountId: "42", quickbooksDefaultExpenseAccountName: "Office Supplies" });
 
-  const res = await request(app).post("/api/integrations/quickbooks/disconnect").set(authHeader(token));
+  const res = await request(app)
+    .post("/api/integrations/quickbooks/disconnect")
+    .set(authHeader(token))
+    .send({ current_password: "correcthorse123" });
   expect(res.status).toBe(200);
   expect(res.body.connected).toBe(false);
   expect(res.body.default_expense_account_id).toBeNull();

@@ -963,6 +963,23 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 }
 .confirm-modal-card h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
 .confirm-modal-card p { color: var(--muted); font-size: 0.92rem; line-height: 1.5; margin: 0; }
+/* Password confirmation for the destructive actions behind requireReauth
+   (removing a teammate, disconnecting QuickBooks). */
+#confirm-modal-password-row { margin-top: 1.1rem; }
+#confirm-modal-password-row label {
+  display: block;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+#confirm-modal-password { width: 100%; }
+.confirm-modal-card .confirm-modal-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  margin-top: 0.45rem;
+}
+
 .confirm-modal-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.4rem; }
 .modal-btn-cancel { background: transparent; border: 1px solid var(--line); color: var(--paper); }
 .modal-btn-cancel:hover { background: transparent; border-color: var(--blue); color: var(--blue-bright); box-shadow: none; }

@@ -148,10 +148,14 @@ test("owner can remove a member but not themselves", async () => {
 
   const selfRemoveRes = await request(app)
     .delete(`/api/team/members/${(await User.findOne({ where: { email: "owner@example.co" } })).id}`)
-    .set(authHeader(ownerToken));
+    .set(authHeader(ownerToken))
+    .send({ current_password: "correcthorse123" });
   expect(selfRemoveRes.status).toBe(400);
 
-  const removeRes = await request(app).delete(`/api/team/members/${member.id}`).set(authHeader(ownerToken));
+  const removeRes = await request(app)
+    .delete(`/api/team/members/${member.id}`)
+    .set(authHeader(ownerToken))
+    .send({ current_password: "correcthorse123" });
   expect(removeRes.status).toBe(204);
   expect(await User.findByPk(member.id)).toBeNull();
 });
@@ -192,7 +196,12 @@ test("GET /api/team, revoking an invite, and removing a member are all scoped to
   const revokeAsB = await request(app).delete(`/api/team/invites/${pendingInviteId}`).set(authHeader(tokenB));
   expect(revokeAsB.status).toBe(404);
 
-  const removeAsB = await request(app).delete(`/api/team/members/${memberId}`).set(authHeader(tokenB));
+  // Password supplied so this gets past the re-auth gate and the 404 below
+  // is genuinely the org scoping talking, not a missing confirmation.
+  const removeAsB = await request(app)
+    .delete(`/api/team/members/${memberId}`)
+    .set(authHeader(tokenB))
+    .send({ current_password: "correcthorse123" });
   expect(removeAsB.status).toBe(404);
 
   // untouched -- still there for org A

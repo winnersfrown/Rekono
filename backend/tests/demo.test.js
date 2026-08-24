@@ -66,4 +66,9 @@ test("demo login rate limits after repeated attempts from the same IP", async ()
     lastRes = await request(app).post("/api/demo/login").send({});
   }
   expect(lastRes.status).toBe(429);
-}, 20000);
+  // Generous timeout: the 20 requests before the limiter trips each seed a
+  // whole demo org (invoices, receipts, vendor documents, leases, tax
+  // documents), so this is the most expensive test in the suite by far and
+  // was previously finishing within a few hundred milliseconds of its own
+  // limit whenever the workers were busy.
+}, 60000);

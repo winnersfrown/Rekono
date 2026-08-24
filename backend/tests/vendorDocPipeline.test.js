@@ -3,7 +3,7 @@ import { VendorDocument } from "../src/models/index.js";
 import { settings } from "../src/config.js";
 import { resetDb } from "./testUtils.js";
 
-const ORG_ID = "11111111-1111-1111-1111-111111111111";
+const ORG_ID = "11111111111111111111111111111111";
 
 beforeEach(resetDb);
 
@@ -38,7 +38,7 @@ test("markFailedIfStuck leaves an already-finished document alone", async () => 
 });
 
 test("markFailedIfStuck is a no-op for a document that no longer exists", async () => {
-  await expect(markFailedIfStuck("00000000-0000-0000-0000-000000000000", new Error("boom"))).resolves.not.toThrow();
+  await expect(markFailedIfStuck("00000000000000000000000000000000", new Error("boom"))).resolves.not.toThrow();
 });
 
 // Vendor documents reuse the same org-wide confidence threshold as
