@@ -68,7 +68,16 @@ function debounce(fn, delayMs) {
 // confirm, just something the user needs to see and dismiss).
 let confirmModalResolve = null;
 
-function confirmDialog(title, message, { confirmLabel = "OK", danger = false, hideCancel = false } = {}) {
+// Resolves to false when dismissed. With requirePassword, it resolves to the
+// typed password instead of `true` -- the routes behind auth.js's
+// requireReauth need it in the request body, and prompting for it inside the
+// same confirmation the user is already looking at avoids a second modal.
+// `error` re-opens the dialog with the server's reason after a wrong answer.
+function confirmDialog(
+  title,
+  message,
+  { confirmLabel = "OK", danger = false, hideCancel = false, requirePassword = false, error = "" } = {}
+) {
   return new Promise((resolve) => {
     confirmModalResolve = resolve;
     document.getElementById("confirm-modal-title").textContent = title;
@@ -77,7 +86,17 @@ function confirmDialog(title, message, { confirmLabel = "OK", danger = false, hi
     confirmBtn.textContent = confirmLabel;
     confirmBtn.classList.toggle("modal-btn-danger", danger);
     document.getElementById("confirm-modal-cancel").style.display = hideCancel ? "none" : "";
+
+    const passwordRow = document.getElementById("confirm-modal-password-row");
+    const passwordInput = document.getElementById("confirm-modal-password");
+    const passwordError = document.getElementById("confirm-modal-password-error");
+    passwordRow.style.display = requirePassword ? "" : "none";
+    passwordInput.value = "";
+    passwordError.textContent = error;
+    passwordError.style.display = error ? "" : "none";
+
     document.getElementById("confirm-modal").style.display = "flex";
+    if (requirePassword) passwordInput.focus();
   });
 }
 
@@ -86,14 +105,24 @@ function alertDialog(title, message) {
 }
 
 function closeConfirmModal(result) {
+  const passwordInput = document.getElementById("confirm-modal-password");
+  const wantsPassword = document.getElementById("confirm-modal-password-row").style.display !== "none";
+  // Confirming a password-gated dialog hands back the password itself; an
+  // empty box is treated as a dismissal rather than a doomed request.
+  const resolved = result && wantsPassword ? passwordInput.value || false : result;
+  passwordInput.value = "";
+
   document.getElementById("confirm-modal").style.display = "none";
   if (confirmModalResolve) {
-    confirmModalResolve(result);
+    confirmModalResolve(resolved);
     confirmModalResolve = null;
   }
 }
 
 document.getElementById("confirm-modal-confirm").addEventListener("click", () => closeConfirmModal(true));
+document.getElementById("confirm-modal-password").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") closeConfirmModal(true);
+});
 document.getElementById("confirm-modal-cancel").addEventListener("click", () => closeConfirmModal(false));
 document.getElementById("confirm-modal").addEventListener("click", (e) => {
   if (e.target.id === "confirm-modal") closeConfirmModal(false);
@@ -3674,17 +3703,38 @@ document.getElementById("qb-connect-btn").addEventListener("click", async () => 
 });
 
 document.getElementById("qb-disconnect-btn").addEventListener("click", async () => {
-  const ok = await confirmDialog("Disconnect QuickBooks?", "You can reconnect at any time.", { confirmLabel: "Disconnect" });
-  if (!ok) return;
   const statusEl = document.getElementById("settings-quickbooks-status");
-  try {
-    const res = await apiFetch("/api/integrations/quickbooks/disconnect", { method: "POST" });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.detail || "Could not disconnect QuickBooks.");
-    invalidateCache("__quickbooks__");
-    renderQuickbooksStatus(body);
-  } catch (err) {
-    statusEl.textContent = err.message || String(err);
+  let error = "";
+
+  // Loops so a mistyped password re-opens the same dialog with the reason,
+  // rather than dumping the user back to the settings page to start over.
+  for (;;) {
+    const password = await confirmDialog("Disconnect QuickBooks?", "You can reconnect at any time.", {
+      confirmLabel: "Disconnect",
+      requirePassword: true,
+      error,
+    });
+    if (!password) return;
+
+    try {
+      const res = await apiFetch("/api/integrations/quickbooks/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: password }),
+      });
+      const body = await res.json();
+      if (res.status === 403 && body.reauth_required) {
+        error = body.detail || "That password is incorrect.";
+        continue;
+      }
+      if (!res.ok) throw new Error(body.detail || "Could not disconnect QuickBooks.");
+      invalidateCache("__quickbooks__");
+      renderQuickbooksStatus(body);
+      return;
+    } catch (err) {
+      statusEl.textContent = err.message || String(err);
+      return;
+    }
   }
 });
 
@@ -3750,14 +3800,32 @@ function renderTeam({ data, me }) {
     .join("");
   membersBody.querySelectorAll(".team-remove-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const ok = await confirmDialog("Remove this teammate?", "They'll lose access to your account immediately.", {
-        confirmLabel: "Remove",
-        danger: true,
-      });
-      if (!ok) return;
-      await apiFetch(`/api/team/members/${btn.dataset.userId}`, { method: "DELETE" });
-      invalidateCache("__team__");
-      loadTeam();
+      let error = "";
+      for (;;) {
+        const password = await confirmDialog("Remove this teammate?", "They'll lose access to your account immediately.", {
+          confirmLabel: "Remove",
+          danger: true,
+          requirePassword: true,
+          error,
+        });
+        if (!password) return;
+
+        const res = await apiFetch(`/api/team/members/${btn.dataset.userId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ current_password: password }),
+        });
+        if (res.status === 403) {
+          const body = await res.json().catch(() => ({}));
+          if (body.reauth_required) {
+            error = body.detail || "That password is incorrect.";
+            continue;
+          }
+        }
+        invalidateCache("__team__");
+        loadTeam();
+        return;
+      }
     });
   });
 

@@ -100,24 +100,39 @@ describe("DANGEROUSLY_RESET_DB", () => {
   test("does nothing when unset", async () => {
     delete process.env.DANGEROUSLY_RESET_DB;
     const queryCalls = [];
-    sequelize.query = (...args) => queryCalls.push(args);
+    // Resolves to an empty result set, the same shape a real SELECT
+    // returns -- applyRlsPolicies reads pg_policies before deciding whether
+    // to create or alter each policy.
+    sequelize.query = (...args) => {
+      queryCalls.push(args);
+      return Promise.resolve([]);
+    };
     await withMockedSync(
       async () => {},
       async () => {
         await initDb();
       }
     );
-    expect(queryCalls).toHaveLength(0);
+    // Asserts on the reset specifically rather than on "no queries at all":
+    // against Postgres, initDb legitimately issues the row-level security
+    // setup here (see rls.js), and that isn't what this test is about.
+    expect(queryCalls.some(([sql]) => /DROP SCHEMA/.test(sql))).toBe(false);
   });
 
-  // The suite's real dialect is sqlite (see jest.setup.js), so this also
-  // covers the actual test environment directly, not just a simulated one:
-  // even with the flag on, a non-Postgres database is never touched.
+  // Even with the flag on, a non-Postgres database is never touched. The
+  // dialect is forced rather than read, so this holds whichever database the
+  // suite itself is pointed at (see jest.setup.js).
   test("does nothing on a non-Postgres database even if the flag is set", async () => {
     process.env.DANGEROUSLY_RESET_DB = "true";
-    expect(sequelize.getDialect()).toBe("sqlite");
+    sequelize.getDialect = () => "sqlite";
     const queryCalls = [];
-    sequelize.query = (...args) => queryCalls.push(args);
+    // Resolves to an empty result set, the same shape a real SELECT
+    // returns -- applyRlsPolicies reads pg_policies before deciding whether
+    // to create or alter each policy.
+    sequelize.query = (...args) => {
+      queryCalls.push(args);
+      return Promise.resolve([]);
+    };
     await withMockedSync(
       async () => {},
       async () => {
@@ -133,7 +148,7 @@ describe("DANGEROUSLY_RESET_DB", () => {
     const queryCalls = [];
     sequelize.query = (...args) => {
       queryCalls.push(args);
-      return Promise.resolve();
+      return Promise.resolve([]);
     };
     await withMockedSync(
       async () => {},
@@ -141,7 +156,14 @@ describe("DANGEROUSLY_RESET_DB", () => {
         await initDb();
       }
     );
-    expect(queryCalls).toHaveLength(1);
+    // The reset has to be the very first statement -- anything issued
+    // before it would be thrown away by the DROP SCHEMA that follows.
     expect(queryCalls[0][0]).toMatch(/DROP SCHEMA public CASCADE/);
+    // Everything after it is the row-level security setup initDb now runs on
+    // Postgres (see rls.js), which has to happen after the reset so the
+    // policies land on the rebuilt tables rather than the discarded ones.
+    const sql = queryCalls.slice(1).map(([statement]) => statement);
+    expect(sql.some((s) => /FORCE ROW LEVEL SECURITY/.test(s))).toBe(true);
+    expect(sql.some((s) => /CREATE POLICY rekono_tenant_isolation ON invoices/.test(s))).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { sequelize } from "../db.js";
+import { applyRlsPolicies, installCls, verifyRlsEffective } from "../rls.js";
 import { Organization } from "./Organization.js";
 import { User } from "./User.js";
 import { Invoice } from "./Invoice.js";
@@ -96,6 +97,11 @@ NetWorthEntry.belongsTo(NetWorthAccount, { foreignKey: "accountId" });
 const BENIGN_SYNC_RACE_CODES = new Set(["42P07", "42710", "23505"]);
 
 export async function initDb() {
+  // Must be in place before anything opens a transaction, so that the
+  // per-request transaction rls.js starts is picked up automatically by
+  // every query inside that request.
+  installCls();
+
   // Operator-triggered escape hatch for schema drift that additive-only
   // sync can't fix by itself -- e.g. a required column that can't be added
   // because legacy rows predate it (see the 23502 branch below), which is
@@ -118,6 +124,16 @@ export async function initDb() {
     await sequelize.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   }
 
+  const synced = await syncSchema();
+  if (synced) {
+    await enableRowLevelSecurity();
+  }
+}
+
+// Returns false when sync bailed out in a way that leaves the schema in an
+// unknown shape -- applying policies on top of that would fail confusingly
+// on the very tables that didn't get built.
+async function syncSchema() {
   try {
     // { drop: false } is the safe half of Sequelize's "alter" mode: it adds
     // any column a model declares that an existing table is missing (e.g.
@@ -127,11 +143,14 @@ export async function initDb() {
     // removes a column absent from the model or changes an existing one, so
     // it can't destroy real data the way full `alter: true` could.
     await sequelize.sync({ alter: { drop: false } });
+    return true;
   } catch (err) {
     const code = err?.parent?.code || err?.original?.code;
     if (BENIGN_SYNC_RACE_CODES.has(code)) {
       console.warn(`sequelize.sync(): schema already present (racing another instance?), continuing (${err.parent?.message || err.message})`);
-      return;
+      // The other instance built the same schema from the same models, so
+      // the tables policies attach to are there either way.
+      return true;
     }
     // 23502 = the column we just tried to add is NOT NULL and this table
     // already has rows predating it (e.g. Invoice.orgId, added after this
@@ -146,9 +165,19 @@ export async function initDb() {
         `sequelize.sync(): could not add a NOT NULL column -- some existing rows predate it and need manual cleanup or a backfill. ` +
           `The app will keep booting, but queries touching that column/table will keep failing until this is resolved. (${err.parent?.message || err.message})`
       );
-      return;
+      return false;
     }
     throw err;
+  }
+}
+
+async function enableRowLevelSecurity() {
+  const { applied } = await applyRlsPolicies();
+  if (!applied) return;
+
+  const { effective } = await verifyRlsEffective();
+  if (effective) {
+    console.log(`Row-level security active on ${applied} tables.`);
   }
 }
 

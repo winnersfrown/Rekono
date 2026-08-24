@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import { settings } from "./config.js";
+import { rateLimitMiddleware } from "./rateLimit.js";
+import { rlsRequestContext } from "./rls.js";
 import authRoutes from "./routes/auth.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import demoRoutes from "./routes/demo.js";
@@ -122,6 +124,55 @@ app.use("/api/billing/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+// Volumetric backstop across the whole API. Individual routes that need a
+// tighter or better-keyed limit still set their own (login, signup,
+// password reset, the assistant, the contact form); this one exists so that
+// every *other* endpoint -- including any added later that forgets to think
+// about it -- can't be hammered from a single source. Set well above what
+// the review UI generates in normal use, so it only ever bites abuse.
+// Mounted after /api/health so uptime checks are never rejected.
+app.use(
+  "/api",
+  rateLimitMiddleware({
+    windowMs: 15 * 60 * 1000,
+    max: settings.rateLimitApiMax,
+    message: "Too many requests. Please slow down and try again shortly.",
+  })
+);
+
+// The three genuinely expensive categories, which cost real CPU and disk
+// per call rather than a single indexed query: document uploads (OCR plus a
+// model round-trip per file), spreadsheet exports (whole-table reads
+// rendered into a workbook), and a matching run (fuzzy-compares every
+// invoice against every candidate entry). Plan-level monthly document caps
+// already bound uploads in business terms; this bounds the rate.
+const EXPENSIVE_PATHS = [
+  "/api/invoices/upload",
+  "/api/expenses/upload",
+  "/api/vendor-documents/upload",
+  "/api/leases/upload",
+  "/api/tax-documents/upload",
+  "/api/matching/sources",
+  "/api/matching/run",
+  "/api/export",
+];
+
+app.use(
+  EXPENSIVE_PATHS,
+  rateLimitMiddleware({
+    windowMs: 15 * 60 * 1000,
+    max: settings.rateLimitExpensiveMax,
+    message: "Too many uploads or exports in a short period. Please try again in a few minutes.",
+  })
+);
+
+// Everything below runs inside a per-request transaction carrying the
+// database-level tenant context (see rls.js). Mounted after /api/health so
+// the health check stays a pure no-database ping, and before the routers so
+// every one of them inherits it. Static assets below don't touch the
+// database and so aren't wrapped.
+app.use("/api", rlsRequestContext);
 
 app.use(authRoutes);
 app.use(dashboardRoutes);

@@ -2,7 +2,7 @@ import { lookupVendorAlias, rememberVendorCorrection } from "../src/vendorAlias.
 import { applyVendorAlias } from "../src/pipeline.js";
 import { resetDb } from "./testUtils.js";
 
-const ORG_ID = "11111111-1111-1111-1111-111111111111";
+const ORG_ID = "11111111111111111111111111111111";
 
 beforeEach(resetDb);
 
@@ -28,7 +28,7 @@ test("rememberVendorCorrection updates an existing alias on a later, different c
 
 test("lookupVendorAlias never crosses organizations", async () => {
   await rememberVendorCorrection(ORG_ID, "ACME SUPPLYS INC", "Acme Supplies Inc.");
-  expect(await lookupVendorAlias("22222222-2222-2222-2222-222222222222", "ACME SUPPLYS INC")).toBeNull();
+  expect(await lookupVendorAlias("22222222222222222222222222222222", "ACME SUPPLYS INC")).toBeNull();
 });
 
 test("applyVendorAlias rewrites the field, boosts confidence, and reports a known vendor on a known alias", async () => {

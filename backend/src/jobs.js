@@ -18,36 +18,65 @@ import { processVendorDocument, markFailedIfStuck as markVendorDocFailedIfStuck 
 import { processLease, markFailedIfStuck as markLeaseFailedIfStuck } from "./leasePipeline.js";
 import { processTaxDocument, markFailedIfStuck as markTaxDocFailedIfStuck } from "./taxDocPipeline.js";
 import { Invoice, ExpenseReceipt, VendorDocument, Lease, TaxDocument } from "./models/index.js";
+import { runWithOrgContext, runWithSystemContext } from "./rls.js";
 
 const PROCESSORS = {
-  invoice: { process: processInvoice, markFailedIfStuck: markInvoiceFailedIfStuck },
-  expense: { process: processExpense, markFailedIfStuck: markExpenseFailedIfStuck },
-  vendor_document: { process: processVendorDocument, markFailedIfStuck: markVendorDocFailedIfStuck },
-  lease: { process: processLease, markFailedIfStuck: markLeaseFailedIfStuck },
-  tax_document: { process: processTaxDocument, markFailedIfStuck: markTaxDocFailedIfStuck },
+  invoice: { process: processInvoice, markFailedIfStuck: markInvoiceFailedIfStuck, model: Invoice },
+  expense: { process: processExpense, markFailedIfStuck: markExpenseFailedIfStuck, model: ExpenseReceipt },
+  vendor_document: { process: processVendorDocument, markFailedIfStuck: markVendorDocFailedIfStuck, model: VendorDocument },
+  lease: { process: processLease, markFailedIfStuck: markLeaseFailedIfStuck, model: Lease },
+  tax_document: { process: processTaxDocument, markFailedIfStuck: markTaxDocFailedIfStuck, model: TaxDocument },
 };
 
 const queue = [];
 let processing = false;
+let draining = null;
 
 export function enqueue(id, kind = "invoice") {
   queue.push({ id, kind });
-  void drain();
+  draining = drain();
+  void draining;
+}
+
+// Resolves once nothing is queued or in flight. Uploading returns to the
+// caller the moment the job is queued, so without this there's no way to
+// know when the work behind it has actually finished -- which callers that
+// need a settled database (a shutdown path, a test resetting its schema)
+// otherwise have to guess at with a sleep.
+export function whenIdle() {
+  return draining ?? Promise.resolve();
 }
 
 async function drain() {
-  if (processing) return;
+  if (processing) return draining;
   processing = true;
   try {
     while (queue.length) {
       const { id, kind } = queue.shift();
-      const { process, markFailedIfStuck } = PROCESSORS[kind];
+      const { process, markFailedIfStuck, model } = PROCESSORS[kind];
+
+      // A job runs outside any request, so it starts with no database
+      // tenant context at all -- and under row-level security that means it
+      // can see nothing. Resolve which org the record belongs to first
+      // (system context, since that lookup is the thing that answers the
+      // question), then run the pipeline itself scoped to just that org, so
+      // a job stays as confined as the request that queued it.
+      const orgId = await runWithSystemContext(async () => {
+        const record = await model.findByPk(id, { attributes: ["orgId"] });
+        return record?.orgId ?? null;
+      });
+
+      if (!orgId) {
+        console.error(`Skipping ${kind} ${id}: no such record (deleted before it was processed?)`);
+        continue;
+      }
+
       try {
-        await process(id);
+        await runWithOrgContext(orgId, () => process(id));
       } catch (err) {
         console.error(`Unhandled error processing ${kind} ${id}`, err);
         try {
-          await markFailedIfStuck(id, err);
+          await runWithOrgContext(orgId, () => markFailedIfStuck(id, err));
         } catch (markErr) {
           console.error(`Also failed to mark ${kind} ${id} as failed`, markErr);
         }
@@ -55,6 +84,7 @@ async function drain() {
     }
   } finally {
     processing = false;
+    draining = null;
   }
 }
 
@@ -71,7 +101,14 @@ export function queueDepth() {
 // each one re-runs the normal pipeline, which already handles a source file
 // that didn't survive the restart (see pipeline.js's "File not found"
 // handling) by failing cleanly with a re-upload prompt instead of hanging.
-export async function recoverOrphanedJobs() {
+// Deliberately cross-tenant: this sweeps whatever the previous process left
+// mid-pipeline, for every org at once, before any request has arrived to
+// establish an org context.
+export function recoverOrphanedJobs() {
+  return runWithSystemContext(recoverOrphanedJobsInContext);
+}
+
+async function recoverOrphanedJobsInContext() {
   const stuckInvoices = await Invoice.findAll({ where: { status: ["queued", "processing"] } });
   for (const invoice of stuckInvoices) {
     console.warn(`Recovering orphaned invoice ${invoice.id} (was "${invoice.status}" from a previous process)`);

@@ -9,7 +9,7 @@ import { Invoice, Organization } from "../src/models/index.js";
 import { settings } from "../src/config.js";
 import { resetDb } from "./testUtils.js";
 
-const ORG_ID = "11111111-1111-1111-1111-111111111111";
+const ORG_ID = "11111111111111111111111111111111";
 
 beforeEach(resetDb);
 
@@ -44,7 +44,7 @@ test("markFailedIfStuck leaves an already-finished invoice alone", async () => {
 });
 
 test("markFailedIfStuck is a no-op for an invoice that no longer exists", async () => {
-  await expect(markFailedIfStuck("00000000-0000-0000-0000-000000000000", new Error("boom"))).resolves.not.toThrow();
+  await expect(markFailedIfStuck("00000000000000000000000000000000", new Error("boom"))).resolves.not.toThrow();
 });
 
 test("findDuplicateInvoice matches same vendor + invoice number, ignoring case and whitespace", async () => {
@@ -88,7 +88,7 @@ test("findDuplicateInvoice ignores a rejected invoice", async () => {
 
 test("findDuplicateInvoice never matches across organizations", async () => {
   await makeInvoice({
-    orgId: "22222222-2222-2222-2222-222222222222",
+    orgId: "22222222222222222222222222222222",
     status: "extracted",
     vendorName: "Acme Supplies Inc",
     invoiceNumber: "INV-1001",

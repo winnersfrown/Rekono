@@ -87,4 +87,15 @@ export const settings = {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean),
+
+  // Ceilings for the API-wide rate limits in app.js, per client IP per 15
+  // minutes. Tunable because the right number depends on the deployment,
+  // not on the code: an office where everyone shares one NAT address spends
+  // this budget far faster than the same number of people on separate
+  // connections, so a shared-egress deployment may need to raise them. The
+  // narrower per-account limits in the route files (login, password change,
+  // the assistant) are deliberately not tunable -- those are security
+  // limits on specific abuse, not capacity limits.
+  rateLimitApiMax: Number(process.env.RATE_LIMIT_API_MAX ?? 5000),
+  rateLimitExpensiveMax: Number(process.env.RATE_LIMIT_EXPENSIVE_MAX ?? 300),
 };

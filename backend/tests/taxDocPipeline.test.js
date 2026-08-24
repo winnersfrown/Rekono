@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const ORG_ID = "11111111-1111-1111-1111-111111111111";
+const ORG_ID = "11111111111111111111111111111111";
 
 beforeEach(resetDb);
 
@@ -42,7 +42,7 @@ test("markFailedIfStuck leaves an already-finished tax document alone", async ()
 });
 
 test("markFailedIfStuck is a no-op for a tax document that no longer exists", async () => {
-  await expect(markFailedIfStuck("00000000-0000-0000-0000-000000000000", new Error("boom"))).resolves.not.toThrow();
+  await expect(markFailedIfStuck("00000000000000000000000000000000", new Error("boom"))).resolves.not.toThrow();
 });
 
 // Tax documents reuse the same org-wide confidence threshold as the other
@@ -62,7 +62,7 @@ test("a missing source file fails cleanly with a re-upload prompt", async () => 
 });
 
 test("processTaxDocument is a no-op for an id that doesn't exist", async () => {
-  await expect(processTaxDocument("00000000-0000-0000-0000-000000000000")).resolves.not.toThrow();
+  await expect(processTaxDocument("00000000000000000000000000000000")).resolves.not.toThrow();
 });
 
 // The one thing this pipeline does that the other four don't, and the

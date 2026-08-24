@@ -16,7 +16,7 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { Op } from "sequelize";
-import { requireAuth } from "../auth.js";
+import { requireAuth, requireReauth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import * as quickbooks from "../quickbooks.js";
@@ -170,7 +170,7 @@ router.patch(
   }
 );
 
-router.post("/api/integrations/quickbooks/disconnect", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/integrations/quickbooks/disconnect", requireAuth, requireActivePlan, requireReauth, async (req, res, next) => {
   try {
     const org = req.currentUser.organization;
     // Clears this org's local connection state only -- the access/refresh
