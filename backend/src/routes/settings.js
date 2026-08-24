@@ -10,6 +10,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import { settings } from "../config.js";
+import { orgNameSchema } from "../orgName.js";
 import { AuditLog } from "../models/index.js";
 
 const router = Router();
@@ -21,7 +22,7 @@ const settingsSchema = z.object({
   // like it used to be) so a PATCH can touch just org_name without also
   // having to resend the confidence threshold, and vice versa.
   confidence_threshold: z.number().min(0).max(1).nullable().optional(),
-  org_name: z.string().min(1).max(256).optional(),
+  org_name: orgNameSchema.optional(),
   // Same "always allowed to reset, only gated going non-default" shape as
   // confidence_threshold above.
   auto_approval_enabled: z.boolean().optional(),
