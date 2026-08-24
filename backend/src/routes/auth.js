@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import { z } from "zod";
 import * as auth from "../auth.js";
 import { settings } from "../config.js";
+import { orgNameSchema } from "../orgName.js";
 import { Organization, User, AuditLog } from "../models/index.js";
 import { serializeUser } from "../serializers.js";
 import { PLANS } from "../plans.js";
@@ -13,7 +14,7 @@ import { createRateLimiter } from "../rateLimit.js";
 const router = Router();
 
 const signupSchema = z.object({
-  org_name: z.string().min(1).max(256),
+  org_name: orgNameSchema,
   full_name: z.string().min(1).max(256),
   email: z.string().email(),
   password: z.string().min(8).max(256),

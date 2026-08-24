@@ -3,6 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- This shell also serves the invite-accept and password-reset panels
+       (see auth.js), which are reachable without an account by design --
+       an invitee needs to see the invite before creating one. Keeping
+       search engines from indexing any of it means a crafted invite link
+       (self-serve signup lets anyone set an organization's name to
+       anything, and that name is shown here -- see orgName.js and this
+       page's #auth-invite-panel for the rest of that mitigation) can't
+       also end up organically discoverable via search. -->
+  <meta name="robots" content="noindex, nofollow" />
   <meta name="strix-verification" content="strix-verify-0b6be9fca345631b23b16c3dce1e4fd1">
   <meta name="google-site-verification" content="xMhj4SyHLBrEeKTYxVfaEaO3r_YiivHLohYtw16Q-OM" />
   <title>Rekono</title>
@@ -78,7 +87,10 @@
       </div>
 
       <div id="auth-invite-panel" class="auth-panel">
-        <p class="hint" id="invite-intro">Loading your invite…</p>
+        <p class="hint">Team invite</p>
+        <p class="invite-org-label">Organization name, set by the person who invited you:</p>
+        <p class="invite-org-name" id="invite-intro">Loading your invite…</p>
+        <p class="invite-disclaimer">Rekono doesn't verify organization names. If this doesn't look right, don't enter your password below.</p>
         <div id="invite-error" class="auth-error" style="display: none;"></div>
         <form id="invite-accept-form" style="display: none;">
           <label>Email<input type="email" id="invite-email" disabled /></label>

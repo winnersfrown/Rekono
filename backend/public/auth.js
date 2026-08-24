@@ -532,7 +532,15 @@ async function loadInviteDetails(token) {
       introEl.textContent = body.detail || "This invite link is invalid or has expired.";
       return;
     }
-    introEl.textContent = `You've been invited to join ${body.org_name} on Rekono.`;
+    // Quoted, not woven into a first-party-sounding sentence ("You've been
+    // invited to join X on Rekono") -- org_name is free text set by
+    // whoever created the invite, unverified, and this is the one page in
+    // the app an anonymous visitor can reach without an account. A bare
+    // sentence reading it out loud is indistinguishable from an official
+    // notice; quoting it (plus the fixed "Team invite" heading and
+    // disclaimer around it in index.html) marks it as someone else's text
+    // regardless of what it says.
+    introEl.textContent = `“${body.org_name}”`;
     document.getElementById("invite-email").value = body.email;
     formEl.style.display = "flex";
   } catch (err) {

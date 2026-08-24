@@ -4,6 +4,71 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.5
+
+Google Search Console flagged the live app (rekono-ai-new.onrender.com,
+not the marketing site) as a "Deceptive pages" site -- Chrome would show
+visitors a red warning. `Sample URLs: N/A`, so nothing to inspect directly;
+had to reason out the actual cause from the code.
+
+Ruled out first: no third-party/ad scripts, no `eval`, no redirects, no
+phishing-style copy anywhere in the built site. The one meta tag that
+looked suspicious on sight (`strix-verification`) turned out to be
+legitimate and already explained by an earlier commit in this repo's own
+history (#53) -- domain verification for a security-scanning tool, not
+evidence of compromise.
+
+The real cause: self-serve signup lets anyone set an organization's name to
+literally anything (`org_name: z.string().min(1).max(256)`, no other
+constraint), and that name rendered verbatim -- `You've been invited to
+join ${org_name} on Rekono.` -- on the invite-accept page, which is
+reachable with **no account**, by design, so an invitee can see the invite
+before creating one. That's a free-text billboard on a legitimate domain,
+sitting directly above a form asking for a name and password. Sign up once,
+rename the org to something that reads like an urgent account-suspension
+notice, generate one invite link, and the resulting URL is a phishing page
+hosted on Rekono's own domain -- exactly what this flag describes, and
+exactly the kind of thing that stops being reproducible (hence `Sample
+URLs: N/A`) once the attacker's free trial or the invite token expires.
+
+Fixed on two layers, since neither alone is sufficient:
+
+- **Content**: `orgName.js`'s `orgNameSchema` rejects a name that's itself
+  a URL (`http(s)://`, `www.`, or a bare `name.tld`), applied at both
+  signup and org rename. Cheap, zero false-positive risk, closes the most
+  mechanical version of the attack -- but a blocklist can't catch every
+  phishing phrase, so it's not the real fix by itself.
+- **Structure** (the actual fix): the invite-accept page no longer weaves
+  the org name into a first-party-sounding sentence. It's quoted, under a
+  fixed "Team invite" heading and a permanent disclaimer -- "Rekono doesn't
+  verify organization names. If this doesn't look right, don't enter your
+  password below." -- placed directly above the password field. This holds
+  regardless of what the org name says, which a content filter alone never
+  can.
+
+Also: the whole app shell (`backend/public/index.html`) now sends
+`noindex, nofollow`. It's an authenticated app shell that happens to also
+serve the invite/reset panels, not marketing content -- there's no reason
+for a crafted invite URL to be organically discoverable via search on top
+of everything above.
+
+Verified live, not just by reading the diff: signed up, created a real
+invite, hit the actual invite-accept page with a real token, and confirmed
+the org name renders quoted inside the new framing with the disclaimer
+directly above the password field (screenshot taken via Playwright against
+the running app). `tests/orgName.test.js` covers the schema directly plus
+both real routes that accept an org name (signup, org rename) rejecting a
+URL. Full suite: 634 passing, 0 failing (up from 624).
+
+One earlier claim in this investigation turned out to be wrong and is
+recorded here rather than quietly dropped: a missing `.nojekyll` file was
+flagged as letting GitHub Pages serve the entire repo (source code
+included) publicly. That's incorrect -- Jekyll's default processing only
+excludes dotfiles/dotdirs, not regular directories like `backend/`, so
+`.nojekyll` wouldn't have changed what's exposed either way. Not
+implemented; whether the marketing-site repo being public already covers
+this is a separate question for the user's own judgment call.
+
 ## v1.4
 
 The marketing site read too small and too sparse -- both had a specific,

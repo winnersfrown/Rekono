@@ -167,6 +167,22 @@ h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
 
 .hint { color: var(--muted); font-size: 0.88rem; margin-bottom: 1rem; }
 
+/* Invite-accept page: the organization name is unverified text set by
+   whoever created the invite, shown to a visitor with no account yet.
+   Quoted and visually set apart from the surrounding chrome so it always
+   reads as someone else's text, not a first-party Rekono notice. */
+.invite-org-label { color: var(--muted); font-size: 0.82rem; margin-bottom: 0.3rem; }
+.invite-org-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.8rem;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.invite-disclaimer { color: var(--muted); font-size: 0.78rem; margin-bottom: 1rem; }
+
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fade-in 0.35s var(--ease); }
 
