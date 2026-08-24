@@ -5,8 +5,7 @@
 // two distinct critical dates: when the lease itself ends, and the
 // (often much earlier) deadline to exercise a renewal option.
 
-import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
-import { settings } from "./config.js";
+import { callTool, llmConfigured } from "./llm.js";
 
 // snake_case keys throughout, same convention as extraction.js -- flows
 // straight into the API's field_confidence JSON blob.
@@ -64,7 +63,7 @@ ${ocrText}
 }
 
 export async function extract(ocrText) {
-  if (settings.geminiApiKey) {
+  if (llmConfigured()) {
     try {
       return await extractWithLlm(ocrText);
     } catch {
@@ -76,26 +75,12 @@ export async function extract(ocrText) {
   return extractHeuristic(ocrText);
 }
 
-// Same bounded-retry reasoning as extraction.js's extractWithLlm.
-const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_ATTEMPTS = 2;
-
 async function extractWithLlm(ocrText) {
-  const client = new GoogleGenAI({
-    apiKey: settings.geminiApiKey,
-    httpOptions: { timeout: LLM_TIMEOUT_MS, retryOptions: { attempts: LLM_MAX_ATTEMPTS } },
+  const data = await callTool({
+    prompt: extractionPrompt(ocrText.slice(0, 15000)),
+    tool: LEASE_TOOL,
+    maxOutputTokens: 2048,
   });
-  const response = await client.models.generateContent({
-    model: settings.geminiModel,
-    contents: [{ role: "user", parts: [{ text: extractionPrompt(ocrText.slice(0, 15000)) }] }],
-    config: {
-      maxOutputTokens: 2048,
-      tools: [{ functionDeclarations: [LEASE_TOOL] }],
-      toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["record_lease"] } },
-    },
-  });
-
-  const data = response.functionCalls[0].args;
 
   const fields = {
     landlord_name: data.landlord_name || "",

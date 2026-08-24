@@ -6,12 +6,11 @@
 // the unpaid ones" work, but nothing is persisted server-side -- there's
 // no stored conversation to clean up, and a page reload starts fresh.
 
-import { GoogleGenAI } from "@google/genai";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { settings } from "../config.js";
+import { generateText, llmConfigured } from "../llm.js";
 import { Invoice, MatchResult } from "../models/index.js";
 import { createRateLimiter } from "../rateLimit.js";
 
@@ -56,13 +55,6 @@ function sanitizeHistory(history) {
 // building that day.
 const isAssistantRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 20 });
 
-// Same reasoning as extraction.js's LLM call: bound the worst case instead
-// of inheriting the SDK's multi-minute default (potentially compounded by
-// retries), since this one blocks a live HTTP request/response instead of a
-// background job.
-const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_ATTEMPTS = 2; // original call + one retry
-
 const SYSTEM_PROMPT = `You are Rekono's in-app assistant, helping an accounts-payable user understand their invoice data. Answer only using the JSON data provided in the user message -- never invent vendors, amounts, dates, or statuses that aren't in it. If the data doesn't contain what's needed to answer, say so plainly rather than guessing. Be concise: a few sentences, or a short list. You can summarize, count, filter, and total the data, but you cannot take any action (approve, reject, export, upload, run matching, etc.) -- if asked to do something rather than answer a question, say which tab/button does that instead of attempting it.`;
 
 router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -76,10 +68,10 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
       return res.status(422).json({ detail: parsed.error.issues });
     }
 
-    if (!settings.geminiApiKey) {
+    if (!llmConfigured()) {
       return res.status(503).json({
         detail:
-          "The AI assistant needs a Gemini API key configured on the server. In the meantime, use the Review Queue, Matching, and Export tabs directly.",
+          "The AI assistant needs an LLM configured on the server (an OpenRouter or Gemini key). In the meantime, use the Review Queue, Matching, and Export tabs directly.",
       });
     }
 
@@ -113,58 +105,36 @@ router.post("/api/assistant/ask", requireAuth, requireActivePlan, async (req, re
     }));
 
     const truncated = invoices.length === MAX_INVOICES_IN_CONTEXT;
-    const client = new GoogleGenAI({
-      apiKey: settings.geminiApiKey,
-      httpOptions: { timeout: LLM_TIMEOUT_MS, retryOptions: { attempts: LLM_MAX_ATTEMPTS } },
-    });
-    // Gemini's roles are "user"/"model", not Anthropic's "user"/"assistant" --
-    // sanitizeHistory already guarantees strict user/assistant alternation
-    // starting with "user", so a direct role rename is all that's needed.
-    const history = sanitizeHistory(parsed.data.history).map((entry) => ({
-      role: entry.role === "assistant" ? "model" : "user",
-      parts: [{ text: entry.content }],
-    }));
 
-    // Own try/catch around just the Gemini call (unlike extraction.js/
+    // Own try/catch around just the model call (unlike extraction.js/
     // quickbooks.js's LLM calls, there's no heuristic fallback for open-
     // ended Q&A -- a failure here IS the failure) so a real API error (rate
     // limit, an unavailable model, a safety block, ...) surfaces as a clear,
     // logged 502 instead of an opaque 500 with nothing in the server logs to
     // diagnose from.
-    let response;
-    try {
-      response = await client.models.generateContent({
-        model: settings.geminiModel,
-        config: { systemInstruction: SYSTEM_PROMPT, maxOutputTokens: 1024 },
-        contents: [
-          ...history,
-          {
-            role: "user",
-            parts: [
-              {
-                text:
-                  `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
-                  `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
-              },
-            ],
-          },
-        ],
-      });
-    } catch (err) {
-      console.error("Ask Rekono: Gemini call failed:", err.message);
-      return res.status(502).json({ detail: "Couldn't get an answer just now. Please try again in a moment." });
-    }
-
-    // response.text is a getter that can throw (not just return undefined)
-    // when the response has no candidates at all -- e.g. the prompt itself
-    // got blocked by a safety filter -- so this stays inside the same
-    // try/catch as the call above rather than being read afterward.
     let answer;
     try {
-      answer = response.text || "";
+      answer = await generateText({
+        system: SYSTEM_PROMPT,
+        // sanitizeHistory already guarantees strict user/assistant
+        // alternation starting with "user"; llm.js maps those roles to
+        // whatever the active provider expects.
+        history: sanitizeHistory(parsed.data.history),
+        prompt:
+          `This organization has ${dataset.length} invoice(s)${truncated ? " (showing the most recent " + MAX_INVOICES_IN_CONTEXT + " only -- older ones aren't included below)" : ""} as JSON:\n\n` +
+          `${JSON.stringify(dataset)}\n\nQuestion: ${parsed.data.question}`,
+        maxOutputTokens: 1024,
+      });
     } catch (err) {
-      console.error("Ask Rekono: Gemini returned no usable response:", err.message);
-      return res.status(502).json({ detail: "Couldn't get an answer to that question. Try rephrasing it." });
+      // An answer-shaped failure (safety block, empty completion) is worth
+      // a different suggestion than a transport one -- rephrasing helps
+      // with the first and does nothing for the second.
+      if (err.code === "empty_response") {
+        console.error("Ask Rekono: the model returned no usable response:", err.message);
+        return res.status(502).json({ detail: "Couldn't get an answer to that question. Try rephrasing it." });
+      }
+      console.error("Ask Rekono: the model call failed:", err.message);
+      return res.status(502).json({ detail: "Couldn't get an answer just now. Please try again in a moment." });
     }
 
     res.json({ answer, invoice_count: invoices.length });

@@ -49,8 +49,8 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Extraction layer** (`ocr.js`, `extraction.js`, `confidence.js`) — the core IP:
 - OCR by shelling out to Tesseract + Poppler's `pdftoppm` (same system binaries a Python OCR stack would use, so behavior/accuracy doesn't depend on the runtime language). Swapping in AWS Textract or Google Document AI's purpose-built invoice parser is a drop-in replacement behind `ocr.extractText`.
-- Structured extraction via Gemini (`@google/genai`), using forced function calling to get a fixed JSON schema back (vendor, invoice #, dates, PO reference, totals, line items) with a self-reported confidence per field. Google AI Studio issues a free API key (no credit card) with a generous rate limit -- see [aistudio.google.com](https://aistudio.google.com).
-- If `GEMINI_API_KEY` isn't set, a heuristic regex extractor takes over so the full pipeline (ingest → extract → review → export → match) still runs end-to-end for demos, tests, and CI. Heuristic fields get a flat, low confidence score, which naturally routes them into the review queue instead of silently shipping bad data.
+- Structured extraction via an LLM, using forced function calling to get a fixed JSON schema back (vendor, invoice #, dates, PO reference, totals, line items) with a self-reported confidence per field. Either [Gemini](https://aistudio.google.com) (free key, no credit card) or [OpenRouter](https://openrouter.ai) (one API in front of many providers' models) works -- see "LLM provider" below.
+- If no LLM is configured, a heuristic regex extractor takes over so the full pipeline (ingest → extract → review → export → match) still runs end-to-end for demos, tests, and CI. Heuristic fields get a flat, low confidence score, which naturally routes them into the review queue instead of silently shipping bad data.
 - Confidence scoring combines per-field confidence with an automatic cross-check (do line items sum to the total, or subtotal + tax = total?). A failed cross-check pulls overall confidence down independent of what the model claimed.
 - **Risk-based auto-approval** (Business/Scale, `plans.js`'s `riskBasedAutoApproval`, off by default even on a qualifying plan -- opt-in per org in Settings): an invoice that would already be fast-tracked as `extracted` (passes the confidence bar and cross-check, isn't a duplicate or possible multi-invoice) skips the manual "click Approve" step too if it's also low business risk -- a known vendor (has a learned `VendorAlias` for this org, i.e. a human corrected/confirmed it before) and at or under the org's own configured dollar ceiling. This never overrides a flagged review; it only removes a redundant click for spend that was already trustworthy on its own. Every auto-approval gets its own `auto_approved` audit log entry (reason, total, confidence) so it's fully traceable, never a silent skip. See `pipeline.js`'s `shouldAutoApprove`.
 - **Quick Review** (dedicated sidebar tab): a needs_review invoice normally requires opening its full detail view even if only one field is actually uncertain. Quick Review instead flattens every low-confidence field across every eligible needs_review invoice (excluding ones flagged for a duplicate or possible multi-invoice, which need real judgment on the whole document) into one queue, reviewed a single field at a time -- confirm the prefilled value or correct it, Enter moves straight to the next. Confidence and the cross-check are recomputed after each field (`confidence.js`'s `score`, reused rather than re-derived); once nothing on an invoice is left flagged, it's auto-approved. See `GET /api/invoices/quick-review-queue` and `POST /api/invoices/:id/quick-review-field`.
@@ -74,7 +74,7 @@ Upload (PDF/image) ──▶ Storage (local disk / S3-compatible later)
 
 **Review UI** (`backend/public/`): a small vanilla-JS single-page app (no build step) behind a login/signup gate, laid out as a sidebar (nav + recent uploads, clickable straight into the Review Queue) next to a main panel: Ask Rekono / Upload / Review Queue / Matching / Export / Team / Settings. The review queue shows the source document next to editable extracted fields, with low-confidence fields visually flagged; corrections are saved via `PATCH /api/invoices/:id` and logged to the audit trail. A fresh signup lands in a two-step onboarding wizard first (a few personalization questions, then a plan picker) rather than straight in the dashboard -- picking a paid plan hands off to Stripe Checkout before the dashboard ever loads. Settings covers account (name, password), organization (name, owner-only), billing (plan summary, Stripe's hosted "Manage billing" portal, upgrade), and the review-queue confidence threshold.
 
-**Ask Rekono** (`assistant.js`, `routes/assistant.js`): a grounded Q&A assistant over the org's own invoice data, reachable from the dashboard's default view. Each question hands Gemini the org's invoice data as JSON plus the question, instructed to answer only from that data; the client also resends the visible thread (capped to the last 6 exchanges) so follow-ups like "what about just the unpaid ones" resolve against the previous answer, without the server persisting any conversation state. Deliberately read-only -- it can summarize, count, and total, but it cannot approve, reject, export, or otherwise act, so there's no risk of an LLM mistake touching anyone's books. Needs `GEMINI_API_KEY`; without it the endpoint returns `503` with a clear message rather than crashing.
+**Ask Rekono** (`assistant.js`, `routes/assistant.js`): a grounded Q&A assistant over the org's own invoice data, reachable from the dashboard's default view. Each question hands Gemini the org's invoice data as JSON plus the question, instructed to answer only from that data; the client also resends the visible thread (capped to the last 6 exchanges) so follow-ups like "what about just the unpaid ones" resolve against the previous answer, without the server persisting any conversation state. Deliberately read-only -- it can summarize, count, and total, but it cannot approve, reject, export, or otherwise act, so there's no risk of an LLM mistake touching anyone's books. Needs an LLM configured; without one the endpoint returns `503` with a clear message rather than crashing.
 
 **Expense Receipts** (`extractionReceipts.js`, `confidenceReceipts.js`, `expensePipeline.js`, `routes/expenses.js`, `ExpenseReceipt` model): a second document-processing pipeline, built by copying the invoice pipeline's shape (upload → OCR → LLM/heuristic extraction → confidence-gated review → approve/reject → export) onto a different document type and schema instead of generalizing the invoice code into a shared abstraction across two independently-evolving domains. A receipt has a merchant, date, category (from a fixed list, so the LLM classifies into it directly rather than inventing labels), currency, tax, and amount — no line items, no PO reference, no vendor matching. Confidence scoring is a plain weighted average of per-field confidence (`confidenceReceipts.js`) with no line-items-sum-vs-total cross-check, since a receipt has nothing to cross-check the total against. Deliberately v1-scoped: no bulk actions, no Quick Review queue, no auto-approval, no statistical sampling, no vendor-alias learning, no duplicate detection, no QuickBooks push — the same core loop the invoice pipeline itself started with before those grew on top of it one at a time. Shares the invoice pipeline's job queue (`jobs.js` dispatches by `kind`), monthly document cap (`documentUsage.js` sums both tables — one budget for total OCR/LLM spend per org, not a cap per document type), and confidence threshold setting. Reachable from the dashboard's "Expenses" sidebar tab, with its own CSV/Excel export.
 
@@ -108,11 +108,11 @@ sudo apt-get install tesseract-ocr poppler-utils
 ```bash
 cd backend
 npm install
-cp ../.env.example .env   # set GEMINI_API_KEY to enable LLM extraction (optional)
+cp ../.env.example .env   # set an LLM key to enable LLM extraction (optional)
 npm run dev
 ```
 
-Open http://localhost:8000 for the review UI. Without `GEMINI_API_KEY` set, extraction falls back to the heuristic extractor, so you can exercise the whole pipeline immediately.
+Open http://localhost:8000 for the review UI. With no LLM configured, extraction falls back to the heuristic extractor, so you can exercise the whole pipeline immediately.
 
 Try it with the bundled sample data in `sample_data/`: sign up (creates your organization), then upload `sample_invoice.pdf` on the Upload tab, then upload `sample_po.csv` (as Purchase Orders) and `sample_bank.csv` (as Bank Statement) on the Matching tab and click "Run Matching". Regenerate the sample PDF with `python sample_data/generate_sample_invoice.py` (needs `pip install reportlab` -- this one utility script is Python since it's dev-tooling, not part of the running app).
 
@@ -122,7 +122,7 @@ Try it with the bundled sample data in `sample_data/`: sign up (creates your org
 docker compose up --build
 ```
 
-Runs the app against Postgres instead of SQLite. Set `GEMINI_API_KEY` in your shell environment before `docker compose up` to enable LLM extraction.
+Runs the app against Postgres instead of SQLite. Set `GEMINI_API_KEY` (or `OPENROUTER_API_KEY` + `OPENROUTER_MODEL`) in your shell environment before `docker compose up` to enable LLM extraction.
 
 ### Deploying a live instance (Render)
 
@@ -275,7 +275,7 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 
 ### Secrets & API keys
 
-Every secret this app uses (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
+Every secret this app uses (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
 
 - They're never sent to the browser. `backend/public/` is plain static HTML/JS with no build/bundling step, so there's no risk of a secret accidentally getting compiled into client-side code the way there can be in a bundled frontend -- the server-side `config.js` module is never loaded there in the first place.
 - They're never echoed back in an API response, including error responses -- an unexpected server error (a DB failure, a bug) logs its full detail server-side but only ever returns a generic `"Internal server error"` to the caller (`app.js`'s `handleUnexpectedError`), so a stray internal error message can't leak connection strings or other detail. Every deliberate error response (validation, auth, plan gating) is written by hand in its own route and never includes secret material.
@@ -326,6 +326,22 @@ REKONO_TEST_PG_URL=postgres://rekono_app:apppw@127.0.0.1:5432 npm test
 One caveat on that Postgres run: `tests/rls.test.js` and the rest of the row-level-security coverage pass reliably, but the *full* suite against Postgres is currently flaky, with a different handful of tests failing run to run. The cause is in the harness rather than the app: uploads deliberately return as soon as the job is queued, so a test can finish while its background job is still writing, and the next test's reset then contends with that job for table locks. `resetDb` waits for the queue and retries the deadlock, which removed most of it, but tests that don't await their own uploads can still race. Treat the SQLite run (`npm test`, green) as the gate and the Postgres run as the way to exercise the policies; tightening the remaining races is worth doing before wiring it into CI.
 
 No software is ever fully "unhackable" -- this is a genuine, tested hardening pass against the realistic risks for an app like this (XSS, stored-content-type confusion, brute force, spreadsheet formula injection, cross-org data leakage), not a guarantee against every possible attack.
+
+### LLM provider (Gemini or OpenRouter)
+
+One model powers structured extraction, merchant categorization, the QuickBooks expense-account and bank-match suggestions, and Ask Rekono. Two providers are supported and either satisfies all of them -- `llm.js` is the only file that knows which is in use.
+
+**Gemini.** Set `GEMINI_API_KEY`. [Google AI Studio](https://aistudio.google.com) issues a free key with no credit card.
+
+**OpenRouter.** Set **both** `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`. OpenRouter proxies many providers behind one OpenAI-compatible API, so choosing it is really choosing whichever model the slug names.
+
+There is deliberately no default model. Slugs are specific (`vendor/model-name`), they change as models come and go, and a wrong guess would fail at the first real extraction rather than at boot -- so a key without a model is treated as unconfigured and says so in the logs. Copy the exact slug from the model's page on OpenRouter; anything with a `:free` suffix costs nothing.
+
+**The model must support tool/function calling.** Extraction doesn't ask for JSON politely, it forces a schema through a named function call -- that's what makes the output parseable and gives each field its own confidence. A model without tool support fails every extraction and falls back to the heuristic path. If that happens the error names it explicitly rather than leaving you to infer it.
+
+With both configured, OpenRouter wins; set `LLM_PROVIDER=gemini` to override. With neither, extraction uses the heuristic regex extractor and the AI-only features return "no suggestion" -- the whole pipeline still runs, which is what lets the test suite and local demos work without any key. The provider in use is logged at startup.
+
+`tests/llm.test.js` covers the OpenRouter adapter against a stubbed `fetch`: the request shape it builds (OpenAI-style `tools`, forced `tool_choice`, the schema passed through untouched), parsing arguments that arrive as a JSON string rather than an object, HTTP and body-level errors (OpenRouter reports some upstream failures with a `200`), the retry, and the abort on timeout.
 
 ### Contact form email (Resend)
 

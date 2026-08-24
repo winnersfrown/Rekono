@@ -4,6 +4,42 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.2
+
+Any LLM call in the app -- extraction for all five document types, merchant
+categorization, the two QuickBooks suggestions, and Ask Rekono -- can now run
+on [OpenRouter](https://openrouter.ai) instead of Gemini. `llm.js` is the
+only file that knows which provider is active; everything else asks it for a
+forced tool call or for text.
+
+Set `OPENROUTER_API_KEY` **and** `OPENROUTER_MODEL` to use it. There is no
+default model on purpose: slugs are specific and change as models come and
+go, so a key with no model is treated as unconfigured and logs why, rather
+than guessing one and failing at the first real extraction. The chosen model
+must support tool/function calling -- extraction forces a JSON schema
+through a named function, which is what produces a confidence per field. A
+model without it fails every extraction into the heuristic path, and says
+so. With both providers configured OpenRouter wins; `LLM_PROVIDER=gemini`
+overrides. With neither, the heuristic fallback behaves exactly as before.
+
+Worth recording: the first pass converted three call sites, which was wrong.
+There were nine, across six files -- the four non-invoice document
+extractors and both QuickBooks suggestions also built their own Gemini
+client. Converting only the three would have left invoices on OpenRouter
+while receipts, leases, vendor documents and tax documents silently dropped
+to the heuristic extractor, which reads as the model getting worse rather
+than as a half-finished migration.
+
+## v1.1
+
+Started numbering releases, with v1.0 as the baseline. Adds this changelog
+and `CLAUDE.md`, which records the convention so it survives the container
+being rebuilt between sessions.
+
+Annotated git tags would be the conventional way to mark these, but the git
+proxy in the Claude Code sandbox rejects `refs/tags/*` pushes, so the number
+lives in the commit subject and here instead.
+
 ## v1.0
 
 The first numbered version. Everything below already existed at the point
