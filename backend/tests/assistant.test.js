@@ -22,14 +22,16 @@ test("rejects an empty question", async () => {
   expect(res.status).toBe(422);
 });
 
-test("authenticated request without GEMINI_API_KEY returns 503, not a crash", async () => {
+test("authenticated request with no LLM provider configured returns 503, not a crash", async () => {
   const token = await signup(app, request);
   const res = await request(app)
     .post("/api/assistant/ask")
     .set(authHeader(token))
     .send({ question: "How many invoices need review?" });
   expect(res.status).toBe(503);
-  expect(res.body.detail).toMatch(/api key/i);
+  // Names both providers rather than Gemini alone -- either one satisfies
+  // this route now (see src/llm.js).
+  expect(res.body.detail).toMatch(/OpenRouter or Gemini/i);
 });
 
 test("respects plan gating like every other data route", async () => {

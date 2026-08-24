@@ -29,6 +29,26 @@ export const settings = {
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
 
+  // OpenRouter (openrouter.ai) is an alternative to Gemini for every LLM
+  // call in the app -- extraction, merchant categorization, and Ask Rekono.
+  // It proxies many providers behind one OpenAI-compatible API, so picking
+  // it is really picking whichever model OPENROUTER_MODEL names.
+  //
+  // There's deliberately no default model. Slugs are specific
+  // ("vendor/model-name"), they change as models come and go, and guessing
+  // one wrong fails at the first real call rather than at boot -- so an
+  // OpenRouter key without a model is treated as unconfigured and says so.
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || "",
+  openrouterModel: process.env.OPENROUTER_MODEL || "",
+  // Sent as OpenRouter's optional attribution headers, which is also what
+  // decides whether this app shows up on their public leaderboards.
+  openrouterSiteUrl: process.env.OPENROUTER_SITE_URL || "https://winnersfrown.github.io/Rekono/",
+  openrouterAppName: process.env.OPENROUTER_APP_NAME || "Rekono",
+
+  // Which provider to use when both are configured. Unset picks whichever
+  // one has credentials, preferring OpenRouter.
+  llmProvider: process.env.LLM_PROVIDER || "",
+
   reviewConfidenceThreshold: Number(process.env.REVIEW_CONFIDENCE_THRESHOLD ?? 0.85),
 
   matchAmountTolerancePct: Number(process.env.MATCH_AMOUNT_TOLERANCE_PCT ?? 0.02),

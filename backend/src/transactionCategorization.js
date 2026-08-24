@@ -17,9 +17,8 @@
 // Nothing is ever silently left wrong: anything none of the three can place
 // stays uncategorized rather than being guessed into "Other".
 
-import { FunctionCallingConfigMode, GoogleGenAI } from "@google/genai";
 import { Op } from "sequelize";
-import { settings } from "./config.js";
+import { callTool, llmConfigured } from "./llm.js";
 import { EXPENSE_CATEGORIES } from "./models/ExpenseReceipt.js";
 import { MerchantCategory } from "./models/index.js";
 
@@ -31,8 +30,6 @@ const LEARNED_CONFIDENCE = 0.98;
 // not an answer, and should always land in front of a human.
 const HEURISTIC_CONFIDENCE = 0.35;
 
-const LLM_TIMEOUT_MS = 60_000;
-const LLM_MAX_ATTEMPTS = 2;
 // Keeps a single request's prompt and response bounded. Statements with
 // more distinct merchants than this are split across calls.
 const MERCHANTS_PER_LLM_CALL = 60;
@@ -114,24 +111,14 @@ ${merchants.map((m) => `- ${m}`).join("\n")}`;
 }
 
 async function categorizeWithLlm(merchants) {
-  const client = new GoogleGenAI({
-    apiKey: settings.geminiApiKey,
-    httpOptions: { timeout: LLM_TIMEOUT_MS, retryOptions: { attempts: LLM_MAX_ATTEMPTS } },
-  });
-  const response = await client.models.generateContent({
-    model: settings.geminiModel,
-    contents: [{ role: "user", parts: [{ text: categorizePrompt(merchants) }] }],
-    config: {
-      maxOutputTokens: 4096,
-      tools: [{ functionDeclarations: [CATEGORIZE_TOOL] }],
-      toolConfig: {
-        functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["categorize_merchants"] },
-      },
-    },
+  const args = await callTool({
+    prompt: categorizePrompt(merchants),
+    tool: CATEGORIZE_TOOL,
+    maxOutputTokens: 4096,
   });
 
   const out = new Map();
-  for (const row of response.functionCalls[0].args.categorizations || []) {
+  for (const row of args.categorizations || []) {
     // Only accept a category from the fixed list -- a model that invents
     // "Groceries" would otherwise poison the taxonomy that every filter,
     // report, and export downstream assumes.
@@ -168,7 +155,7 @@ export async function categorizeMerchants(orgId, merchantKeys) {
   const unknown = unique.filter((m) => !resolved.has(m));
   if (!unknown.length) return resolved;
 
-  if (settings.geminiApiKey) {
+  if (llmConfigured()) {
     try {
       for (const batch of chunk(unknown, MERCHANTS_PER_LLM_CALL)) {
         for (const [merchant, result] of await categorizeWithLlm(batch)) {

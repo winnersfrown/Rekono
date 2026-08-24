@@ -11,8 +11,8 @@
 // them into a specific status code. Only genuinely unexpected failures
 // (thrown by fetchImpl itself, e.g. a network error) propagate up to the
 // route's try/catch and the app-wide 500 handler.
-import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
 import { settings } from "./config.js";
+import { callTool, llmConfigured } from "./llm.js";
 
 export const QUICKBOOKS_AUTH_URL = "https://appcenter.intuit.com/connect/oauth2";
 const QUICKBOOKS_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
@@ -210,7 +210,7 @@ const CATEGORIZE_TIMEOUT_MS = 30_000;
 // to the org's default account, i.e. exactly the behavior this app had
 // before this feature existed.
 export async function suggestExpenseAccount(invoice, accounts) {
-  if (!settings.geminiApiKey || !accounts?.length) return { suggested: false };
+  if (!llmConfigured() || !accounts?.length) return { suggested: false };
 
   const lineItemsText =
     (invoice.lineItems || [])
@@ -230,21 +230,12 @@ ${accountsText}
 Call the categorize_expense tool with your pick. If truly nothing fits, return an empty account_id and a low confidence rather than forcing a bad match.`;
 
   try {
-    const client = new GoogleGenAI({
-      apiKey: settings.geminiApiKey,
-      httpOptions: { timeout: CATEGORIZE_TIMEOUT_MS, retryOptions: { attempts: 2 } },
+    const data = await callTool({
+      prompt,
+      tool: CATEGORIZE_TOOL,
+      maxOutputTokens: 1024,
+      timeoutMs: CATEGORIZE_TIMEOUT_MS,
     });
-    const response = await client.models.generateContent({
-      model: settings.geminiModel,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        maxOutputTokens: 1024,
-        tools: [{ functionDeclarations: [CATEGORIZE_TOOL] }],
-        toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["categorize_expense"] } },
-      },
-    });
-
-    const data = response.functionCalls?.[0]?.args;
     const account = accounts.find((a) => a.id === data?.account_id);
     if (!account) return { suggested: false };
 
@@ -346,7 +337,7 @@ const MATCH_TIMEOUT_MS = 30_000;
 // GEMINI_API_KEY this returns no suggestion, and the caller leaves the
 // transaction for a human to pick between the candidates manually.
 export async function suggestBankTransactionMatch(transaction, candidateInvoices) {
-  if (!settings.geminiApiKey || !candidateInvoices?.length) return { suggested: false };
+  if (!llmConfigured() || !candidateInvoices?.length) return { suggested: false };
 
   const candidatesText = candidateInvoices
     .map((inv) => `${inv.id}: vendor "${inv.vendorName || "(unknown)"}", amount $${inv.total}, invoice date ${inv.invoiceDate || "?"}, due ${inv.dueDate || "?"}`)
@@ -362,21 +353,12 @@ ${candidatesText}
 Call match_bank_transaction with your pick. Bank/card transaction descriptions are often abbreviated or garbled (e.g. "SQ *STARBUCKS 4421" for "Starbucks Corp") -- weigh that against a clean vendor name mismatch. If truly nothing plausibly matches, return an empty invoice_id and a low confidence rather than forcing a bad match.`;
 
   try {
-    const client = new GoogleGenAI({
-      apiKey: settings.geminiApiKey,
-      httpOptions: { timeout: MATCH_TIMEOUT_MS, retryOptions: { attempts: 2 } },
+    const data = await callTool({
+      prompt,
+      tool: MATCH_TOOL,
+      maxOutputTokens: 1024,
+      timeoutMs: MATCH_TIMEOUT_MS,
     });
-    const response = await client.models.generateContent({
-      model: settings.geminiModel,
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        maxOutputTokens: 1024,
-        tools: [{ functionDeclarations: [MATCH_TOOL] }],
-        toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["match_bank_transaction"] } },
-      },
-    });
-
-    const data = response.functionCalls?.[0]?.args;
     const invoice = candidateInvoices.find((inv) => inv.id === data?.invoice_id);
     if (!invoice) return { suggested: false };
 

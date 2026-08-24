@@ -51,6 +51,12 @@ services:
         value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false # set manually in the Render dashboard after deploy -- optional, enables LLM extraction instead of the heuristic fallback
+      # Alternative to Gemini: OpenRouter needs BOTH of these, and the model
+      # must support tool calling. See README's "LLM provider" section.
+      - key: OPENROUTER_API_KEY
+        sync: false # optional -- alternative LLM provider, set alongside OPENROUTER_MODEL
+      - key: OPENROUTER_MODEL
+        sync: false # required with OPENROUTER_API_KEY -- the exact slug, e.g. "vendor/model-name"
       - key: RESEND_API_KEY
         sync: false # optional -- enables the marketing site's contact form
       - key: STRIPE_SECRET_KEY

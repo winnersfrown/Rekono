@@ -14,7 +14,7 @@ import { Router } from "express";
 import { Op } from "sequelize";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { settings } from "../config.js";
+import { llmConfigured } from "../llm.js";
 import { PLANS } from "../plans.js";
 import { documentsUsedThisMonth, startOfCurrentMonthUtc } from "../documentUsage.js";
 import { AuditLog, ExpenseReceipt, Invoice, Lease, MatchResult, TaxDocument, VendorDocument } from "../models/index.js";
@@ -306,7 +306,7 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
         // "running on the heuristic fallback" -- see extraction.js. It's
         // the difference between the confidence numbers above meaning a
         // model's self-report and meaning a regex's flat guess.
-        ai_extraction: Boolean(settings.geminiApiKey),
+        ai_extraction: llmConfigured(),
       },
     });
   } catch (err) {
