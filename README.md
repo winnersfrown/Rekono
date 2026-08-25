@@ -310,8 +310,34 @@ There are two contexts. *System* covers the pre-auth substrate that legitimately
 
 Two things about the deployment matter, and both are easy to get wrong silently:
 
-1. **The app must not connect as a superuser or a `BYPASSRLS` role.** Postgres skips row security entirely for those, so the policies would be in place and enforcing nothing. The app checks the role it actually connects as on boot and logs a loud error if row security can't take effect. Neon, Render and Supabase all hand out ordinary roles by default, so this is normally already true.
-2. **`FORCE ROW LEVEL SECURITY`, not just `ENABLE`.** A table's owner is exempt from its own policies unless they're forced -- and the app *is* the owner on those managed providers. Both are applied to all 22 tables on boot.
+1. **The app must not connect as a superuser or a `BYPASSRLS` role.** Postgres skips row security entirely for those, so the policies would be in place and enforcing nothing. The app checks the role it actually connects as on boot and logs a loud error if row security can't take effect.
+2. **`FORCE ROW LEVEL SECURITY`, not just `ENABLE`.** A table's owner is exempt from its own policies unless they're forced -- and the app needs to be the owner of what it creates for this to matter. Both are applied to all 22 tables on boot.
+
+**On Neon specifically, this needs a role created a particular way** -- worth documenting since it took a live outage to work out. Every role Neon's Console, API, or CLI creates (including the one handed to you when the project is created, and any role added through the dashboard's Roles page) is automatically made a member of `neon_superuser`, which carries `BYPASSRLS` -- and that membership can't be revoked afterward; `ALTER ROLE ... NOBYPASSRLS` fails with `permission denied` no matter which role runs it, including the project's own owner role. The only way to get a role Postgres actually enforces RLS against is to create it with plain SQL instead of Neon's UI/API, which does not grant that membership:
+
+```sql
+-- Run as the project's default (neondb_owner-style) role.
+CREATE ROLE rekono_app LOGIN PASSWORD '...';
+
+-- Membership is required before the next step can act "as" rekono_app.
+GRANT rekono_app TO neondb_owner;
+
+-- A role you just created owns nothing yet -- give it a schema of its own
+-- rather than fighting per-table GRANTs against neondb_owner's existing
+-- objects. AUTHORIZATION makes rekono_app the owner from creation, which
+-- is what lets FORCE ROW LEVEL SECURITY (above) actually bind on tables
+-- rekono_app creates in it.
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public AUTHORIZATION rekono_app;
+GRANT ALL ON SCHEMA public TO rekono_app;
+
+-- Without this, table creation fails with "no schema has been selected
+-- to create in" -- a role's default search_path isn't guaranteed to
+-- include public just because the schema exists and it owns it.
+ALTER ROLE rekono_app SET search_path = public;
+```
+
+`DROP SCHEMA public CASCADE` deletes every table in it -- only safe to run this against an empty or expendable database, not one with real data. Use that role's connection string (same host, `rekono_app`'s own username/password) as `DATABASE_URL`; it won't appear in Neon's own "Connect" dialog since it wasn't created through the UI, so build it by hand.
 
 SQLite (the local/test default) has no equivalent feature, so all of this no-ops there and the normal `npm test` run exercises the app without it. To run the suite against Postgres with the policies live:
 

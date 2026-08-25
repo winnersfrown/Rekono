@@ -4,6 +4,34 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.7
+
+Corrected README's row-level-security section: it claimed Neon "hand[s]
+out ordinary roles by default," which is wrong, and cost a live outage to
+find out. Every role Neon's Console, API, or CLI creates -- including a
+project's own default role and anything added through the dashboard's
+Roles page -- is automatically a `neon_superuser` member, which carries
+`BYPASSRLS`. That membership can't be revoked afterward: `ALTER ROLE ...
+NOBYPASSRLS` fails with `permission denied` no matter which role runs it,
+including the project owner. `REASSIGN OWNED` and `DROP ROLE` hit the
+same wall for the same reason (both require membership Neon's owner role
+doesn't actually have over independently-created roles).
+
+The only way to get a role Postgres will actually enforce RLS against on
+Neon is creating it with plain SQL instead of the UI/API -- that path
+skips the `neon_superuser` grant entirely. README now documents the exact
+sequence: `CREATE ROLE` by SQL, `GRANT rekono_app TO neondb_owner` (needed
+before `AUTHORIZATION rekono_app` can act as it), a fresh `public` schema
+owned by the new role from creation (sidesteps per-table GRANT fights
+against tables `neondb_owner` already owns), and `ALTER ROLE ... SET
+search_path = public` (without it, table creation fails with "no schema
+has been selected to create in" even though the schema exists and the
+role owns it -- a role's default search_path isn't tied to what it owns).
+
+No code changed -- this is corrected operational documentation for a
+deployment step, discovered the hard way while bringing the app back
+after the v1.6 Render migration.
+
 ## v1.6
 
 Render suspended the whole account (unrelated to v1.5's fix -- happened
