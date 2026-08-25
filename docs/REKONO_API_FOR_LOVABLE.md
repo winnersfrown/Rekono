@@ -15,7 +15,7 @@ Lovable project  ──►  its own GitHub repo (e.g. winnersfrown/rekono-ui)
        │  HTTPS + Bearer token
        ▼
 Rekono API       ──►  winnersfrown/Rekono  (unchanged)
-                       https://rekono-ai-new.onrender.com
+                       https://rekono-couj.onrender.com
 ```
 
 The existing vanilla-JS UI in `backend/public/` keeps working throughout. A
@@ -30,7 +30,7 @@ The API rejects browser requests from unknown origins (`src/app.js`). Add the
 Lovable preview domain and whatever the frontend deploys to:
 
 ```
-ALLOWED_ORIGINS=https://winnersfrown.github.io,https://rekono-ai-new.onrender.com,https://<your-lovable-app>.lovable.app
+ALLOWED_ORIGINS=https://winnersfrown.github.io,https://rekono-couj.onrender.com,https://<your-lovable-app>.lovable.app
 ```
 
 Set it on the Render service and redeploy. Without this every request fails

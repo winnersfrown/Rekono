@@ -4,6 +4,20 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.6
+
+Render suspended the whole account (unrelated to v1.5's fix -- happened
+before it, likely an automated response to the same Safe Browsing flag).
+Recovering it meant a new Render account, which meant a new service name
+and a new onrender.com URL: rekono-couj.onrender.com, replacing
+rekono-ai-new.onrender.com everywhere it was hardcoded --
+website/src/lib/constants.js's APP_URL, config.js's ALLOWED_ORIGINS
+default, a CORS test's expected origin, and the Lovable integration doc.
+Rebuilt the marketing site bundle so the new URL actually ships in
+assets/index.js, not just the source. Left the old URL untouched in this
+changelog's own v1.5 entry -- that's a historical record of what was true
+then, not a live reference to update.
+
 ## v1.5
 
 Google Search Console flagged the live app (rekono-ai-new.onrender.com,

@@ -3,7 +3,7 @@
 // than relying on relative paths that would 404 on a marketing-site-only
 // deploy. Kept in one place so a redeploy to a new host is a one-line change
 // instead of a find-and-replace across every component.
-export const APP_URL = "https://rekono-ai-new.onrender.com";
+export const APP_URL = "https://rekono-couj.onrender.com";
 export const DEMO_URL = `${APP_URL}/?demo=1`;
 export const PRIVACY_URL = `${APP_URL}/privacy.html`;
 export const TERMS_URL = `${APP_URL}/terms.html`;
