@@ -134,12 +134,29 @@ hand-exported -- regenerate them the same way if the mark ever changes.
 alongside the headline copy; see its own generation note in the repo's
 commit history if it needs a refresh.
 
-## Analytics (optional)
+## Analytics (optional, off until configured)
 
-Off by default, same as before -- no analytics account exists for this
-project. To add one: [Plausible](https://plausible.io) (privacy-respecting,
-no cookie banner needed) or Google Analytics (GA4, which does set cookies --
-check your jurisdiction's cookie-consent requirements first) both work the
-same way any other site adds them -- drop the vendor's script tag into
-`index.html`'s `<head>`, or load it from `src/main.jsx` before the app
-renders if it needs to run before first paint.
+`src/lib/analytics.js` wires up Google Analytics 4 -- genuinely free with no
+usage cap or trial period, unlike Plausible's hosted option, which matters
+since no analytics account exists for this project yet and self-hosting an
+open-source alternative would mean standing up a server this static site
+doesn't have. It's a no-op until `VITE_GA_MEASUREMENT_ID` is set (Vercel
+project settings -> Environment Variables, from a GA4 property's Admin ->
+Data Streams): create the property, drop the Measurement ID in, redeploy.
+GA4 sets cookies -- check your jurisdiction's cookie-consent requirements
+before turning it on.
+
+Once configured it tracks more than pageviews: every "Get started"/"Sign
+in"/demo link fires a `cta_click` event (`src/lib/analytics.js`'s
+`trackEvent`, called from each CTA's `onClick` -- see Nav.jsx, Hero.jsx,
+Pricing.jsx, FinalCTA.jsx, MobileStickyCTA.jsx) with a `cta` param naming
+where it was clicked, and a successful contact-form submission
+(ContactModal.jsx) fires GA4's recommended `generate_lead` event -- the one
+signal here that's an actual conversion, not just a click. `transport_type:
+"beacon"` on the initial config call keeps CTA-click events from being
+dropped by the browser cancelling the request mid-flight when the click
+also navigates the tab away, which is what every one of these CTAs does.
+
+To add a different provider (Plausible, etc.) instead: replace the
+contents of `analytics.js`'s `initAnalytics`/`trackEvent` -- every call site
+already goes through those two functions, so nothing else needs to change.

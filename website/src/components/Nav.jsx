@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { APP_URL } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 import Logomark from "./Logomark.jsx";
 
 const LINKS = [
@@ -57,12 +58,14 @@ export default function Nav() {
         <div className="hidden items-center gap-3 md:flex">
           <a
             href={APP_URL}
+            onClick={() => trackEvent("cta_click", { cta: "nav_sign_in" })}
             className="rounded-lg px-4 py-2 text-[0.9rem] font-semibold text-paper-dim transition-colors hover:text-paper"
           >
             Sign in
           </a>
           <a
             href={APP_URL}
+            onClick={() => trackEvent("cta_click", { cta: "nav_get_started" })}
             className="rounded-lg bg-gradient-to-b from-blue to-blue-deep px-4 py-2 text-[0.9rem] font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
           >
             Get started
@@ -103,11 +106,16 @@ export default function Nav() {
                 </a>
               ))}
               <div className="mt-2 flex flex-col gap-2 border-t border-line-soft pt-3">
-                <a href={APP_URL} className="rounded-lg px-2 py-2 text-center font-semibold text-paper-dim">
+                <a
+                  href={APP_URL}
+                  onClick={() => trackEvent("cta_click", { cta: "nav_mobile_sign_in" })}
+                  className="rounded-lg px-2 py-2 text-center font-semibold text-paper-dim"
+                >
                   Sign in
                 </a>
                 <a
                   href={APP_URL}
+                  onClick={() => trackEvent("cta_click", { cta: "nav_mobile_get_started" })}
                   className="rounded-lg bg-gradient-to-b from-blue to-blue-deep px-2 py-2.5 text-center font-semibold text-white shadow-md"
                 >
                   Get started

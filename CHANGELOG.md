@@ -4,6 +4,25 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.13
+
+Wired up marketing site analytics (previously off with no account at all).
+`website/src/lib/analytics.js` adds GA4 -- genuinely free with no trial or
+usage cap, unlike Plausible's hosted option, and self-hosting an
+open-source alternative isn't realistic for a static site with no server.
+It's a no-op until `VITE_GA_MEASUREMENT_ID` is set at build time (Vercel
+env vars), matching the "missing config degrades gracefully" pattern every
+other optional integration in this app already follows.
+
+Once configured it tracks more than pageviews: every "Get started"/"Sign
+in"/demo link across Nav, Hero, Pricing, FinalCTA, and MobileStickyCTA
+fires a `cta_click` event naming where it was clicked, and a successful
+contact-form submission fires GA4's recommended `generate_lead` event --
+the actual conversion signal, not just a click. Initial config sets
+`transport_type: "beacon"` so those click events survive the tab
+navigating away immediately after, which is what every one of these CTAs
+does by design.
+
 ## v1.12
 
 Added optional TOTP-based two-factor authentication. Settings has a new

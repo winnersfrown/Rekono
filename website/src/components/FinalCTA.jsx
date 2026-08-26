@@ -1,5 +1,6 @@
 import Reveal from "./Reveal.jsx";
 import { APP_URL } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 
 export default function FinalCTA({ onOpenContact }) {
   return (
@@ -16,13 +17,17 @@ export default function FinalCTA({ onOpenContact }) {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <a
             href={APP_URL}
+            onClick={() => trackEvent("cta_click", { cta: "final_cta_primary" })}
             className="rounded-xl bg-gradient-to-b from-blue to-blue-deep px-7 py-3.5 font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
           >
             Get started
           </a>
           <button
             type="button"
-            onClick={onOpenContact}
+            onClick={() => {
+              trackEvent("cta_click", { cta: "final_cta_contact" });
+              onOpenContact();
+            }}
             className="font-medium text-blue-bright underline decoration-blue/30 underline-offset-4 hover:text-blue-deep"
           >
             Talk to us about a design partnership →

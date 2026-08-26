@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { APP_URL } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 
 // Only past the hero, and only on small screens (the hero already has its
 // own full-size CTA in view there, so a second one stacked on top of it
@@ -28,6 +29,7 @@ export default function MobileStickyCTA() {
         >
           <a
             href={APP_URL}
+            onClick={() => trackEvent("cta_click", { cta: "mobile_sticky" })}
             className="block rounded-xl bg-gradient-to-b from-blue to-blue-deep py-3 text-center font-semibold text-white shadow-md"
           >
             Get started free

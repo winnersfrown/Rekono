@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { APP_URL } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const MAILTO_FALLBACK = "mailto:wfrownusa@yahoo.com?subject=Rekono%20contact%20form";
 
@@ -46,6 +47,10 @@ export default function ContactModal({ open, onClose }) {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
+        // The one genuine lead-conversion event on this page -- distinct
+        // from a cta_click, which only proves a button was clicked, not
+        // that a real message went through.
+        trackEvent("generate_lead", { form: "contact" });
         setStatus({ kind: "ok", text: "Message sent — we'll get back to you within 1 business day." });
         setName("");
         setEmail("");
