@@ -6,6 +6,7 @@
 import crypto from "node:crypto";
 import { Router } from "express";
 import { Resend } from "resend";
+import { Op } from "sequelize";
 import { z } from "zod";
 import * as auth from "../auth.js";
 import { requireAuth, requireReauth } from "../auth.js";
@@ -19,6 +20,21 @@ import { serializeUser } from "../serializers.js";
 const router = Router();
 
 const INVITE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const USAGE_WINDOW_DAYS = 30;
+
+// Which AuditLog actions count as "activity" for the usage breakdown below,
+// and which stat each rolls up into -- deliberately excludes actions with
+// no human userId (auto_approved, extraction_completed, ...) since those
+// aren't credited to a person, and account/team-management actions
+// (password_changed, team_invite_sent, ...) since "usage" here means work
+// on documents, not account housekeeping.
+const USAGE_ACTION_TO_STAT = {
+  uploaded: "uploaded",
+  approved: "approved",
+  rejected: "rejected",
+  human_correction: "corrections",
+  quick_review_field: "corrections",
+};
 
 function requireOwner(req, res, next) {
   if (req.currentUser.role !== "owner") {
@@ -41,6 +57,54 @@ router.get("/api/team", requireAuth, requireActivePlan, async (req, res, next) =
       seats_used: members.length + invites.length,
       members: members.map((u) => ({ ...serializeUser(u), is_you: u.id === req.currentUser.id })),
       pending_invites: invites.map((i) => ({ id: i.id, email: i.email, invited_at: i.createdAt })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// How the org's own members are actually using Rekono, not whether Rekono
+// itself is doing well -- see routes/dashboard.js's /trends for the
+// business-KPI side of "improve the analytics". Owner-only, same as
+// inviting/removing members: it's a look at teammates' individual activity,
+// not something every member should see about every other member.
+router.get("/api/team/usage", requireAuth, requireActivePlan, requireOwner, async (req, res, next) => {
+  try {
+    const orgId = req.currentUser.orgId;
+    const since = new Date(Date.now() - USAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+    const [members, logs] = await Promise.all([
+      User.findAll({ where: { orgId }, order: [["createdAt", "ASC"]] }),
+      AuditLog.findAll({
+        where: {
+          orgId,
+          userId: { [Op.ne]: null },
+          action: { [Op.in]: Object.keys(USAGE_ACTION_TO_STAT) },
+          createdAt: { [Op.gte]: since },
+        },
+        attributes: ["userId", "action"],
+        raw: true,
+      }),
+    ]);
+
+    // Every current member appears even at all-zero -- who *isn't* using it
+    // is at least as useful to an owner as who is.
+    const statsByUser = new Map(
+      members.map((m) => [m.id, { uploaded: 0, approved: 0, rejected: 0, corrections: 0 }])
+    );
+    for (const log of logs) {
+      const stats = statsByUser.get(log.userId);
+      if (!stats) continue; // a removed member's old activity isn't attributed to anyone still listed
+      stats[USAGE_ACTION_TO_STAT[log.action]] += 1;
+    }
+
+    res.json({
+      window_days: USAGE_WINDOW_DAYS,
+      members: members.map((m) => {
+        const stats = statsByUser.get(m.id);
+        const totalActions = stats.uploaded + stats.approved + stats.rejected + stats.corrections;
+        return { user_id: m.id, full_name: m.fullName, email: m.email, ...stats, total_actions: totalActions };
+      }),
     });
   } catch (err) {
     next(err);
