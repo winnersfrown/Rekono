@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import Reveal from "./Reveal.jsx";
 import { APP_URL } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const PLANS = [
   {
@@ -177,6 +178,7 @@ export default function Pricing() {
 
               <a
                 href={APP_URL}
+                onClick={() => trackEvent("cta_click", { cta: "pricing", plan: plan.tag.toLowerCase(), billing: annual ? "annual" : "monthly" })}
                 className={`mt-7 rounded-xl px-5 py-3 text-center font-semibold transition-transform duration-150 hover:-translate-y-0.5 ${
                   plan.featured
                     ? "bg-gradient-to-b from-blue to-blue-deep text-white shadow-md hover:shadow-glow"

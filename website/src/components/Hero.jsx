@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { APP_URL, DEMO_URL, EASE } from "../lib/constants.js";
+import { trackEvent } from "../lib/analytics.js";
 
 const FIELDS = [
   { label: "VENDOR_NAME", value: "Dunmore Hardware Co.", conf: 98, flag: false },
@@ -100,6 +101,7 @@ export default function Hero() {
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
               href={APP_URL}
+              onClick={() => trackEvent("cta_click", { cta: "hero_primary" })}
               className="rounded-xl bg-gradient-to-b from-blue to-blue-deep px-6 py-3.5 font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
             >
               Get started free, no card required
@@ -113,7 +115,11 @@ export default function Hero() {
           </div>
           <p className="mt-4 font-mono text-[0.78rem] text-muted">AI-powered extraction included, no API key or setup required.</p>
           <p className="mt-1.5">
-            <a href={DEMO_URL} className="text-[0.9rem] font-medium text-blue-bright underline decoration-blue/30 underline-offset-4 hover:text-blue-deep">
+            <a
+              href={DEMO_URL}
+              onClick={() => trackEvent("cta_click", { cta: "hero_demo" })}
+              className="text-[0.9rem] font-medium text-blue-bright underline decoration-blue/30 underline-offset-4 hover:text-blue-deep"
+            >
               Or explore a live demo with sample data, no signup required →
             </a>
           </p>
