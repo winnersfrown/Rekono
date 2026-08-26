@@ -86,6 +86,15 @@
         </form>
       </div>
 
+      <div id="auth-2fa-panel" class="auth-panel">
+        <p class="hint">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+        <form id="twofa-verify-form">
+          <label>Code<input type="text" id="twofa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="11" required autofocus /></label>
+          <button type="submit">Verify</button>
+        </form>
+        <p class="auth-side-link"><a href="#" id="twofa-back-link">Back to sign in</a></p>
+      </div>
+
       <div id="auth-invite-panel" class="auth-panel">
         <p class="hint">Team invite</p>
         <p class="invite-org-label">Organization name, set by the person who invited you:</p>
@@ -1077,6 +1086,36 @@
               <button type="submit">Change password</button>
             </form>
             <div id="settings-password-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Two-factor authentication</h3>
+
+            <div id="twofa-status-view">
+              <p class="hint" id="twofa-status-text">Loading…</p>
+              <button type="button" id="twofa-enable-btn">Enable two-factor authentication</button>
+              <button type="button" id="twofa-disable-btn" class="btn-logout" style="display: none;">Disable</button>
+              <button type="button" id="twofa-regenerate-btn" class="btn-logout" style="display: none;">Regenerate backup codes</button>
+            </div>
+
+            <div id="twofa-setup-view" style="display: none;">
+              <p class="hint">Scan this with your authenticator app (Google Authenticator, Authy, 1Password, ...), then enter the 6-digit code it shows to confirm.</p>
+              <img id="twofa-qr" alt="Two-factor authentication setup QR code" width="180" height="180" />
+              <p class="hint">Can't scan it? Enter this code manually: <code id="twofa-manual-secret"></code></p>
+              <form id="twofa-enable-form">
+                <label>Code<input type="text" id="twofa-enable-code" inputmode="numeric" maxlength="6" required /></label>
+                <button type="submit">Confirm and enable</button>
+                <button type="button" id="twofa-setup-cancel-btn" class="btn-logout">Cancel</button>
+              </form>
+            </div>
+
+            <div id="twofa-backup-codes-view" style="display: none;">
+              <p class="hint">Save these somewhere safe -- each code works once, and this is the only time they'll be shown.</p>
+              <pre id="twofa-backup-codes-list" class="backup-codes-list"></pre>
+              <button type="button" id="twofa-backup-codes-done-btn">Done</button>
+            </div>
+
+            <div id="settings-twofa-status" class="hint"></div>
           </div>
 
           <div class="panel">

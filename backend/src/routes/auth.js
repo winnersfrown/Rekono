@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Router } from "express";
 import { Resend } from "resend";
+import QRCode from "qrcode";
 import { z } from "zod";
 import * as auth from "../auth.js";
 import { settings } from "../config.js";
@@ -10,6 +11,7 @@ import { serializeUser } from "../serializers.js";
 import { PLANS } from "../plans.js";
 import { documentsUsedThisMonth } from "../documentUsage.js";
 import { createRateLimiter } from "../rateLimit.js";
+import { generateTotpSecret, totpUri, verifyTotpCode, generateBackupCodes, consumeBackupCode } from "../twoFactor.js";
 
 const router = Router();
 
@@ -43,6 +45,15 @@ const changePasswordSchema = z.object({
   new_password: z.string().min(8).max(256),
 });
 
+const twoFactorVerifySchema = z.object({
+  pending_token: z.string().min(1),
+  code: z.string().min(1),
+});
+
+const twoFactorCodeSchema = z.object({
+  code: z.string().min(1),
+});
+
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 // Separate limiter per endpoint so exhausting one (e.g. retrying a typo'd
@@ -59,6 +70,12 @@ const isResetRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 
 // there's a stable, meaningful key that doesn't collide across a shared
 // office/NAT IP the way the pre-auth limiters above would.
 const isChangePasswordRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 5 });
+// /api/auth/2fa/verify runs before requireAuth (there's no real session
+// yet), but the pending token itself already names a specific user -- keyed
+// on that decoded id rather than IP for the same reason isChangePassword is,
+// and because a 6-digit TOTP code is a much smaller guessing space than a
+// password, worth a tighter ceiling than login's.
+const isTwoFactorVerifyRateLimited = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10 });
 
 router.post("/api/auth/signup", async (req, res, next) => {
   try {
@@ -114,6 +131,64 @@ router.post("/api/auth/login", async (req, res, next) => {
     if (!user || !(await auth.verifyPassword(password, user.hashedPassword))) {
       return res.status(401).json({ detail: "Incorrect email or password" });
     }
+
+    if (user.totpEnabled) {
+      return res.json({ two_factor_required: true, pending_token: auth.createPending2faToken(user.id) });
+    }
+
+    res.json({ access_token: auth.createAccessToken(user.id), token_type: "bearer" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Second step of login for an account with 2FA enabled -- exchanges the
+// pending token from above plus a TOTP (or backup) code for a real access
+// token. Deliberately not behind requireAuth: there's no real session until
+// this succeeds, which is the whole point of the pending token.
+router.post("/api/auth/2fa/verify", async (req, res, next) => {
+  try {
+    const parsed = twoFactorVerifySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    let userId;
+    try {
+      userId = auth.verifyPending2faToken(parsed.data.pending_token);
+    } catch {
+      return res.status(401).json({ detail: "That sign-in attempt has expired. Please sign in again." });
+    }
+
+    if (isTwoFactorVerifyRateLimited(userId)) {
+      return res.status(429).json({ detail: "Too many attempts. Please try again later." });
+    }
+
+    const user = await User.findByPk(userId);
+    if (!user || !user.totpEnabled) {
+      return res.status(401).json({ detail: "That sign-in attempt has expired. Please sign in again." });
+    }
+
+    let usedBackupCode = false;
+    let valid = await verifyTotpCode(user.totpSecret, parsed.data.code);
+    if (!valid) {
+      const remaining = consumeBackupCode(user.totpBackupCodeHashes, parsed.data.code);
+      if (remaining) {
+        valid = true;
+        usedBackupCode = true;
+        user.totpBackupCodeHashes = remaining;
+        await user.save();
+      }
+    }
+    if (!valid) {
+      return res.status(401).json({ detail: "Incorrect code. Please try again." });
+    }
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "two_factor_verified",
+      actor: user.email,
+      details: usedBackupCode ? { via: "backup_code" } : {},
+    });
 
     res.json({ access_token: auth.createAccessToken(user.id), token_type: "bearer" });
   } catch (err) {
@@ -369,6 +444,18 @@ router.get("/api/auth/google/callback", async (req, res, next) => {
       return res.redirect(`/?google_auth=error&reason=${result.error}`);
     }
 
+    // A Google login skips the password step entirely, but if this account
+    // has TOTP enabled it still needs the second factor -- otherwise 2FA
+    // would just be a promise the app doesn't keep for anyone who's also
+    // linked Google sign-in. Same pending-token mechanism as the
+    // password-login path (POST /api/auth/2fa/verify), just handed back via
+    // a redirect param instead of a JSON body since this whole flow is
+    // redirect-driven.
+    if (result.user.totpEnabled) {
+      const pendingToken = auth.createPending2faToken(result.user.id);
+      return res.redirect(`/?google_auth=2fa_required&pending_token=${pendingToken}`);
+    }
+
     const handoffCode = createGoogleHandoffCode(result.user.id);
     res.redirect(`/?google_auth=success&code=${handoffCode}`);
   } catch (err) {
@@ -475,6 +562,117 @@ router.post("/api/auth/change-password", auth.requireAuth, async (req, res, next
     });
 
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Starts (or restarts) 2FA setup: generates a fresh TOTP secret and saves it
+// unconfirmed (totpEnabled stays false until /2fa/enable verifies a real
+// code from it). Safe to call again if the first QR never got scanned --
+// each call just replaces the pending secret with a new one.
+router.post("/api/auth/2fa/setup", auth.requireAuth, async (req, res, next) => {
+  try {
+    const user = req.currentUser;
+    const secret = generateTotpSecret();
+    user.totpSecret = secret;
+    await user.save();
+
+    const uri = totpUri(secret, user.email);
+    res.json({ secret, otpauth_uri: uri, qr_code_data_url: await QRCode.toDataURL(uri) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Confirms setup: a valid code from the pending secret is itself proof the
+// user's authenticator app is correctly configured, so this doesn't also
+// need a requireReauth password check the way disable below does. Returns
+// a fresh set of backup codes in plaintext -- the only time they're ever
+// visible, mirroring how an API key is shown once at creation.
+router.post("/api/auth/2fa/enable", auth.requireAuth, async (req, res, next) => {
+  try {
+    const parsed = twoFactorCodeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    const user = req.currentUser;
+    if (!user.totpSecret) {
+      return res.status(400).json({ detail: "Start setup first." });
+    }
+    if (user.totpEnabled) {
+      return res.status(400).json({ detail: "Two-factor authentication is already enabled." });
+    }
+    if (!(await verifyTotpCode(user.totpSecret, parsed.data.code))) {
+      return res.status(401).json({ detail: "Incorrect code. Check your authenticator app and try again." });
+    }
+
+    const { codes, hashes } = generateBackupCodes();
+    user.totpEnabled = true;
+    user.totpBackupCodeHashes = hashes;
+    await user.save();
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "two_factor_enabled",
+      actor: user.email,
+      details: {},
+    });
+
+    res.json({ ok: true, backup_codes: codes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Lowers account security, so it's gated the same way disconnecting
+// QuickBooks or removing a team member is (auth.js's requireReauth) -- a
+// valid bearer token alone isn't enough on a shared/unattended machine.
+router.post("/api/auth/2fa/disable", auth.requireAuth, auth.requireReauth, async (req, res, next) => {
+  try {
+    const user = req.currentUser;
+    user.totpEnabled = false;
+    user.totpSecret = null;
+    user.totpBackupCodeHashes = null;
+    await user.save();
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "two_factor_disabled",
+      actor: user.email,
+      details: {},
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Invalidates every existing backup code, so it's password-gated the same
+// way disable is -- otherwise anyone with a stolen-but-still-logged-in
+// session could quietly lock the real owner's saved codes out.
+router.post("/api/auth/2fa/backup-codes/regenerate", auth.requireAuth, auth.requireReauth, async (req, res, next) => {
+  try {
+    const user = req.currentUser;
+    if (!user.totpEnabled) {
+      return res.status(400).json({ detail: "Two-factor authentication isn't enabled." });
+    }
+
+    const { codes, hashes } = generateBackupCodes();
+    user.totpBackupCodeHashes = hashes;
+    await user.save();
+
+    await AuditLog.create({
+      orgId: user.orgId,
+      userId: user.id,
+      action: "two_factor_backup_codes_regenerated",
+      actor: user.email,
+      details: {},
+    });
+
+    res.json({ ok: true, backup_codes: codes });
   } catch (err) {
     next(err);
   }

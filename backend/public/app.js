@@ -3366,6 +3366,20 @@ function renderOrgSettings({ settingsRes, me }) {
   document.getElementById("settings-account-status").textContent = "";
   document.getElementById("settings-password-status").textContent = "";
 
+  // Two-factor authentication -- reset back to the status view on every
+  // render, same as the setup/backup-codes views resetting to hidden below,
+  // so re-opening Settings never leaves a stale in-progress state showing.
+  document.getElementById("twofa-status-text").textContent = me.two_factor_enabled
+    ? "Enabled."
+    : "Not enabled. We recommend turning this on for extra account security.";
+  document.getElementById("twofa-enable-btn").style.display = me.two_factor_enabled ? "none" : "";
+  document.getElementById("twofa-disable-btn").style.display = me.two_factor_enabled ? "" : "none";
+  document.getElementById("twofa-regenerate-btn").style.display = me.two_factor_enabled ? "" : "none";
+  document.getElementById("twofa-status-view").style.display = "";
+  document.getElementById("twofa-setup-view").style.display = "none";
+  document.getElementById("twofa-backup-codes-view").style.display = "none";
+  document.getElementById("settings-twofa-status").textContent = "";
+
   // Organization
   const orgNameInput = document.getElementById("settings-org-name");
   orgNameInput.value = settingsRes.org_name || "";
@@ -3488,6 +3502,127 @@ document.getElementById("settings-password-form").addEventListener("submit", asy
     if (res.ok) document.getElementById("settings-password-form").reset();
   } catch (err) {
     statusEl.textContent = err.message || String(err);
+  }
+});
+
+// ---- Two-factor authentication ----
+function showTwoFactorBackupCodes(codes) {
+  document.getElementById("twofa-status-view").style.display = "none";
+  document.getElementById("twofa-setup-view").style.display = "none";
+  document.getElementById("twofa-backup-codes-list").textContent = codes.join("\n");
+  document.getElementById("twofa-backup-codes-view").style.display = "";
+}
+
+document.getElementById("twofa-enable-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-twofa-status");
+  statusEl.textContent = "";
+  try {
+    const res = await apiFetch("/api/auth/2fa/setup", { method: "POST" });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not start setup.");
+    document.getElementById("twofa-qr").src = body.qr_code_data_url;
+    document.getElementById("twofa-manual-secret").textContent = body.secret;
+    document.getElementById("twofa-enable-code").value = "";
+    document.getElementById("twofa-status-view").style.display = "none";
+    document.getElementById("twofa-setup-view").style.display = "";
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("twofa-setup-cancel-btn").addEventListener("click", () => {
+  document.getElementById("twofa-setup-view").style.display = "none";
+  document.getElementById("twofa-status-view").style.display = "";
+});
+
+document.getElementById("twofa-enable-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-twofa-status");
+  statusEl.textContent = "";
+  const code = document.getElementById("twofa-enable-code").value.trim();
+  try {
+    const res = await apiFetch("/api/auth/2fa/enable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Could not confirm the code.");
+    invalidateCache("__org_settings__");
+    showTwoFactorBackupCodes(body.backup_codes);
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("twofa-backup-codes-done-btn").addEventListener("click", () => {
+  document.getElementById("twofa-backup-codes-view").style.display = "none";
+  loadOrgSettings();
+});
+
+document.getElementById("twofa-disable-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-twofa-status");
+  let error = "";
+  // Loops so a mistyped password re-opens the same dialog with the reason,
+  // rather than dumping the user back to the settings page to start over --
+  // same pattern as disconnecting QuickBooks above.
+  for (;;) {
+    const password = await confirmDialog(
+      "Disable two-factor authentication?",
+      "Your account will only need a password to sign in.",
+      { confirmLabel: "Disable", danger: true, requirePassword: true, error }
+    );
+    if (!password) return;
+    try {
+      const res = await apiFetch("/api/auth/2fa/disable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: password }),
+      });
+      const body = await res.json();
+      if (res.status === 403 && body.reauth_required) {
+        error = body.detail || "That password is incorrect.";
+        continue;
+      }
+      if (!res.ok) throw new Error(body.detail || "Could not disable two-factor authentication.");
+      invalidateCache("__org_settings__");
+      loadOrgSettings();
+      return;
+    } catch (err) {
+      statusEl.textContent = err.message || String(err);
+      return;
+    }
+  }
+});
+
+document.getElementById("twofa-regenerate-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("settings-twofa-status");
+  let error = "";
+  for (;;) {
+    const password = await confirmDialog(
+      "Regenerate backup codes?",
+      "Your existing backup codes will stop working.",
+      { confirmLabel: "Regenerate", requirePassword: true, error }
+    );
+    if (!password) return;
+    try {
+      const res = await apiFetch("/api/auth/2fa/backup-codes/regenerate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: password }),
+      });
+      const body = await res.json();
+      if (res.status === 403 && body.reauth_required) {
+        error = body.detail || "That password is incorrect.";
+        continue;
+      }
+      if (!res.ok) throw new Error(body.detail || "Could not regenerate backup codes.");
+      showTwoFactorBackupCodes(body.backup_codes);
+      return;
+    } catch (err) {
+      statusEl.textContent = err.message || String(err);
+      return;
+    }
   }
 });
 
