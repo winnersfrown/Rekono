@@ -324,6 +324,15 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             Settings
           </button>
+          <!-- Rekono's own team only -- hidden by default and shown by
+               auth.js's showApp based on /api/auth/me's is_staff, which
+               only reflects the STAFF_EMAILS allowlist (auth.js's
+               requireStaff on the server is the real gate; this is just
+               UX so the tab isn't dangled in front of every customer). -->
+          <button class="tab-btn" data-tab="staff" id="staff-nav-btn" style="display: none;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
+            Staff
+          </button>
               </div>
             </div>
           </nav>
@@ -1090,6 +1099,70 @@
             <table>
               <thead><tr><th>Name</th><th>Uploaded</th><th>Approved</th><th>Rejected</th><th>Corrections</th><th>Total</th></tr></thead>
               <tbody id="team-usage-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Rekono's own cross-org usage dashboard -- see routes/staff.js.
+             Never linked to for a customer account; the nav button above is
+             hidden unless /api/auth/me says is_staff, and the data behind
+             this panel is refused server-side (403) regardless of whether
+             the tab is visible. -->
+        <section id="tab-staff" class="tab-panel">
+          <h1>Staff</h1>
+          <p class="hint">Cross-org usage, aggregate only -- no single customer's documents or amounts appear here.</p>
+
+          <div class="dash-kpis" id="staff-org-summary" aria-busy="true">
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Plan breakdown</h3>
+            <table>
+              <thead><tr><th>Plan</th><th>Orgs</th></tr></thead>
+              <tbody id="staff-plan-breakdown-body"></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>Activation funnel</h3>
+            <p class="hint">Signed up &rarr; completed onboarding &rarr; uploaded a real document &rarr; approved one. Demo orgs and seeded sample invoices excluded throughout.</p>
+            <table>
+              <thead><tr><th>Stage</th><th>Orgs</th></tr></thead>
+              <tbody id="staff-funnel-body"></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>Subscription health</h3>
+            <table>
+              <thead><tr><th>Active</th><th>Trialing</th><th id="staff-recently-canceled-header">Recently canceled</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td id="staff-sub-active">—</td>
+                  <td id="staff-sub-trialing">—</td>
+                  <td id="staff-sub-canceled">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>Signups per week</h3>
+            <table>
+              <thead><tr><th>Week of</th><th>Signups</th></tr></thead>
+              <tbody id="staff-signup-trend-body"></tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <h3>Documents processed per week</h3>
+            <p class="hint">All 5 document types, every non-demo org combined.</p>
+            <table>
+              <thead><tr><th>Week of</th><th>Documents</th></tr></thead>
+              <tbody id="staff-volume-trend-body"></tbody>
             </table>
           </div>
         </section>

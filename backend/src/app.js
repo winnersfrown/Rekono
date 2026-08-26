@@ -24,6 +24,7 @@ import contactRoutes from "./routes/contact.js";
 import assistantRoutes from "./routes/assistant.js";
 import settingsRoutes from "./routes/settings.js";
 import teamRoutes from "./routes/team.js";
+import staffRoutes from "./routes/staff.js";
 import integrationsRoutes from "./routes/integrations.js";
 import netWorthRoutes from "./routes/netWorth.js";
 
@@ -194,6 +195,7 @@ app.use(contactRoutes);
 app.use(assistantRoutes);
 app.use(settingsRoutes);
 app.use(teamRoutes);
+app.use(staffRoutes);
 app.use(integrationsRoutes);
 app.use(netWorthRoutes);
 

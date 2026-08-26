@@ -492,6 +492,10 @@ async function buildMeResponse(user) {
     // (public/auth.js's showApp) -- true only for orgs created by
     // POST /api/demo/login (routes/demo.js), never a real signup.
     is_demo: Boolean(org.isDemo),
+    // Drives the frontend's Staff nav tab (auth.js's requireStaff is the
+    // actual security boundary for the data behind it -- this only decides
+    // whether to show a link to it).
+    is_staff: auth.isStaffEmail(user.email),
     // Same cap ingestion.js enforces at upload time (documentUsage.js is
     // the one shared definition of "this month" both agree on) -- null
     // before onboarding, since there's no plan/cap to measure against yet.

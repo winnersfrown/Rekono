@@ -159,6 +159,10 @@ function showApp(user) {
   window.currentUser = user;
   const banner = document.getElementById("demo-mode-banner");
   if (banner) banner.style.display = user.is_demo ? "flex" : "none";
+  // Server-side (auth.js's requireStaff) is the real gate on the data this
+  // tab shows -- this only decides whether to dangle a link to it.
+  const staffNavBtn = document.getElementById("staff-nav-btn");
+  if (staffNavBtn) staffNavBtn.style.display = user.is_staff ? "" : "none";
   const badge = document.getElementById("current-user-badge");
   if (badge) badge.textContent = user.full_name || user.email;
 

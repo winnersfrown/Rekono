@@ -108,6 +108,20 @@ export const settings = {
     .map((origin) => origin.trim())
     .filter(Boolean),
 
+  // Rekono's own team, not a customer role -- gates routes/staff.js's
+  // cross-org usage dashboard (auth.js's requireStaff). Deliberately an
+  // email allowlist rather than a database column: there's no signup flow
+  // that should ever be able to set this, and a config value only the
+  // person holding Render's/the host's env vars can change is a much
+  // smaller blast radius than a boolean a bug (or a bad migration) could
+  // flip on a row. Empty by default, same as every other optional
+  // integration here -- unconfigured means nobody can reach it, not "the
+  // first user who happens to sign up."
+  staffEmails: (process.env.STAFF_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
+
   // Ceilings for the API-wide rate limits in app.js, per client IP per 15
   // minutes. Tunable because the right number depends on the deployment,
   // not on the code: an office where everyone shares one NAT address spends
