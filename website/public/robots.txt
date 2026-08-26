@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 
+# TODO: replace with the real Vercel domain once assigned.
 Sitemap: https://winnersfrown.github.io/Rekono/sitemap.xml

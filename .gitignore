@@ -11,6 +11,7 @@ storage/
 *.egg-info/
 .DS_Store
 node_modules/
+website/dist/
 
 # playwright-cli's session artifacts (snapshots, console logs) and its
 # local config file -- the config is where a Claude Code sandbox session

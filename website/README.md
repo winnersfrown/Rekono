@@ -33,46 +33,30 @@ cd website
 npm run build
 ```
 
-GitHub Pages serves this repo from the root of `main` with **no build step
-and no GitHub Actions workflow** -- and changing that (to a proper CI-builds
-pipeline) isn't something scriptable from inside a coding session; it's a
-repository setting only an owner can flip in GitHub's UI. Rather than block
-on that, `vite.config.js` is set up to build straight into the repo root
-(`base: '/Rekono/'`, `outDir: '../'`, `emptyOutDir: false`): running the
-build command above regenerates `/index.html`, `/assets/index.js`,
-`/assets/index.css`, `/fonts/*.woff2`, the favicon/icon files, and
-`/og-image.png` at the repo root -- the same static files GitHub Pages
-already serves today. `robots.txt`, `sitemap.xml`, and `404.html` are
-untouched by the build (`emptyOutDir: false` means it only ever writes the
-specific files it generates, never clears the directory first), so they
-stay hand-maintained at the root exactly as before.
+Deployed on Vercel now, replacing the earlier GitHub Pages setup. Vercel's
+dashboard is pointed at this `website/` directory as the project's Root
+Directory and runs the build command above itself, in its own CI, on every
+push to `main` -- there's nothing to commit besides source: `vite.config.js`
+builds to a normal disposable `dist/` (gitignored), Vercel serves that
+output from its own domain root, and `outDir`/`emptyOutDir` never need to
+special-case avoiding the rest of the repo the way building into the repo
+root under GitHub Pages did.
 
-**`assets/index.js` and `assets/index.css` are fixed filenames, not Vite's
-default content hash** (`index-Cx7fK2.js`, a new one every build) -- see the
-comment in `vite.config.js`. `emptyOutDir: false` means nothing ever deletes
-the previous build's output before writing the new one; with hashed names
-that would mean every rebuild adds one more orphaned, unreferenced bundle to
-`assets/` forever, since there'd be no cleanup step to remove the old
-filename once `index.html` stops pointing at it. Fixed names make each
-build overwrite the same two files in place instead. The trade-off (no
-hash-based long-term browser caching on the JS/CSS bundle) doesn't cost
-much here: `index.html` itself is committed fresh on every deploy and
-already forces a re-fetch of whatever it currently references.
+That also means Vite's default content-hashed filenames
+(`assets/index-<hash>.js`) are used as-is rather than the fixed names the
+old GitHub Pages setup needed -- each Vercel build is fresh, so there's no
+risk of orphaned old bundles accumulating the way there was when builds
+wrote into a persistent, committed directory. Hashed names also mean the
+JS/CSS bundle gets real long-term browser caching.
 
-**The workflow for any content or design change is therefore:** edit files
-under `website/src/`, run `npm run build`, then commit both the source
-changes and the regenerated root output together in the same commit. A
-build whose root output isn't committed never reaches the live site --
-there's no server-side build step to catch up on push.
+`robots.txt`, `sitemap.xml`, and `404.html` live in `public/`, where Vite
+copies anything it contains straight into the build output unchanged.
 
 Preview the actual production build (not just the dev server) with:
 
 ```bash
 npm run preview
 ```
-
-This serves the already-built root files under `/Rekono/`, matching what
-`https://winnersfrown.github.io/Rekono/` will actually serve.
 
 ## Why this stack
 
