@@ -101,10 +101,29 @@ export const Invoice = sequelize.define(
     sampledForQa: { type: DataTypes.BOOLEAN, allowNull: true },
     qaReviewedAt: { type: DataTypes.DATE, allowNull: true },
     qaOutcome: { type: DataTypes.STRING(32), allowNull: true }, // "confirmed" | "issue_flagged"
+
+    // Set on the 1-2 invoices auto-seeded into a brand-new org's Review
+    // Queue (see sampleSeed.js) so a first-time login isn't a dead empty
+    // table -- distinct from Organization.isDemo (the separate, throwaway
+    // orgs behind the public no-signup demo). A real org's own sample rows
+    // must never count as real financial activity, which is what the
+    // defaultScope below is for.
+    isSampleData: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   {
     tableName: "invoices",
     indexes: [{ fields: ["orgId"] }, { fields: ["status"] }],
+    // Same idea as `paranoid` below, one layer up: every normal query (KPIs,
+    // exports, matching, the AI assistant's dataset, QuickBooks sync,
+    // duplicate detection) should see a real org's data only, full stop --
+    // a seeded sample invoice must never inflate a dashboard total, get
+    // exported to an accountant, or get pushed to a customer's real
+    // QuickBooks. The one place that deliberately opts back in is
+    // routes/invoices.js (the Review Queue itself, where the sample is
+    // supposed to be visible and manageable like any other invoice) via
+    // the `withSamples` scope below.
+    defaultScope: { where: { isSampleData: false } },
+    scopes: { withSamples: {} },
     // Soft delete (adds a nullable `deletedAt` column): a deleted invoice
     // disappears from every normal query (list, detail, matching, export,
     // the AI assistant's dataset, duplicate detection) without physically

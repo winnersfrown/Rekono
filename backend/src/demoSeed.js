@@ -491,7 +491,10 @@ function formatInvoiceDoc(org, { vendorName, vendorAddress, invoiceNumber, invoi
   return lines;
 }
 
-async function seedInvoice(org, actorUser, { vendorAddress, ...overrides }) {
+// Exported for sampleSeed.js -- the single-invoice onboarding sample reuses
+// this rather than duplicating the "write a real synthetic PDF + set every
+// field a real extraction would + write the matching audit-log rows" logic.
+export async function seedInvoice(org, actorUser, { vendorAddress, ...overrides }) {
   const storagePath = writeDemoFile(formatInvoiceDoc(org, { ...overrides, vendorAddress }));
   const originalFilename = `${overrides.vendorName.replace(/\s+/g, "_")}_${overrides.invoiceNumber || "invoice"}.pdf`;
 

@@ -68,6 +68,7 @@ export function serializeInvoiceDetail(inv) {
 
     created_at: inv.createdAt,
     updated_at: inv.updatedAt,
+    is_sample_data: inv.isSampleData,
 
     line_items: (inv.lineItems || []).map(serializeLineItem),
     match_results: (inv.matchResults || []).map(serializeMatchResult),
@@ -85,6 +86,7 @@ export function serializeInvoiceListItem(inv) {
     total: inv.total,
     overall_confidence: inv.overallConfidence,
     created_at: inv.createdAt,
+    is_sample_data: inv.isSampleData,
   };
 }
 

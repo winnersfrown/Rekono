@@ -12,6 +12,7 @@ import { requireAuth } from "../auth.js";
 import { settings } from "../config.js";
 import { PAID_PLAN_IDS, PLANS, billingCycleAmountUsd } from "../plans.js";
 import { Organization } from "../models/index.js";
+import { seedSampleInvoiceForNewOrg } from "../sampleSeed.js";
 
 const router = Router();
 const webhookRouter = Router();
@@ -172,6 +173,7 @@ router.get("/api/billing/confirm", requireAuth, requireStripeConfigured, async (
     org.trialEndsAt = session.subscription?.trial_end ? new Date(session.subscription.trial_end * 1000) : null;
     org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
     await org.save();
+    await seedSampleInvoiceForNewOrg(org);
 
     res.json({ ok: true, plan: org.plan, billing_period: org.billingPeriod });
   } catch (err) {
@@ -238,6 +240,7 @@ webhookRouter.post("/api/billing/webhook", async (req, res) => {
         org.trialEndsAt = subscription?.trial_end ? new Date(subscription.trial_end * 1000) : null;
         org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
         await org.save();
+        await seedSampleInvoiceForNewOrg(org);
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const subscription = event.data.object;

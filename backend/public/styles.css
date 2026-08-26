@@ -455,6 +455,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .badge.expiry-soon { background: rgba(232, 169, 59, 0.14); border-color: rgba(232, 169, 59, 0.3); color: var(--amber); }
 .badge.expiry-ok { background: rgba(62, 203, 132, 0.14); border-color: rgba(62, 203, 132, 0.3); color: var(--green); }
 .badge.expiry-none { background: rgba(139, 160, 203, 0.14); border-color: rgba(139, 160, 203, 0.3); color: var(--muted); }
+.badge.badge-sample { background: rgba(75, 134, 247, 0.14); border-color: rgba(75, 134, 247, 0.3); color: var(--blue-bright); }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem 1rem; margin-bottom: 1.2rem; }
 

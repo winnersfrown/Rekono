@@ -421,7 +421,7 @@ function renderInvoices({ items: invoices, total }) {
   tbody.innerHTML = invoices.map((inv) => `
     <tr data-id="${inv.id}">
       <td><input type="checkbox" class="row-select" data-id="${inv.id}" ${state.selectedRowIds.has(inv.id) ? "checked" : ""} aria-label="Select" /></td>
-      <td>${inv.vendor_name ? escapeHtml(inv.vendor_name) : "(unknown)"}</td>
+      <td>${inv.vendor_name ? escapeHtml(inv.vendor_name) : "(unknown)"}${inv.is_sample_data ? ` <span class="badge badge-sample">Sample</span>` : ""}</td>
       <td>${fmtMoney(inv.total)}</td>
       <td><span class="badge status-${inv.status}">${inv.status}</span></td>
       <td>${fmtPct(inv.overall_confidence)}</td>
@@ -627,6 +627,10 @@ function renderDetail(inv) {
   // flagged as a likely double-upload/double-pay risk (see pipeline.js's
   // findDuplicateInvoice), separate from and in addition to the cross-check
   // banner above.
+  const sampleBanner = inv.is_sample_data
+    ? `<div class="cross-check processing">This is a sample invoice we added so you'd have something to review right away — it doesn't count toward your plan's usage or show up in your dashboard totals or exports. Delete it whenever you're ready.</div>`
+    : "";
+
   const duplicateBanner = inv.duplicate_of_invoice_id
     ? `<div class="cross-check warn">⚠ Possible duplicate — same vendor and invoice number as "${escapeHtml(inv.duplicate_of_filename)}", already in your account. Double-check before approving to avoid paying it twice.</div>`
     : "";
@@ -641,6 +645,7 @@ function renderDetail(inv) {
     : "";
 
   el.innerHTML = `
+    ${sampleBanner}
     ${duplicateBanner}
     ${multiInvoiceBanner}
     ${statusBanner}
