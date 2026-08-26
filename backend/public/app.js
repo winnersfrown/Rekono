@@ -4024,6 +4024,38 @@ function renderTeam({ data, me }) {
       loadTeam();
     });
   });
+
+  // Owner-only on the backend too (403 for anyone else) -- fetched
+  // separately from the rest of this tab, and only for an owner, rather
+  // than every member's load eating a request that just comes back denied.
+  const usageSection = document.getElementById("team-usage-section");
+  usageSection.style.display = isOwner ? "block" : "none";
+  if (isOwner) loadTeamUsage();
+}
+
+async function loadTeamUsage() {
+  await cachedLoad("__team_usage__", async () => (await apiFetch("/api/team/usage")).json(), renderTeamUsage);
+}
+
+function renderTeamUsage(data) {
+  const body = document.getElementById("team-usage-body");
+  // Busiest member first -- the point of this table is seeing who's
+  // actually using it (and who isn't) at a glance, not alphabetical order.
+  const sorted = [...data.members].sort((a, b) => b.total_actions - a.total_actions);
+  body.innerHTML = sorted
+    .map(
+      (m) => `
+    <tr>
+      <td>${escapeHtml(m.full_name || m.email)}</td>
+      <td>${m.uploaded}</td>
+      <td>${m.approved}</td>
+      <td>${m.rejected}</td>
+      <td>${m.corrections}</td>
+      <td>${m.total_actions}</td>
+    </tr>
+  `
+    )
+    .join("");
 }
 
 document.getElementById("team-invite-form").addEventListener("submit", async (e) => {

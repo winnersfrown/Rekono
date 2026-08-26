@@ -4,6 +4,26 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.14
+
+Added a per-org "Activity" panel to the Team tab (owner-only), breaking
+down each teammate's uploads/approvals/rejections/corrections over the
+last 30 days from existing AuditLog data -- distinct from the marketing
+site analytics in v1.13, which is about whether Rekono itself is getting
+traction, not how a specific customer's team uses it day to day. Every
+current member shows up even at all-zero, since who *isn't* using it is
+at least as useful to an owner as who is. Deliberately excludes
+account-management actions (password changes, team invites, ...) and
+anything with no human userId attached (auto-approvals) -- this counts
+work on documents, not account housekeeping.
+
+A platform-wide, cross-org usage view for Rekono's own team was
+considered and deliberately deferred: it would need a new staff/
+superadmin concept that intentionally opts out of the row-level security
+this app has already built and tested against tenant isolation, which is
+a big enough decision to warrant its own dedicated conversation rather
+than folding it into this change.
+
 ## v1.13
 
 Wired up marketing site analytics (previously off with no account at all).
