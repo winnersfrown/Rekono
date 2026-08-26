@@ -101,13 +101,170 @@ async function unmatchedApprovedCount(orgId) {
 // because "was this auto-approved" is an event that happened at a point in
 // time (pipeline.js writes an `auto_approved` entry), not a state a later
 // edit could overwrite.
-async function touchlessRate(orgId, since) {
-  const where = { orgId, createdAt: { [Op.gte]: since } };
+//
+// `until` is optional (open-ended "since -> now" when omitted, same as
+// before) -- /trends' month-over-month comparison needs a capped end date
+// for "the same day-range last month", not just a start date.
+async function touchlessRate(orgId, since, until = null) {
+  const createdAt = until ? { [Op.gte]: since, [Op.lte]: until } : { [Op.gte]: since };
+  const where = { orgId, createdAt };
   const [autoApproved, allApprovals] = await Promise.all([
     AuditLog.count({ where: { ...where, action: "auto_approved" } }),
     AuditLog.count({ where: { ...where, action: { [Op.in]: ["approved", "auto_approved"] } } }),
   ]);
   return { auto_approved: autoApproved, total_approvals: allApprovals, rate: allApprovals ? autoApproved / allApprovals : null };
+}
+
+const TRENDS_WEEKS = 13; // ~90 days, enough to see a slippage that a 14-day window (volumeTrend above) is too short to catch.
+const VENDOR_SPEND_TOP_N = 10;
+
+// Touchless rate and avg confidence over time -- volumeTrend above answers
+// "how much came through," this answers "is automation quality holding up
+// or slipping." Weekly, not daily: a single day's confidence average or
+// touchless rate is noisy for a typical SMB's volume (a handful of
+// documents), and 90 daily points would just be noise with a 13-week shape
+// buried in it.
+async function weeklyTrends(orgId) {
+  const windowDays = TRENDS_WEEKS * 7;
+  const since = daysFromNow(-(windowDays - 1));
+  since.setUTCHours(0, 0, 0, 0);
+
+  const [invoices, approvalLogs] = await Promise.all([
+    // Only over documents that actually finished extracting, same
+    // reasoning as the main dashboard's avg_confidence above.
+    Invoice.findAll({
+      where: { orgId, status: { [Op.notIn]: ["queued", "processing", "failed"] }, createdAt: { [Op.gte]: since } },
+      attributes: ["createdAt", "overallConfidence"],
+      raw: true,
+    }),
+    AuditLog.findAll({
+      where: { orgId, action: { [Op.in]: ["approved", "auto_approved"] }, createdAt: { [Op.gte]: since } },
+      attributes: ["createdAt", "action"],
+      raw: true,
+    }),
+  ]);
+
+  const weeks = Array.from({ length: TRENDS_WEEKS }, (_, i) => ({
+    weekStart: isoDate(daysFromNow(-(windowDays - 1) + i * 7)),
+    approvedCount: 0,
+    autoApprovedCount: 0,
+    confidenceSum: 0,
+    confidenceCount: 0,
+  }));
+
+  function bucketIndexFor(dateValue) {
+    const days = Math.floor((new Date(dateValue) - since) / 86400000);
+    return Math.min(TRENDS_WEEKS - 1, Math.max(0, Math.floor(days / 7)));
+  }
+
+  for (const inv of invoices) {
+    const w = weeks[bucketIndexFor(inv.createdAt)];
+    w.confidenceSum += inv.overallConfidence;
+    w.confidenceCount += 1;
+  }
+  for (const log of approvalLogs) {
+    const w = weeks[bucketIndexFor(log.createdAt)];
+    w.approvedCount += 1;
+    if (log.action === "auto_approved") w.autoApprovedCount += 1;
+  }
+
+  return weeks.map((w) => ({
+    week_start: w.weekStart,
+    approved_count: w.approvedCount,
+    touchless_rate: w.approvedCount ? w.autoApprovedCount / w.approvedCount : null,
+    avg_confidence: w.confidenceCount ? w.confidenceSum / w.confidenceCount : null,
+  }));
+}
+
+// Top vendors by total approved spend, all-time -- an AP team's own
+// question ("who are we actually paying the most") that the main dashboard
+// never answers since every KPI there is a single rolled-up number.
+// Grouped in JS rather than a GROUP BY for the same cross-dialect reason as
+// volumeTrend above (and because vendorName needs trimming/normalizing
+// before it's a meaningful group key, which a raw SQL GROUP BY can't do).
+async function vendorSpend(orgId) {
+  const rows = await Invoice.findAll({
+    where: { orgId, status: "approved" },
+    attributes: ["vendorName", "total"],
+    raw: true,
+  });
+
+  const byVendor = new Map();
+  for (const row of rows) {
+    const name = (row.vendorName || "").trim() || "(unknown vendor)";
+    const entry = byVendor.get(name) || { vendor_name: name, total: 0, invoice_count: 0 };
+    entry.total += row.total || 0;
+    entry.invoice_count += 1;
+    byVendor.set(name, entry);
+  }
+
+  return [...byVendor.values()].sort((a, b) => b.total - a.total).slice(0, VENDOR_SPEND_TOP_N);
+}
+
+function pctChange(current, previous) {
+  // No prior-period activity to compare against -- "+2400%" off a base of
+  // 0 (or any percentage off it) claims a precision the number doesn't
+  // have, same reasoning as the volume chart's week-over-week badge.
+  if (!previous) return null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
+async function documentsCreatedInRange(orgId, since, until) {
+  const where = { orgId, createdAt: { [Op.gte]: since, [Op.lte]: until } };
+  const counts = await Promise.all([
+    Invoice.count({ where }),
+    ExpenseReceipt.count({ where }),
+    VendorDocument.count({ where }),
+    Lease.count({ where }),
+    TaxDocument.count({ where }),
+  ]);
+  return counts.reduce((a, b) => a + b, 0);
+}
+
+// This month (to date) vs. the same number of days into last month -- not
+// this month vs. all of last month, which would make an early-month
+// comparison look like a slump every single time regardless of actual
+// pace. Only flow metrics (things that happened during a window) belong
+// here, not state metrics like outstanding AP (a snapshot "right now"
+// figure, not something that has a clean "as of a month ago" value without
+// reconstructing history the app doesn't record).
+async function monthOverMonth(orgId) {
+  const now = new Date();
+  const currentStart = startOfCurrentMonthUtc();
+  const prevStart = new Date(Date.UTC(currentStart.getUTCFullYear(), currentStart.getUTCMonth() - 1, 1));
+  const prevCutoff = new Date(
+    Date.UTC(prevStart.getUTCFullYear(), prevStart.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999)
+  );
+
+  const [approvedValueCurrent, approvedValuePrevious, docsCurrent, docsPrevious, touchlessCurrent, touchlessPrevious] =
+    await Promise.all([
+      Invoice.sum("total", { where: { orgId, status: "approved", updatedAt: { [Op.gte]: currentStart } } }),
+      Invoice.sum("total", {
+        where: { orgId, status: "approved", updatedAt: { [Op.gte]: prevStart, [Op.lte]: prevCutoff } },
+      }),
+      documentsCreatedInRange(orgId, currentStart, now),
+      documentsCreatedInRange(orgId, prevStart, prevCutoff),
+      touchlessRate(orgId, currentStart),
+      touchlessRate(orgId, prevStart, prevCutoff),
+    ]);
+
+  return {
+    approved_value: {
+      current: approvedValueCurrent || 0,
+      previous: approvedValuePrevious || 0,
+      pct_change: pctChange(approvedValueCurrent || 0, approvedValuePrevious || 0),
+    },
+    documents_processed: {
+      current: docsCurrent,
+      previous: docsPrevious,
+      pct_change: pctChange(docsCurrent, docsPrevious),
+    },
+    touchless_rate: {
+      current: touchlessCurrent.rate,
+      previous: touchlessPrevious.rate,
+      pct_change: pctChange(touchlessCurrent.rate || 0, touchlessPrevious.rate || 0),
+    },
+  };
 }
 
 router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -309,6 +466,27 @@ router.get("/api/dashboard", requireAuth, requireActivePlan, async (req, res, ne
         ai_extraction: llmConfigured(),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Everything the main /api/dashboard route above doesn't answer: is
+// automation quality holding up over a longer window, which vendors
+// actually make up the org's spend, and how this month compares to the
+// last one. Kept as its own request rather than folded into /api/dashboard
+// so a landing-page load doesn't pay for three extra queries' worth of
+// history every single time -- this is for whoever actually opens the
+// trends view, not every dashboard visit.
+router.get("/api/dashboard/trends", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const orgId = req.currentUser.orgId;
+    const [weekly, vendors, monthOverMonthStats] = await Promise.all([
+      weeklyTrends(orgId),
+      vendorSpend(orgId),
+      monthOverMonth(orgId),
+    ]);
+    res.json({ weekly, vendor_spend: vendors, month_over_month: monthOverMonthStats });
   } catch (err) {
     next(err);
   }

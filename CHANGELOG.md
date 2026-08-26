@@ -4,6 +4,38 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.15
+
+Added richer business KPIs to the dashboard's Trends panel, the last of
+the three analytics improvements from this run (v1.13's marketing GA4,
+v1.14's per-org team activity, now the org's own numbers):
+
+- **13-week trend charts** for touchless rate and average confidence --
+  the main dashboard's touchless/confidence figures are single snapshots,
+  so there was no way to see whether automation quality is improving or
+  slipping over time. Weekly, not daily: a single day's rate is noise at
+  typical SMB volume.
+- **Top vendors by approved spend, all-time** -- every existing KPI is a
+  single rolled-up number; this is the AP-team question ("who are we
+  actually paying the most") none of them answer.
+- **Month-over-month tiles** for approved value, documents processed, and
+  touchless rate -- this month to date vs. the same number of days into
+  last month (not all of last month), so an early-month comparison
+  doesn't read as a slump every time regardless of actual pace. Limited
+  to flow metrics (things that happened in a window); outstanding AP is
+  deliberately excluded since it's a snapshot with no clean "as of a
+  month ago" value without reconstructing history the app doesn't record.
+
+New `GET /api/dashboard/trends` endpoint, separate from the main
+`/api/dashboard` -- a trends view is heavier (three weeks-long queries)
+and not something every dashboard load needs to pay for.
+
+Caught one bug writing the tests: Sequelize force-touches `updatedAt` to
+"now" on every `create()`/`save()` regardless of what's passed, unless
+`{ silent: true }` is set -- the month-over-month tests need control over
+which month an invoice landed in, and without `silent` every "last
+month" fixture was silently landing in the current month instead.
+
 ## v1.14
 
 Added a per-org "Activity" panel to the Team tab (owner-only), breaking

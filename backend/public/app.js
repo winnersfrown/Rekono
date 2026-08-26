@@ -4355,6 +4355,111 @@ async function loadDashboard() {
     errorEl.style.display = "block";
     document.getElementById("dash-kpis").innerHTML = "";
   }
+
+  // Fetched and rendered independently of the block above -- a slow or
+  // failed /trends call is a heavier, secondary read and shouldn't block
+  // (or fail alongside) the KPIs every dashboard visit actually needs.
+  try {
+    const trendsRes = await apiFetch("/api/dashboard/trends");
+    const trends = await trendsRes.json();
+    if (trendsRes.ok) {
+      renderMonthOverMonth(trends.month_over_month);
+      renderTrendCharts(trends.weekly);
+      renderVendorSpend(trends.vendor_spend);
+    }
+  } catch {
+    // Non-critical: leave the loading skeletons rather than adding a
+    // second error banner for a secondary panel.
+  }
+}
+
+function momDeltaBadge(pctChange) {
+  if (pctChange === null || pctChange === undefined) return "";
+  const dir = pctChange > 0 ? "up" : pctChange < 0 ? "down" : "flat";
+  const arrow = pctChange > 0 ? "↑" : pctChange < 0 ? "↓" : "±";
+  return `<span class="vol-delta vol-delta-${dir}">${arrow} ${Math.abs(pctChange)}%</span>`;
+}
+
+function renderMonthOverMonth(mom) {
+  const el = document.getElementById("dash-mom");
+  el.innerHTML = `
+    <div class="mom-tile">
+      <span class="mom-label">Approved value</span>
+      <strong class="mom-value">${fmtMoney(mom.approved_value.current)}</strong>
+      ${momDeltaBadge(mom.approved_value.pct_change)}
+    </div>
+    <div class="mom-tile">
+      <span class="mom-label">Documents processed</span>
+      <strong class="mom-value">${mom.documents_processed.current}</strong>
+      ${momDeltaBadge(mom.documents_processed.pct_change)}
+    </div>
+    <div class="mom-tile">
+      <span class="mom-label">Touchless rate</span>
+      <strong class="mom-value">${mom.touchless_rate.current === null ? "—" : fmtPct(mom.touchless_rate.current)}</strong>
+      ${momDeltaBadge(mom.touchless_rate.pct_change)}
+    </div>
+  `;
+}
+
+// Two compact 13-week bar charts sharing the same inline-SVG-free approach
+// as renderVolumeChart above (a dependency costs more here than it saves).
+// A null week (no approvals that week, or no finished extractions) gets the
+// same fixed hairline stub as a zero-count day there, for the same reason:
+// a true 0% bar and "nothing to measure that week" must not look identical.
+function renderTrendCharts(weekly) {
+  const el = document.getElementById("dash-trend-charts");
+  const hasAnyData = weekly.some((w) => w.avg_confidence !== null || w.touchless_rate !== null);
+  if (!hasAnyData) {
+    el.innerHTML = `<p class="dash-empty">Not enough history yet for a trend -- check back after a few weeks of activity.</p>`;
+    return;
+  }
+
+  function miniChart(label, values) {
+    const bars = values
+      .map((v, i) => {
+        const weekStart = new Date(`${weekly[i].week_start}T00:00:00Z`).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        });
+        const pct = v === null ? 0 : Math.round(v * 100);
+        const height = v === null ? "3px" : `${Math.max(pct, 4)}%`;
+        const title = v === null ? `Week of ${weekStart}: no data` : `Week of ${weekStart}: ${fmtPct(v)}`;
+        return `
+        <div class="trend-bar-wrap" title="${title}">
+          <div class="trend-bar${v === null ? " is-zero" : ""}" style="height: ${height}"></div>
+        </div>`;
+      })
+      .join("");
+    return `<div class="trend-chart"><div class="trend-chart-label">${label}</div><div class="trend-chart-bars">${bars}</div></div>`;
+  }
+
+  el.innerHTML =
+    miniChart("Touchless rate", weekly.map((w) => w.touchless_rate)) +
+    miniChart("Avg confidence", weekly.map((w) => w.avg_confidence));
+}
+
+function renderVendorSpend(vendors) {
+  const el = document.getElementById("dash-vendor-spend");
+  if (!vendors.length) {
+    el.innerHTML = `<p class="dash-empty">No approved invoices yet.</p>`;
+    return;
+  }
+  const max = Math.max(...vendors.map((v) => v.total));
+  el.innerHTML = vendors
+    .map(
+      (v) => `
+    <div class="vendor-row">
+      <div class="vendor-row-head">
+        <span class="vendor-name">${escapeHtml(v.vendor_name)}</span>
+        <span class="vendor-total">${fmtMoney(v.total)}</span>
+      </div>
+      <div class="vendor-bar-track"><div class="vendor-bar-fill" style="width: ${Math.max((v.total / max) * 100, 2)}%"></div></div>
+      <span class="vendor-count">${v.invoice_count} invoice${v.invoice_count === 1 ? "" : "s"}</span>
+    </div>
+  `
+    )
+    .join("");
 }
 
 // The export endpoints are bearer-token authenticated, so a plain <a href>
