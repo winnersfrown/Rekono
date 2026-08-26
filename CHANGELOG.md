@@ -4,6 +4,28 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.8
+
+Moved the marketing site's deployment from GitHub Pages to Vercel.
+GitHub Pages required building straight into the repo root with fixed
+(non-hashed) filenames and `emptyOutDir: false`, since it served the repo
+as-is with no build step -- all workarounds Vercel doesn't need, since it
+builds `website/` in its own CI on every push and serves the output
+itself. `vite.config.js` now builds to a normal disposable `dist/`
+(gitignored) with Vite's default content-hashed filenames, and the
+`/Rekono/` base path is gone since Vercel serves from its domain root.
+`robots.txt`, `sitemap.xml`, and `404.html` moved from the repo root into
+`website/public/` so Vite copies them into the build output; the old
+committed build output at the repo root (`index.html`, `assets/`, the
+favicon/icon files) is removed since it's no longer how the site is
+served. `website/README.md`'s deploy section is rewritten to match.
+
+The stale `winnersfrown.github.io` references in `robots.txt`,
+`sitemap.xml`, and `website/index.html`'s canonical/Open Graph tags are
+left as `TODO`s pending the real `*.vercel.app` domain, which Vercel
+assigns on project creation -- a manual dashboard step, not something
+scriptable from here.
+
 ## v1.7
 
 Corrected README's row-level-security section: it claimed Neon "hand[s]
