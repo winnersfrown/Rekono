@@ -17,6 +17,14 @@ export async function verifyPassword(password, hashedPassword) {
   }
 }
 
+// Rekono's own team, not a customer role -- see config.js's staffEmails
+// for why this is an allowlist rather than a database column. Exported so
+// routes/auth.js's /me response can tell the frontend whether to show the
+// staff tab at all, without duplicating the comparison there.
+export function isStaffEmail(email) {
+  return settings.staffEmails.includes(String(email || "").toLowerCase());
+}
+
 export function createAccessToken(userId) {
   return jwt.sign({ sub: userId }, settings.secretKey, {
     algorithm: "HS256",
@@ -78,6 +86,48 @@ export async function requireAuth(req, res, next) {
   // query below that forgets to scope itself sees nothing rather than
   // another tenant's rows.
   await setOrgContext(user.orgId);
+
+  req.currentUser = user;
+  next();
+}
+
+// Gate for routes/staff.js's cross-org usage dashboard -- deliberately a
+// separate function from requireAuth rather than requireAuth plus a flag.
+// A single shared function where a boolean controls whether tenant
+// isolation applies is exactly the kind of thing that invites a future bug
+// (the flag defaulting wrong, or a route forgetting to set it); two small,
+// distinctly-named functions make "does this route see one org or every
+// org" a property of which function it imports, visible at the call site.
+//
+// The key difference from requireAuth: this never calls setOrgContext.
+// rlsRequestContext (app.js) already starts every request in system
+// context, and requireAuth's job is narrowing that down to one org --
+// staff routes need to stay unnarrowed on purpose, since seeing across
+// every tenant is the entire point of a cross-org report.
+export async function requireStaff(req, res, next) {
+  const authHeader = req.headers.authorization || "";
+  const [scheme, token] = authHeader.split(" ");
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({ detail: "Not authenticated" });
+  }
+
+  let payload;
+  try {
+    payload = jwt.verify(token, settings.secretKey, { algorithms: ["HS256"] });
+  } catch {
+    return res.status(401).json({ detail: "Invalid or expired token" });
+  }
+
+  const user = await User.findByPk(payload.sub);
+  if (!user) {
+    return res.status(401).json({ detail: "User no longer exists" });
+  }
+  if (!isStaffEmail(user.email)) {
+    // Same 403 body regardless of *why* someone isn't staff -- there's
+    // only one allowlist check, so there's nothing more specific to say,
+    // and this never hints at which emails would have passed it.
+    return res.status(403).json({ detail: "Not authorized." });
+  }
 
   req.currentUser = user;
   next();

@@ -4,6 +4,51 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.16
+
+Added a staff-only cross-org usage dashboard -- the "Rekono operator" view
+deliberately left out of the last three analytics releases (v1.13-v1.15,
+all customer-facing) because it needed something new and security-relevant:
+a request that intentionally opts out of the per-org row-level security
+this app has otherwise built and tested throughout.
+
+- **`STAFF_EMAILS`** (comma-separated, case-insensitive): an email
+  allowlist rather than a database column, since no signup flow should
+  ever be able to grant this, and a config value only whoever holds the
+  deployment's env vars can change is a much smaller blast radius than a
+  boolean a bug could flip on a row. Empty by default -- fail-closed,
+  nobody (not even the first org's owner) can reach staff routes until
+  this is explicitly configured, matching every other optional integration
+  in `config.js`.
+- **`requireStaff`** (`auth.js`): a separate middleware from the
+  customer-facing `requireAuth`, not a flag added to it -- two small,
+  distinctly-named functions make "does this route see one org or every
+  org" a property of which one a route imports, visible at the call site,
+  rather than a boolean that could default wrong. The key difference: it
+  never calls `setOrgContext`, so the request stays in the system context
+  `rlsRequestContext` already starts every request in, and plain
+  unscoped queries genuinely see every tenant.
+- **`GET /api/staff/overview`** (`routes/staff.js`): aggregate-only --
+  org/plan counts, a 13-week signup trend, an activation funnel (signed
+  up -> onboarded -> uploaded a real document -> approved one), document
+  volume, and subscription health. Never a way to read any single
+  customer's actual documents, vendor names, or dollar amounts -- that's a
+  much bigger exposure than "how is the product doing" calls for. Demo
+  orgs and seeded sample invoices (v1.11) are excluded from every figure.
+  Each call logs a `staff_metrics_viewed` `AuditLog` entry against the
+  staff member's own org, since there's no cross-org-shaped audit target
+  to log it against instead.
+- A "Staff" nav tab in the app shell, shown only when `/api/auth/me`'s new
+  `is_staff` field is true -- UX only, since the server-side gate above is
+  what actually matters.
+
+Tests specifically prove the isolation properties that make this safe: 401
+(not logged in) vs. 403 (logged in, not staff) are distinct; a staff user
+genuinely sees multiple different orgs' data in one response; an ordinary
+per-org request immediately after a staff request still can't see across
+tenants (no context leakage between requests); demo orgs are excluded; and
+the empty-`STAFF_EMAILS` default really does lock everyone out.
+
 ## v1.15
 
 Added richer business KPIs to the dashboard's Trends panel, the last of

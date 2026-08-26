@@ -189,6 +189,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `DELETE /api/team/members/:userId` | Owner-only. Remove a teammate. The owner can't remove themself (no ownership transfer yet) |
 | `GET /api/team/invite/:token` | Public. Validates an invite link and returns the org name + invited email, for the accept-invite page |
 | `POST /api/team/invite/:token/accept` | Public. `{full_name, password}` → creates a `role: "member"` User on the inviting org, returns a bearer token |
+| `GET /api/staff/overview` | Rekono staff only (`STAFF_EMAILS`), refused with `403` for everyone else. Aggregate, cross-org usage metrics -- org/plan counts, activation funnel, document volume, subscription health. See README.md's "Staff / cross-org usage dashboard" section |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -420,6 +421,12 @@ The Matching tab also surfaces **bank reconciliation** once connected: QuickBook
 3. Under **Redirect URIs**, add `https://<your-deployed-url>/api/integrations/quickbooks/callback` (and `http://localhost:8000/api/integrations/quickbooks/callback` for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/integrations/quickbooks/callback`.
 4. The Developer Portal also provides a free Sandbox company file (**Sandbox** tab) to connect against and inspect pushed Bills in.
 5. Connecting stores tokens per-org on `Organization` (`quickbooksAccessToken`/`quickbooksRefreshToken`, both nullable so a disconnected org just has `null`s -- see `models/Organization.js`); access tokens auto-refresh on use (`ensureFreshToken` in `quickbooks.js`). Going to Production later means switching `QUICKBOOKS_ENVIRONMENT=production`, swapping in Production keys, and passing Intuit's app-assessment review (token storage/data retention, roughly 2-3 weeks) -- Sandbox needs none of that.
+
+### Staff / cross-org usage dashboard
+
+`GET /api/staff/overview` and the app shell's "Staff" nav tab are Rekono's own team's view of the product -- not a customer feature. It answers "how is Rekono doing" (org counts and plan mix, a signup trend, an activation funnel from signup through a first approved document, document volume, and subscription health), never a way to read any single customer's actual documents, vendor names, or dollar amounts. Demo orgs (`Organization.isDemo`) and seeded sample invoices (`Invoice.isSampleData`, see below) are excluded from every figure so they don't inflate the numbers with activity nobody actually did.
+
+Gated by `STAFF_EMAILS` (comma-separated, case-insensitive) -- an email allowlist rather than a database column, since there's no signup flow that should ever be able to grant this, and a config value only whoever holds the deployment's env vars can change is a much smaller blast radius than a boolean a bug could flip on a row. Unset/empty (the default) means nobody can reach it, not even the first org's owner. `auth.js`'s `requireStaff` is a separate middleware from the customer-facing `requireAuth`, not a flag on it, and is the one route family that deliberately never narrows the request to a single org -- see `rls.js` and the "Row-level security" section below for why every other route does. Every call is logged to the staff member's own `AuditLog` (`staff_metrics_viewed`) for accountability, since there's no cross-org-shaped audit target to log it against instead.
 
 ## Roadmap (beyond this MVP)
 

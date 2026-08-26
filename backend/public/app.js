@@ -222,6 +222,7 @@ function switchTab(name) {
   if (name === "team") loadTeam();
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
+  if (name === "staff") loadStaffOverview();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4083,6 +4084,60 @@ document.getElementById("team-invite-form").addEventListener("submit", async (e)
     statusEl.textContent = err.message || String(err);
   }
 });
+
+// ---- Staff (Rekono's own cross-org usage dashboard) ----
+// GET /api/staff/overview (routes/staff.js) is refused with a 403 server-side
+// for anyone not on the STAFF_EMAILS allowlist regardless of what's rendered
+// here -- the staff-nav-btn hide/show in auth.js's showApp is UX only, not
+// the security boundary.
+const STAFF_PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business", scale: "Scale", no_plan_yet: "Not onboarded yet" };
+
+async function loadStaffOverview() {
+  await cachedLoad("__staff_overview__", async () => (await apiFetch("/api/staff/overview")).json(), renderStaffOverview);
+}
+
+function renderStaffOverview(data) {
+  const s = data.org_summary;
+  document.getElementById("staff-org-summary").innerHTML = [
+    kpiCard({ label: "Total orgs", value: s.total_orgs, sub: "excludes demo orgs" }),
+    kpiCard({ label: "Completed onboarding", value: s.completed_onboarding, sub: `of ${s.total_orgs} total` }),
+    kpiCard({
+      label: "Uploaded a real document",
+      value: data.activation_funnel.uploaded_first_real_document,
+      sub: `${data.activation_funnel.approved_first_real_document} have approved one`,
+    }),
+  ].join("");
+
+  const planBody = document.getElementById("staff-plan-breakdown-body");
+  planBody.innerHTML = Object.entries(s.plan_breakdown)
+    .sort((a, b) => b[1] - a[1])
+    .map(([plan, count]) => `<tr><td>${escapeHtml(STAFF_PLAN_NAMES[plan] || plan)}</td><td>${count}</td></tr>`)
+    .join("");
+
+  const funnel = data.activation_funnel;
+  const funnelBody = document.getElementById("staff-funnel-body");
+  funnelBody.innerHTML = [
+    ["Signed up", funnel.signed_up],
+    ["Completed onboarding", funnel.completed_onboarding],
+    ["Uploaded a real document", funnel.uploaded_first_real_document],
+    ["Approved a real document", funnel.approved_first_real_document],
+  ]
+    .map(([stage, count]) => `<tr><td>${stage}</td><td>${count}</td></tr>`)
+    .join("");
+
+  const sub = data.subscription_health;
+  document.getElementById("staff-sub-active").textContent = sub.active;
+  document.getElementById("staff-sub-trialing").textContent = sub.trialing;
+  document.getElementById("staff-sub-canceled").textContent = sub.recently_canceled;
+  document.getElementById("staff-recently-canceled-header").textContent = `Recently canceled (${sub.window_days}d)`;
+
+  document.getElementById("staff-signup-trend-body").innerHTML = data.signup_trend
+    .map((w) => `<tr><td>${w.week_start}</td><td>${w.count}</td></tr>`)
+    .join("");
+  document.getElementById("staff-volume-trend-body").innerHTML = data.document_volume_trend
+    .map((w) => `<tr><td>${w.week_start}</td><td>${w.count}</td></tr>`)
+    .join("");
+}
 
 // ---- Init ----
 // ---- Dashboard (the landing tab) ----
