@@ -281,6 +281,7 @@ export function serializeUser(user) {
     email: user.email,
     full_name: user.fullName,
     role: user.role,
+    two_factor_enabled: user.totpEnabled,
   };
 }
 

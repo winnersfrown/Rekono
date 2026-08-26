@@ -183,6 +183,25 @@ h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
 }
 .invite-disclaimer { color: var(--muted); font-size: 0.78rem; margin-bottom: 1rem; }
 
+#twofa-qr {
+  background: #fff;
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 0.9rem;
+}
+
+.backup-codes-list {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1.9;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1rem;
+  white-space: pre-wrap;
+}
+
 .tab-panel { display: none; }
 .tab-panel.active { display: block; animation: fade-in 0.35s var(--ease); }
 

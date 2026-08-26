@@ -24,6 +24,33 @@ export function createAccessToken(userId) {
   });
 }
 
+// Issued once a password (or Google) login is correct but the account has
+// 2FA enabled -- proves "this request already passed the first factor"
+// without granting real access. A distinct `purpose` claim (rather than a
+// second secret) keeps this a one-line addition to the existing JWT
+// machinery instead of a parallel token system, while still making a
+// pending token unusable anywhere a real access token is expected: every
+// other verify site (requireAuth) never checks `purpose`, but this token's
+// 10-minute expiry and single intended use (POST /api/auth/2fa/verify) mean
+// that doesn't matter -- it carries no more than "this is user X, recently
+// authenticated with a password."
+export function createPending2faToken(userId) {
+  return jwt.sign({ sub: userId, purpose: "2fa_pending" }, settings.secretKey, {
+    algorithm: "HS256",
+    expiresIn: "10m",
+  });
+}
+
+// Throws (via jwt.verify) on anything invalid/expired/wrong-purpose --
+// callers catch it the same way requireAuth's jwt.verify call is caught.
+export function verifyPending2faToken(token) {
+  const payload = jwt.verify(token, settings.secretKey, { algorithms: ["HS256"] });
+  if (payload.purpose !== "2fa_pending") {
+    throw new Error("Not a pending-2FA token");
+  }
+  return payload.sub;
+}
+
 // Express middleware: verifies the bearer token and attaches req.currentUser,
 // or responds 401. Every data-touching route depends on this.
 export async function requireAuth(req, res, next) {

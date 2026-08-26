@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.12
+
+Added optional TOTP-based two-factor authentication. Settings has a new
+"Two-factor authentication" panel: Enable generates a secret and a QR code
+(otplib + qrcode, both free/open-source), confirming a code from it turns
+2FA on and hands back 8 single-use backup codes (shown once, like an API
+key). Login for an account with 2FA on becomes two steps -- password (or
+Google) succeeds, then a short-lived pending token exchanges for the real
+access token once a TOTP or backup code verifies (POST /api/auth/2fa/verify).
+Disabling 2FA and regenerating backup codes are gated behind the existing
+password re-auth check (auth.js's requireReauth), same as disconnecting
+QuickBooks or removing a team member.
+
+Google sign-in also respects it: an account with 2FA enabled gets routed
+through the same pending-token verification after a Google login succeeds,
+rather than 2FA being a promise the app doesn't keep for anyone who's also
+linked Google.
+
+User.totpSecret is encrypted at rest (secretBox.js, the same mechanism
+already protecting QuickBooks OAuth tokens) and backup codes are stored as
+SHA-256 hashes, never plaintext. Caught one real bug while writing tests:
+otplib's verify() throws (rather than returning invalid) for anything that
+isn't 6 digits, which is exactly what a backup code is -- fixed in
+twoFactor.js so submitting one doesn't 500 instead of falling through to
+the backup-code check.
+
 ## v1.11
 
 Seeds one realistic sample invoice into a brand-new org's Review Queue as

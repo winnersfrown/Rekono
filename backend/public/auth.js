@@ -247,11 +247,63 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
       return;
     }
     const data = await res.json();
+    if (data.two_factor_required) {
+      showTwoFactorPanel(data.pending_token);
+      return;
+    }
     setToken(data.access_token);
     await bootstrapApp();
   } catch (err) {
     authError(String(err));
   }
+});
+
+// ---- 2FA (login-time verification) ----
+// A pending token names a specific user who already passed the first
+// factor (password or Google) but hasn't finished the second yet -- see
+// routes/auth.js's /api/auth/2fa/verify. Held in memory only, same as
+// pendingResetToken/pendingInviteToken below: it's single-use and expires
+// server-side in 10 minutes regardless.
+let pending2faToken = null;
+
+function showTwoFactorPanel(token) {
+  pending2faToken = token;
+  showAuthGate();
+  showAuthPanel("auth-2fa-panel");
+  document.getElementById("twofa-code").value = "";
+}
+
+document.getElementById("twofa-verify-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  authError("");
+  const code = document.getElementById("twofa-code").value.trim();
+  const submitBtn = e.target.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  try {
+    const res = await fetch("/api/auth/2fa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pending_token: pending2faToken, code }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      authError(body.detail || "Verification failed.");
+      return;
+    }
+    pending2faToken = null;
+    setToken(body.access_token);
+    await bootstrapApp();
+  } catch (err) {
+    authError(String(err));
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+document.getElementById("twofa-back-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  pending2faToken = null;
+  showAuthPanel("auth-login-panel", { tabBtn: document.querySelector('[data-auth-tab="login-panel"]') });
 });
 
 document.getElementById("signup-form").addEventListener("submit", async (e) => {
@@ -812,6 +864,14 @@ if (resetTokenFromUrl) {
 } else if (googleAuthParam === "success" || googleAuthParam === "error") {
   const params = new URLSearchParams(location.search);
   handleGoogleAuthReturn(googleAuthParam, params.get("code"), params.get("reason"));
+} else if (googleAuthParam === "2fa_required") {
+  // Google sign-in succeeded but this account also has TOTP enabled -- same
+  // pending-token flow the password-login path uses, just arriving via a
+  // redirect param instead of the login response body (see
+  // routes/auth.js's google/callback).
+  const params = new URLSearchParams(location.search);
+  history.replaceState(null, "", location.pathname);
+  showTwoFactorPanel(params.get("pending_token"));
 } else if (quickbooksParam === "connected" || quickbooksParam === "error") {
   handleQuickbooksReturn(quickbooksParam, new URLSearchParams(location.search).get("reason"));
 } else if (demoParam === "1") {
