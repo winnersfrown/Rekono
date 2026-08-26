@@ -4,6 +4,20 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.10
+
+Gave the invoice Review Queue a real empty state for brand-new orgs.
+It was previously the thinnest of the five document-type queues: a bare
+"No invoices." table cell and a generic "Select an invoice..." detail
+pane, with no indication of what to do next -- landing there right after
+signup looked broken rather than empty. Now a genuinely-empty org (no
+invoices ever uploaded, not just a filter matching zero) gets an
+"Upload your first invoice" prompt in both the table and the detail
+pane, matching the pattern the dashboard's own empty state already used.
+A filter or search that happens to match nothing still shows a plain
+"No invoices match this filter." instead, so the CTA doesn't mislead
+someone who already has invoices.
+
 ## v1.9
 
 Added Vercel Speed Insights to the marketing site (`@vercel/speed-insights`,

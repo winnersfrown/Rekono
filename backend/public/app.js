@@ -380,6 +380,28 @@ async function loadInvoices() {
   );
 }
 
+// Shared with the post-delete reset below, so both the "genuinely no
+// invoices yet" and "you just deleted the one you had selected" cases
+// render identically.
+const INVOICE_EMPTY_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6l1.4 1.4L7.5 4.7"/><path d="M11 6h9.5"/><path d="M3.5 12l1.4 1.4 2.6-2.7"/><path d="M11 12h9.5"/><path d="M3.5 18l1.4 1.4 2.6-2.7"/><path d="M11 18h9.5"/></svg>
+    <p class="hint">Select an invoice from the list to review it.</p>
+  </div>
+`;
+
+// Distinct from INVOICE_EMPTY_DETAIL: this is for a brand-new org with zero
+// invoices ever uploaded, not just nothing currently selected -- the queue
+// being the flagship feature, landing here with only "no invoices" and no
+// way forward read as broken rather than empty.
+const INVOICE_EMPTY_QUEUE_DETAIL = `
+  <div class="empty-state">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+    <p class="hint">No invoices yet. Upload one to see it extracted, confidence-scored, and ready to review.</p>
+    <button type="button" data-tab="upload">Upload your first invoice</button>
+  </div>
+`;
+
 function renderInvoices({ items: invoices, total }) {
   // Drop any previously-selected id that isn't in this render -- e.g. it
   // was deleted, or a status-filter change hid it -- so the toolbar's count
@@ -388,6 +410,12 @@ function renderInvoices({ items: invoices, total }) {
   for (const id of state.selectedRowIds) {
     if (!visibleIds.has(id)) state.selectedRowIds.delete(id);
   }
+
+  // A truly empty org (nothing uploaded, ever) gets the upload prompt; a
+  // filter/search that happens to match nothing gets a plainer message --
+  // "upload your first invoice" would be misleading when invoices exist but
+  // are just filtered out.
+  const isEmptyOrg = total === 0 && !state.statusFilter && !state.searchQuery;
 
   const tbody = document.querySelector("#invoice-table tbody");
   tbody.innerHTML = invoices.map((inv) => `
@@ -398,7 +426,11 @@ function renderInvoices({ items: invoices, total }) {
       <td><span class="badge status-${inv.status}">${inv.status}</span></td>
       <td>${fmtPct(inv.overall_confidence)}</td>
     </tr>
-  `).join("") || "<tr><td colspan='5' class='table-empty-row'>No invoices.</td></tr>";
+  `).join("") || (
+    isEmptyOrg
+      ? `<tr><td colspan='5' class='table-empty-row'>No invoices yet -- <button type="button" class="linklike" data-tab="upload">upload one</button> to get started.</td></tr>`
+      : "<tr><td colspan='5' class='table-empty-row'>No invoices match this filter.</td></tr>"
+  );
 
   tbody.querySelectorAll("tr[data-id]").forEach((row) => {
     row.addEventListener("click", () => selectInvoice(row.dataset.id));
@@ -411,6 +443,13 @@ function renderInvoices({ items: invoices, total }) {
       renderBulkToolbar();
     });
   });
+  const emptyRowBtn = tbody.querySelector("[data-tab]");
+  if (emptyRowBtn) emptyRowBtn.addEventListener("click", () => switchTab(emptyRowBtn.dataset.tab));
+
+  if (isEmptyOrg && state.selectedInvoiceId === null) {
+    document.getElementById("queue-detail").innerHTML = INVOICE_EMPTY_QUEUE_DETAIL;
+    document.querySelector("#queue-detail [data-tab]").addEventListener("click", (e) => switchTab(e.currentTarget.dataset.tab));
+  }
 
   renderBulkToolbar();
   renderSortIndicators();
@@ -943,12 +982,7 @@ async function deleteInvoice(id) {
 
   if (state.selectedInvoiceId === id) {
     state.selectedInvoiceId = null;
-    document.getElementById("queue-detail").innerHTML = `
-      <div class="empty-state">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6l1.4 1.4L7.5 4.7"/><path d="M11 6h9.5"/><path d="M3.5 12l1.4 1.4 2.6-2.7"/><path d="M11 12h9.5"/><path d="M3.5 18l1.4 1.4 2.6-2.7"/><path d="M11 18h9.5"/></svg>
-        <p class="hint">Select an invoice from the list to review it.</p>
-      </div>
-    `;
+    document.getElementById("queue-detail").innerHTML = INVOICE_EMPTY_DETAIL;
   }
   invalidateCache("/api/invoices?");
   loadInvoices();
