@@ -4,6 +4,12 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.9
+
+Added Vercel Speed Insights to the marketing site (`@vercel/speed-insights`,
+mounted in `src/main.jsx`) now that it's deployed on Vercel, to get
+real-user performance data on the now-client-rendered React page.
+
 ## v1.8
 
 Moved the marketing site's deployment from GitHub Pages to Vercel.
