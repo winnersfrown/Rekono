@@ -1,6 +1,7 @@
 import { sequelize } from "../src/db.js";
 import { whenIdle } from "../src/jobs.js";
 import { RLS_TABLES, applyRlsPolicies, installCls } from "../src/rls.js";
+import { Invoice } from "../src/models/index.js";
 
 // Note for the Postgres run (REKONO_TEST_PG_URL): tests seed fixtures by
 // calling the models directly, outside any request, which under row-level
@@ -85,6 +86,16 @@ export async function signup(
     if (onboardingRes.status !== 200) {
       throw new Error(`onboarding failed: ${onboardingRes.status} ${JSON.stringify(onboardingRes.body)}`);
     }
+
+    // Completing onboarding for real seeds a sample invoice (see
+    // sampleSeed.js) -- exactly what a first-time user should see, but pure
+    // noise for the ~30 other test files that call this helper for "a
+    // normal working account" and then assert exact invoice counts/totals
+    // of their own fixtures. Tests that want to verify the seeding itself
+    // drive /api/onboarding directly (see onboarding.test.js) instead of
+    // going through this helper.
+    const me = await request(app).get("/api/auth/me").set(authHeader(token));
+    await Invoice.scope("withSamples").destroy({ where: { orgId: me.body.org_id, isSampleData: true }, force: true });
   }
 
   return token;

@@ -4,6 +4,33 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.11
+
+Seeds one realistic sample invoice into a brand-new org's Review Queue as
+soon as onboarding completes (free plan, or a paid plan once checkout
+confirms), so a first login has something to actually review instead of
+relying only on the empty-state prompt from v1.10. It's marked
+`needs_review` with a below-threshold confidence score, matching the
+product's own pitch of an imperfect extraction getting caught before it
+hits the books, and shows a "Sample" badge plus an explanatory banner in
+the detail pane.
+
+The sample must never look like real financial activity: `Invoice` gets an
+`isSampleData` column and a `defaultScope` that excludes it everywhere
+except the Review Queue's own routes (which opt back in via a `withSamples`
+scope) -- dashboard KPIs, CSV/Excel exports, the AP/bank matching engine,
+QuickBooks sync, the AI assistant's context, and the monthly document quota
+all continue to see only real data, with no per-callsite changes needed
+anywhere else. Seeding itself reuses demoSeed.js's `seedInvoice` (now
+exported) rather than duplicating the synthetic-PDF-plus-audit-log logic
+that already exists for the investor demo.
+
+`tests/testUtils.js`'s shared `signup()` helper strips the sample back out
+after onboarding, since dozens of other test files use it for "a normal
+working account" and assert exact invoice counts of their own fixtures --
+tests that want to verify the seeding itself drive `/api/onboarding`
+directly instead, same as the existing onboarding tests already did.
+
 ## v1.10
 
 Gave the invoice Review Queue a real empty state for brand-new orgs.

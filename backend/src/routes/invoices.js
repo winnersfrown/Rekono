@@ -4,7 +4,7 @@ import { Op, fn, col, where as sequelizeWhere } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { AuditLog, Invoice, LineItem, MatchResult } from "../models/index.js";
+import { AuditLog, Invoice as InvoiceModel, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
 import { rememberVendorCorrection } from "../vendorAlias.js";
 import { enqueue } from "../jobs.js";
@@ -12,6 +12,15 @@ import { effectiveConfidenceThreshold } from "../pipeline.js";
 import { score as scoreConfidence } from "../confidence.js";
 
 const router = Router();
+
+// This whole module is the Review Queue -- unlike every other consumer of
+// Invoice (dashboard KPIs, exports, matching, QuickBooks sync, ...), a
+// seeded sample invoice belongs here just like a real one: it needs to
+// show up in the list, open in the detail pane, and be approvable/
+// deletable, so a new user can actually interact with it. See
+// models/Invoice.js's defaultScope for why every other file gets samples
+// filtered out automatically instead.
+const Invoice = InvoiceModel.scope("withSamples");
 
 async function getOwnedInvoice(invoiceId, orgId, options = {}) {
   const invoice = await Invoice.findOne({
