@@ -22,6 +22,9 @@ import { Transaction } from "./Transaction.js";
 import { MerchantCategory } from "./MerchantCategory.js";
 import { NetWorthAccount } from "./NetWorthAccount.js";
 import { NetWorthEntry } from "./NetWorthEntry.js";
+import { Account } from "./Account.js";
+import { JournalEntry } from "./JournalEntry.js";
+import { JournalLine } from "./JournalLine.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -84,6 +87,14 @@ NetWorthAccount.hasMany(NetWorthEntry, {
   hooks: true,
 });
 NetWorthEntry.belongsTo(NetWorthAccount, { foreignKey: "accountId" });
+
+// A journal entry's lines have no meaning detached from it -- there's no
+// destroy route for a posted entry (see JournalEntry.js's own comment on
+// why), but the association still declares the correct cascade behavior
+// for consistency with every other parent/child pair here.
+JournalEntry.hasMany(JournalLine, { foreignKey: "journalEntryId", as: "lines", onDelete: "CASCADE", hooks: true });
+JournalLine.belongsTo(JournalEntry, { foreignKey: "journalEntryId" });
+JournalLine.belongsTo(Account, { foreignKey: "accountId" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -204,4 +215,7 @@ export {
   MerchantCategory,
   NetWorthAccount,
   NetWorthEntry,
+  Account,
+  JournalEntry,
+  JournalLine,
 };

@@ -10,6 +10,7 @@ import { rememberVendorCorrection } from "../vendorAlias.js";
 import { enqueue } from "../jobs.js";
 import { effectiveConfidenceThreshold } from "../pipeline.js";
 import { score as scoreConfidence } from "../confidence.js";
+import { postInvoiceApproval, voidInvoiceJournalEntry } from "../ledger.js";
 
 const router = Router();
 
@@ -140,6 +141,8 @@ router.post("/api/invoices/bulk-action", requireAuth, requireActivePlan, async (
       }
       invoice.status = action === "approve" ? "approved" : "rejected";
       await invoice.save();
+      if (action === "approve") await postInvoiceApproval(invoice);
+      else await voidInvoiceJournalEntry(req.currentUser.orgId, invoice.id);
       await AuditLog.create({
         orgId: req.currentUser.orgId,
         userId: req.currentUser.id,
@@ -445,6 +448,7 @@ router.post("/api/invoices/:id/quick-review-field", requireAuth, requireActivePl
     const stillFlagged = report.overallConfidence < threshold || !report.crossCheckPassed;
     if (!stillFlagged) invoice.status = "approved";
     await invoice.save();
+    if (!stillFlagged) await postInvoiceApproval(invoice);
 
     await AuditLog.create({
       orgId: req.currentUser.orgId,
@@ -528,6 +532,7 @@ router.post("/api/invoices/:id/approve", requireAuth, requireActivePlan, async (
     }
     invoice.status = "approved";
     await invoice.save();
+    await postInvoiceApproval(invoice);
     await AuditLog.create({
       orgId: req.currentUser.orgId,
       userId: req.currentUser.id,
@@ -548,6 +553,7 @@ router.post("/api/invoices/:id/reject", requireAuth, requireActivePlan, async (r
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
     invoice.status = "rejected";
     await invoice.save();
+    await voidInvoiceJournalEntry(req.currentUser.orgId, invoice.id);
     await AuditLog.create({
       orgId: req.currentUser.orgId,
       userId: req.currentUser.id,
@@ -616,6 +622,8 @@ router.delete("/api/invoices/:id", requireAuth, requireActivePlan, async (req, r
       actor: req.currentUser.email,
       details: { original_filename: invoice.originalFilename, status: invoice.status },
     });
+
+    await voidInvoiceJournalEntry(req.currentUser.orgId, invoice.id);
 
     if (invoice.storagePath) {
       await fs.unlink(invoice.storagePath).catch((err) => {

@@ -35,6 +35,7 @@ const SYSTEM_GUC = "rekono.system";
 
 // Tables whose rows carry an "orgId" column directly.
 const DIRECT_ORG_TABLES = [
+  "accounts",
   "audit_logs",
   "close_periods",
   "close_tasks",
@@ -42,6 +43,7 @@ const DIRECT_ORG_TABLES = [
   "expense_receipts",
   "invites",
   "invoices",
+  "journal_entries",
   "leases",
   "match_sources",
   "merchant_categories",
@@ -57,6 +59,7 @@ const DIRECT_ORG_TABLES = [
 // The EXISTS subquery is itself subject to the parent's policy, so these
 // need no org predicate: if the parent row is invisible, so is the child.
 const DERIVED_TABLES = {
+  journal_lines: `EXISTS (SELECT 1 FROM journal_entries p WHERE p.id = journal_lines."journalEntryId")`,
   line_items: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = line_items."invoiceId")`,
   match_results: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = match_results."invoiceId")`,
   match_entries: `EXISTS (SELECT 1 FROM match_sources p WHERE p.id = match_entries."sourceId")`,

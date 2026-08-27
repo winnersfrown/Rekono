@@ -13,6 +13,7 @@ import { settings } from "../config.js";
 import { PAID_PLAN_IDS, PLANS, billingCycleAmountUsd } from "../plans.js";
 import { Organization } from "../models/index.js";
 import { seedSampleInvoiceForNewOrg } from "../sampleSeed.js";
+import { seedDefaultChartOfAccounts } from "../ledger.js";
 
 const router = Router();
 const webhookRouter = Router();
@@ -174,6 +175,7 @@ router.get("/api/billing/confirm", requireAuth, requireStripeConfigured, async (
     org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
     await org.save();
     await seedSampleInvoiceForNewOrg(org);
+    await seedDefaultChartOfAccounts(org);
 
     res.json({ ok: true, plan: org.plan, billing_period: org.billingPeriod });
   } catch (err) {
@@ -241,6 +243,7 @@ webhookRouter.post("/api/billing/webhook", async (req, res) => {
         org.onboardingCompletedAt = org.onboardingCompletedAt || new Date();
         await org.save();
         await seedSampleInvoiceForNewOrg(org);
+        await seedDefaultChartOfAccounts(org);
       }
     } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const subscription = event.data.object;

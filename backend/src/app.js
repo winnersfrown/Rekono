@@ -27,6 +27,8 @@ import teamRoutes from "./routes/team.js";
 import staffRoutes from "./routes/staff.js";
 import integrationsRoutes from "./routes/integrations.js";
 import netWorthRoutes from "./routes/netWorth.js";
+import accountsRoutes from "./routes/accounts.js";
+import journalEntriesRoutes from "./routes/journalEntries.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -198,6 +200,8 @@ app.use(teamRoutes);
 app.use(staffRoutes);
 app.use(integrationsRoutes);
 app.use(netWorthRoutes);
+app.use(accountsRoutes);
+app.use(journalEntriesRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));

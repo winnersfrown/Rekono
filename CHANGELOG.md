@@ -4,6 +4,64 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.20
+
+Added a real double-entry general ledger -- Phase 1 of turning Rekono from
+an AP-automation tool into actual accounting software, positioned against
+Rillet (AI-native ERP for venture-backed SaaS companies) rather than
+QuickBooks, which Rekono still just integrates with one-way. Confirmed via
+a full codebase pass before writing anything: no chart-of-accounts,
+journal-entry, ledger, debit/credit, or trial-balance concept existed
+anywhere in this app until now.
+
+- **Three new tables** (`Account`, `JournalEntry`, `JournalLine`,
+  `ledger.js`). `postJournalEntry` is the one place a line ever gets
+  written, and it rejects (with a clean `422`) any entry with fewer than 2
+  lines or where debits don't exactly equal credits -- nothing that
+  reaches the database can be unbalanced. Amounts are stored as integer
+  cents, not `FLOAT` (the rest of this app's money fields) and not
+  `DECIMAL` either -- floating-point rounding error is a real problem
+  specifically here, and Sequelize's SQLite dialect can hand `DECIMAL`
+  columns back as strings depending on the value, which would silently
+  break the sum(debit) === sum(credit) check.
+- **A starter chart of accounts, seeded at onboarding** (same hook point
+  `sampleSeed.js`'s sample invoice uses): Cash, Accounts Receivable,
+  Accounts Payable, Credit Card, Owner's Equity, Uncategorized Revenue,
+  one expense account per `ExpenseReceipt.EXPENSE_CATEGORIES` value, and
+  Uncategorized Expense -- so every org has a working ledger from day one.
+- **Approving an invoice auto-posts it**: Debit the matched expense
+  account, Credit Accounts Payable. Reuses
+  `invoice.quickbooksExpenseAccountName` -- the *existing*
+  AI-suggested-or-vendor-learned field from the QuickBooks integration --
+  to pick the account, falling back to "Uncategorized Expense." Zero new
+  categorization logic: the AI already knew this. Every path that can
+  approve an invoice (the single approve route, bulk-action, quick-review
+  auto-approval, and pipeline.js's own auto-approval) calls the same
+  function, which checks for an already-posted entry first so it's safe
+  to call from all of them without double-posting. Rejecting or deleting
+  a previously-approved invoice reverses its entry automatically.
+- **Posted entries are immutable** -- no edit or delete route, only
+  `POST /api/journal-entries/:id/void`, which posts the entry's exact
+  mirror image and marks the original voided. Corrections are always a
+  new entry, never a rewrite of history.
+- **`GET /api/ledger/trial-balance`**: every account's debit/credit
+  totals, and whether they balance to zero -- the simplest report that
+  proves the ledger is internally consistent.
+- New **Accounting** nav group (Chart of Accounts, Journal Entries, Trial
+  Balance), available on every plan rather than gated to Business/Scale
+  like the confidence-threshold/auto-approval features are -- this is
+  meant to be core to what the product is now, not an advanced add-on.
+
+Deliberately not built in this pass: financial statements (P&L, balance
+sheet, cash flow -- each a query over `JournalLine` now that a real
+ledger exists, genuinely small once this foundation is here), revenue
+recognition (deferred-revenue schedules -- the actual Rillet
+differentiator), accounts receivable/customer invoicing (money coming in,
+not just out), live bank feeds replacing manual CSV import, and
+AI-driven close automation. Named explicitly so it's clear this is the
+foundation, not the whole repositioning -- see README.md's new "General
+ledger" section and the updated Roadmap.
+
 ## v1.19
 
 Reverted v1.17's optional AWS S3 + SQS backend. Explicit decision to not

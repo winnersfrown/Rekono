@@ -223,6 +223,9 @@ function switchTab(name) {
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
   if (name === "staff") loadStaffOverview();
+  if (name === "chartofaccounts") loadAccounts();
+  if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
+  if (name === "trialbalance") loadTrialBalance();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4137,6 +4140,249 @@ function renderStaffOverview(data) {
   document.getElementById("staff-volume-trend-body").innerHTML = data.document_volume_trend
     .map((w) => `<tr><td>${w.week_start}</td><td>${w.count}</td></tr>`)
     .join("");
+}
+
+// ---- Accounting (chart of accounts, journal entries, trial balance) ----
+// See ledger.js on the backend -- every account here is what invoice
+// approval and manual entries below post against.
+
+async function loadAccounts() {
+  await cachedLoad("__accounts__", async () => (await apiFetch("/api/accounts")).json(), renderAccounts);
+}
+
+function renderAccounts(data) {
+  const body = document.getElementById("accounts-body");
+  body.innerHTML = data.items
+    .map(
+      (a) => `
+    <tr>
+      <td>${escapeHtml(a.code)}</td>
+      <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
+      <td>${a.type}</td>
+      <td>${a.active ? "Active" : "Inactive"}</td>
+      <td>${
+        a.active && !a.is_system_account
+          ? `<button type="button" class="account-deactivate-btn" data-account-id="${a.id}">Deactivate</button>`
+          : ""
+      }</td>
+    </tr>
+  `
+    )
+    .join("");
+  body.querySelectorAll(".account-deactivate-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Deactivate this account?", "It stays on past journal entries but won't be selectable for new ones.", {
+        confirmLabel: "Deactivate",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/accounts/${btn.dataset.accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      invalidateCache("__accounts__");
+      invalidateCache("__journal_entry_accounts__");
+      loadAccounts();
+    });
+  });
+}
+
+document.getElementById("account-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("account-create-status");
+  const nameInput = document.getElementById("account-create-name");
+  try {
+    const res = await apiFetch("/api/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: nameInput.value,
+        type: document.getElementById("account-create-type").value,
+        code: document.getElementById("account-create-code").value,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail || "Something went wrong.";
+      return;
+    }
+    statusEl.textContent = "";
+    e.target.reset();
+    invalidateCache("__accounts__");
+    invalidateCache("__journal_entry_accounts__");
+    loadAccounts();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+// Cached separately from __accounts__ above: the manual-entry form only
+// ever needs active accounts to populate its line dropdowns, while the
+// Chart of Accounts tab needs every account (active and not) to manage.
+let journalEntryAccounts = [];
+
+async function loadJournalEntryAccounts() {
+  await cachedLoad(
+    "__journal_entry_accounts__",
+    async () => (await apiFetch("/api/accounts?active=true")).json(),
+    (data) => {
+      journalEntryAccounts = data.items;
+      // Existing line rows keep whatever account they already had selected
+      // (rebuilding options would otherwise reset a row mid-entry) -- new
+      // rows added after this point pick up the fresh list.
+      if (!document.getElementById("je-lines-body").children.length) {
+        addJournalEntryLineRow();
+        addJournalEntryLineRow();
+      }
+    }
+  );
+}
+
+function accountOptionsHtml(selectedId) {
+  return journalEntryAccounts
+    .map((a) => `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+}
+
+function updateJournalEntryBalanceIndicator() {
+  const rows = [...document.getElementById("je-lines-body").querySelectorAll("tr")];
+  let debit = 0;
+  let credit = 0;
+  for (const row of rows) {
+    debit += Number(row.querySelector(".je-debit").value) || 0;
+    credit += Number(row.querySelector(".je-credit").value) || 0;
+  }
+  const indicator = document.getElementById("je-balance-indicator");
+  const diff = Math.round((debit - credit) * 100) / 100;
+  if (diff === 0 && (debit || credit)) {
+    indicator.textContent = `Balanced: ${fmtMoney(debit)}`;
+    indicator.className = "hint";
+  } else {
+    indicator.textContent = `Debits ${fmtMoney(debit)}, credits ${fmtMoney(credit)} -- ${diff > 0 ? "needs more credit" : "needs more debit"} of ${fmtMoney(Math.abs(diff))} to balance.`;
+    indicator.className = "hint kpi-sub-warning";
+  }
+}
+
+function addJournalEntryLineRow() {
+  const body = document.getElementById("je-lines-body");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><select class="je-account" required>${accountOptionsHtml(null)}</select></td>
+    <td><input type="number" class="je-debit" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="number" class="je-credit" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><button type="button" class="je-remove-line linklike">Remove</button></td>
+  `;
+  body.appendChild(row);
+  row.querySelectorAll(".je-debit, .je-credit").forEach((input) => input.addEventListener("input", updateJournalEntryBalanceIndicator));
+  row.querySelector(".je-remove-line").addEventListener("click", () => {
+    row.remove();
+    updateJournalEntryBalanceIndicator();
+  });
+  updateJournalEntryBalanceIndicator();
+}
+
+document.getElementById("je-add-line").addEventListener("click", addJournalEntryLineRow);
+
+document.getElementById("journal-entry-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("journal-entry-status");
+  const rows = [...document.getElementById("je-lines-body").querySelectorAll("tr")];
+  const lines = rows.map((row) => ({
+    account_id: row.querySelector(".je-account").value,
+    debit: Number(row.querySelector(".je-debit").value) || 0,
+    credit: Number(row.querySelector(".je-credit").value) || 0,
+  }));
+
+  try {
+    const res = await apiFetch("/api/journal-entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entry_date: document.getElementById("je-date").value,
+        memo: document.getElementById("je-memo").value,
+        lines,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail || "Something went wrong.";
+      return;
+    }
+    statusEl.textContent = "";
+    e.target.reset();
+    document.getElementById("je-lines-body").innerHTML = "";
+    addJournalEntryLineRow();
+    addJournalEntryLineRow();
+    invalidateCache("__journal_entries__");
+    invalidateCache("__trial_balance__");
+    loadJournalEntries();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+async function loadJournalEntries() {
+  await cachedLoad("__journal_entries__", async () => (await apiFetch("/api/journal-entries")).json(), renderJournalEntries);
+}
+
+const JOURNAL_ENTRY_SOURCE_LABELS = { manual: "Manual", invoice_approval: "Invoice approval", void: "Void" };
+
+function renderJournalEntries(data) {
+  const body = document.getElementById("journal-entries-body");
+  body.innerHTML = data.items
+    .map(
+      (entry) => `
+    <tr>
+      <td>${entry.entry_date}</td>
+      <td>${escapeHtml(entry.memo || "—")}</td>
+      <td>${JOURNAL_ENTRY_SOURCE_LABELS[entry.source] || entry.source}</td>
+      <td>${fmtMoney(entry.total)}</td>
+      <td>${entry.status}</td>
+      <td>${entry.status === "posted" ? `<button type="button" class="je-void-btn" data-entry-id="${entry.id}">Void</button>` : ""}</td>
+    </tr>
+  `
+    )
+    .join("");
+  body.querySelectorAll(".je-void-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Void this journal entry?", "Posts a reversing entry; the original stays on the books for reference.", {
+        confirmLabel: "Void",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/journal-entries/${btn.dataset.entryId}/void`, { method: "POST" });
+      invalidateCache("__journal_entries__");
+      invalidateCache("__trial_balance__");
+      loadJournalEntries();
+    });
+  });
+}
+
+async function loadTrialBalance() {
+  await cachedLoad("__trial_balance__", async () => (await apiFetch("/api/ledger/trial-balance")).json(), renderTrialBalance);
+}
+
+function renderTrialBalance(data) {
+  document.getElementById("trial-balance-body").innerHTML = data.accounts
+    .map(
+      (a) => `
+    <tr>
+      <td>${escapeHtml(a.code)}</td>
+      <td>${escapeHtml(a.name)}</td>
+      <td>${a.type}</td>
+      <td>${a.debit ? fmtMoney(a.debit) : ""}</td>
+      <td>${a.credit ? fmtMoney(a.credit) : ""}</td>
+    </tr>
+  `
+    )
+    .join("");
+  document.getElementById("trial-balance-total-debit").textContent = fmtMoney(data.total_debit);
+  document.getElementById("trial-balance-total-credit").textContent = fmtMoney(data.total_credit);
+
+  const banner = document.getElementById("trial-balance-banner");
+  banner.textContent = data.balanced ? "Balanced." : "Not balanced -- this shouldn't happen; please contact support.";
+  banner.className = data.balanced ? "hint" : "hint kpi-sub-warning";
 }
 
 // ---- Init ----
