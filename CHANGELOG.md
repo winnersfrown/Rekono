@@ -4,6 +4,37 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.18
+
+Added a global "slow network" loading indicator -- a thin bar at the top
+of the page that appears whenever a request is genuinely taking a while,
+so a click on bad wifi reads as "working on it" instead of "did that
+register at all?"
+
+Deliberately not a spinner on every click regardless of speed: the bar
+only appears once a request has been in flight for 250ms, so a normal
+connection never sees it (auth endpoints are an expected exception --
+bcrypt's deliberate cost means even signup/login on a fast connection
+takes a couple hundred ms, and the bar reflects that honestly rather than
+special-casing it away). It creeps toward 80% width over a few seconds
+while waiting, then jumps to 100% and fades out the moment the response
+actually lands, rather than sitting frozen at some arbitrary point.
+
+Implemented by wrapping `window.fetch` itself once in `auth.js`, not by
+touching `apiFetch` or any individual button handler -- this covers every
+request in the app uniformly, including the pre-login screens' direct
+`fetch()` calls (sign in, create account, password reset) that run before
+`apiFetch`'s bearer-token wrapping even applies, with no per-call-site
+plumbing to add or forget on the next feature.
+
+Verified live in a browser rather than with a new Jest suite: this
+codebase's frontend (`backend/public/`) has never had jsdom test
+coverage, and introducing one just for a single small feature would be
+more infrastructure than the feature warrants. Confirmed instead that a
+normal-speed request never shows the bar, an artificially delayed one
+(simulating bad wifi) does, and it correctly resets to hidden once the
+response lands.
+
 ## v1.17
 
 Added an optional AWS S3 + SQS backend, so this app can run on more than

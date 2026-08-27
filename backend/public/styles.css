@@ -120,6 +120,33 @@ body::after {
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; color: var(--paper); }
 
+/* ---------- global network loading bar ---------- */
+/* Controlled entirely from JS (auth.js's beginNetworkRequest/
+   endNetworkRequest) -- width and the show/hide transition duration are
+   both set inline there, since a "creep slowly while waiting, then finish
+   fast once the response lands" bar needs two different transition
+   speeds, not one fixed one a stylesheet rule alone can express. This
+   block only owns what never changes: position, sizing, and color. */
+#network-loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px rgba(75, 134, 247, 0.55);
+  opacity: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+#network-loading-bar.is-visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  /* The bar itself still appears (it's information, not decoration) -- only
+     the slow creep-toward-80% motion is removed, same reasoning as the
+     dashboard's kpi-pulse skeleton animation above. */
+  #network-loading-bar { transition: opacity 0.15s ease !important; }
+}
+
 /* ---------- brand / logomark ---------- */
 .brand {
   font-family: var(--font-display);
