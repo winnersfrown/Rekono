@@ -201,6 +201,16 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/statements/profit-and-loss` | Revenue, expenses, and net income over `?from=`/`?to=` (defaults to year-to-date). Accrual basis |
 | `GET /api/statements/balance-sheet` | Assets, liabilities, and equity as of `?as_of=` (defaults to today), splitting derived prior-year retained earnings from current-year earnings, plus the fiscal year in effect and whether it balances |
 | `GET /api/statements/cash-flow` | Cash movement over `?from=`/`?to=`, split into operating/investing/financing, plus whether it reconciles |
+| `GET /api/customers` | List the org's customers, optionally `?active=true` |
+| `POST /api/customers` | `{name, email?, payment_terms_days?}` -- add a customer. Rejects a duplicate name |
+| `PATCH /api/customers/:id` | Rename, re-term, or deactivate a customer |
+| `GET /api/customer-invoices` | Paginated list of issued invoices, filterable by `?status=`/`?customer_id=`, each with amount paid and outstanding |
+| `POST /api/customer-invoices` | `{customer_id, issue_date, due_date?, lines:[{revenue_account_id, quantity, unit_price}]}` -- creates a **draft**. Due date defaults from the customer's net terms |
+| `GET /api/customer-invoices/:id` | One invoice with its full line detail |
+| `POST /api/customer-invoices/:id/send` | Draft → sent. Posts Debit Accounts Receivable / Credit each line's revenue account |
+| `POST /api/customer-invoices/:id/void` | Reverses the invoice off the books. Refused if payments exist against it |
+| `POST /api/customer-invoices/:id/payments` | `{amount, payment_date, deposit_account_id}` -- records cash received. Posts Debit deposit / Credit AR, and flips the invoice to `paid` once settled. Overpayment and depositing into AR itself are both refused |
+| `GET /api/reports/ar-aging` | What customers owe, bucketed current / 1-30 / 31-60 / 61-90 / 90+ days past due as of `?as_of=` |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -472,6 +482,20 @@ One deliberate exception: invoice approval must never *fail* because the ledger 
 
 Building these surfaced a latent bug in v1.20's trial balance: it filtered to `status: "posted"`, which dropped a voided entry while keeping the reversing entry that cancels it, leaving the account showing the exact *negative* of the voided amount. It stayed invisible in that report because a reversal is itself balanced, so its `balanced` flag never went false. Both the statements and the trial balance now include voided entries alongside their reversals, which is what nets them to zero — and because a reversal carries its own (later) date, an entry voided in a subsequent period correctly reverses in the period it was corrected rather than rewriting history.
 
+### Accounts receivable
+
+`accountsReceivable.js` is the mirror image of the AP pipeline this app started as. Where an approved vendor bill posts Debit expense / Credit Accounts Payable, issuing a customer invoice posts **Debit Accounts Receivable / Credit revenue**, and recording a payment posts **Debit the deposit account / Credit Accounts Receivable**. Everything routes through `ledger.js`'s `postJournalEntry`, so AR inherits the same guarantees as everything else: balanced entries only, closed periods refused, corrections as reversals.
+
+Four models: `Customer` (a real table rather than a name string — payment terms and the aging report both need a stable identity), `CustomerInvoice`, `CustomerInvoiceLine` (each line names its own revenue account, so the P&L's revenue section stays broken out rather than collapsing into one lump), and `CustomerPayment` (its own table because partial payments are normal and each is a dated event the cash flow statement needs).
+
+**A draft is not a receivable.** An invoice affects nothing until it's sent — no revenue, no AR, nothing on any statement. That's how real AR software works: you build an invoice before committing to it. Sending is the moment it hits the books, and from then on it's immutable, same reasoning as a posted journal entry. Amounts are integer cents throughout, matching `JournalLine` rather than the AP `Invoice`'s FLOAT, because these have to tie out to a journal entry exactly.
+
+Invoice numbers are sequential per org (`INV-0001`), derived from the highest existing number rather than a stored counter — a deliberate simplicity trade, since the only way it collides is two people creating an invoice in the same millisecond.
+
+**AR aging** buckets outstanding balances by days past the *due* date (current / 1-30 / 31-60 / 61-90 / 90+), which is what makes it a collections tool rather than a list sorted by age. Drafts, paid invoices, and voided invoices are all excluded; a partially paid invoice ages only its outstanding balance.
+
+Building this surfaced a bug in v1.21's cash flow classifier. It bucketed by account *type* alone, so collecting a receivable (an asset) read as **investing** and paying down a payable (a liability) read as **financing**. Both are plainly operating activities — investing means buying and selling long-term assets, financing means raising and returning capital, and neither describes collecting what you're owed or settling what you owe. `financialStatements.js` now special-cases the `accounts_receivable`/`accounts_payable` subtypes, with tests pinning both directions.
+
 ### Staff / cross-org usage dashboard
 
 `GET /api/staff/overview` and the app shell's "Staff" nav tab are Rekono's own team's view of the product -- not a customer feature. It answers "how is Rekono doing" (org counts and plan mix, a signup trend, an activation funnel from signup through a first approved document, document volume, and subscription health), never a way to read any single customer's actual documents, vendor names, or dollar amounts. Demo orgs (`Organization.isDemo`) and seeded sample invoices (`Invoice.isSampleData`, see below) are excluded from every figure so they don't inflate the numbers with activity nobody actually did.
@@ -486,11 +510,11 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
+- **AP bill payment posting**: the AR side posts cash payments to the ledger; the AP side still marks invoices paid via the QuickBooks reconciliation flow without a corresponding journal entry. Closing that asymmetry is the natural companion to this release.
 - **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
-- **Accounts receivable / customer invoicing**: creating and sending invoices to customers, tracking their payments -- the ledger currently only has a debit/credit story for AP (bills owed), not AR (money owed to the org).
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.
-- **Dashboard**: exceptions queue, reconciliation status, aging report, once there's enough volume for those views to matter.
+- **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR aging shipped with accounts receivable, above.)
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.
 - **Compliance**: audit logging exists from day one; formal data retention policy and SOC 2 groundwork come with the first real customer conversations.

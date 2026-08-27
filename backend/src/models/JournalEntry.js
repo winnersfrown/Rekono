@@ -8,7 +8,13 @@ import { newId } from "./idDefault.js";
 // values get added as later phases wire up more triggers (bank import,
 // bill payment, ...); a fixed enum rather than free text so the source
 // column stays meaningful for reporting/filtering as that list grows.
-export const JOURNAL_ENTRY_SOURCES = ["manual", "invoice_approval", "void"];
+export const JOURNAL_ENTRY_SOURCES = [
+  "manual",
+  "invoice_approval", // AP: a vendor bill was approved
+  "customer_invoice", // AR: an invoice was issued to a customer
+  "customer_payment", // AR: a customer paid
+  "void",
+];
 
 // Posted entries are immutable by design, same reasoning real bookkeeping
 // uses: a mistake is corrected with a reversing entry (ledger.js's

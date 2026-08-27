@@ -4,6 +4,72 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.23
+
+Accounts receivable -- customers, customer invoices, payments, and the AR
+aging report. Phase 4 of the accounting pivot, and the half of the ledger
+that was missing: until now Rekono could only record money going *out*.
+
+- **Customers** are a real table rather than a name string on each invoice
+  (the shape the AP side's `Invoice.vendorName` uses). A customer carries
+  payment terms and a billing email that every invoice inherits, and the
+  aging report groups by customer -- which free text makes unreliable the
+  first time someone types "Acme Inc." one place and "Acme, Inc" another.
+- **Customer invoices** are draft until sent. A draft posts nothing --
+  it isn't a receivable yet and has no business touching revenue. Sending
+  posts Debit Accounts Receivable / Credit revenue, one credit line per
+  revenue account so the P&L keeps the breakout the invoice was written
+  with. Numbers are sequential per org (`INV-0001`), derived from the
+  highest existing rather than a stored counter.
+- **Payments** post Debit [deposit account] / Credit Accounts Receivable,
+  dated to the payment date rather than today so the cash flow statement
+  attributes the money to the period it actually arrived in. An invoice
+  becomes `paid` once payments cover it and drops back to `sent` if one is
+  removed -- derived from the payments, so the two can't disagree.
+  Overpayment is refused rather than silently creating a credit balance.
+- **AR aging** buckets outstanding invoices by days past *due* (not days
+  since issue) into Current / 1-30 / 31-60 / 61-90 / 90+, grouped by
+  customer. That's what makes it a collections tool rather than a list
+  sorted by age.
+- Everything posts through `postJournalEntry`, so AR inherits the same
+  guarantees as the rest of the ledger for free: balanced entries only,
+  closed periods refused, voids as reversing entries. Voiding an invoice
+  that already has payments against it is refused -- unapply the payments
+  first.
+- Two consistency guards on the payment path, both for failure modes the
+  ledger's own checks can't see. The payment row has to exist before the
+  journal entry can name it as its source, so a posting the ledger refuses
+  (a closed period, most likely) now deletes the row on the way out --
+  otherwise a refused payment still counted as collected in the aging
+  report. And Accounts Receivable is refused as a deposit account: Debit AR
+  / Credit AR balances, passes every check, and moves nothing, which would
+  leave an invoice marked paid against an entry that did nothing.
+
+**Bug fix in the cash flow statement.** v1.21 classified cash movements by
+the counter-account's *type*, which meant collecting a receivable read as
+an investing activity (AR is an asset) and paying a vendor bill would read
+as financing (AP is a liability). Both are plainly operating: investing is
+buying and selling long-term assets, financing is raising and returning
+capital, and neither describes collecting what you're owed or settling
+what you owe. Now matched on subtype first, with tests pinning both sides.
+The bug was invisible before AR existed, because nothing yet moved cash
+against either account.
+
+**Layout fix for the line-item forms.** The global `form { display: flex }`
+rule is written for one-row forms, and applied to a form built out of
+repeating line items it laid the header fields, the line table and the
+buttons out side by side in a single row -- so the table spilled out of its
+panel and the submit button ended up off the right edge of the page. v1.20
+shipped the manual journal entry form in that state and it was never caught
+in a browser; the new invoice form would have been the second. Both now use
+a shared `.line-item-form` layout: header fields wrap in a row above the
+table, the table scrolls inside its own box on a narrow window instead of
+widening the page, and the add-line control, running total and submit
+button share a footer row. Recording a payment also moved off a
+`window.prompt` onto a real modal, since it needs three answers and the
+old flow silently picked the first asset account it found as the deposit
+account.
+
 ## v1.22
 
 Closed the two real gaps in v1.21's balance sheet: it conflated prior-year

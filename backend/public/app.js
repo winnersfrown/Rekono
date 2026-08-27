@@ -229,6 +229,9 @@ function switchTab(name) {
   if (name === "profitandloss") loadProfitAndLoss();
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
+  if (name === "customers") loadCustomers();
+  if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
+  if (name === "araging") loadArAging();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4545,6 +4548,360 @@ function renderCashFlow(data) {
 document.getElementById("cf-period-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadCashFlow();
+});
+
+// ---- Receivables (customers, customer invoices, AR aging) ----
+// The AR side of the ledger -- see accountsReceivable.js on the backend.
+// Money coming in, as opposed to the Documents tabs' AP pipeline.
+
+async function loadCustomers() {
+  await cachedLoad("__customers__", async () => (await apiFetch("/api/customers")).json(), renderCustomers);
+}
+
+function renderCustomers(data) {
+  const body = document.getElementById("customers-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="5" class="table-empty-row">No customers yet -- add one above to start invoicing.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (c) => `
+    <tr>
+      <td>${escapeHtml(c.name)}</td>
+      <td>${escapeHtml(c.email || "—")}</td>
+      <td>Net ${c.payment_terms_days}</td>
+      <td>${c.active ? "Active" : "Inactive"}</td>
+      <td>${c.active ? `<button type="button" class="customer-deactivate-btn" data-customer-id="${c.id}">Deactivate</button>` : ""}</td>
+    </tr>
+  `
+    )
+    .join("");
+  body.querySelectorAll(".customer-deactivate-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Deactivate this customer?", "Their past invoices stay exactly as they are; you just won't be able to bill them again.", {
+        confirmLabel: "Deactivate",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/customers/${btn.dataset.customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      invalidateCache("__customers__");
+      loadCustomers();
+    });
+  });
+}
+
+document.getElementById("customer-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("customer-create-status");
+  try {
+    const res = await apiFetch("/api/customers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: document.getElementById("customer-create-name").value,
+        email: document.getElementById("customer-create-email").value,
+        payment_terms_days: Number(document.getElementById("customer-create-terms").value) || 30,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail || "Something went wrong.";
+      return;
+    }
+    statusEl.textContent = "";
+    e.target.reset();
+    document.getElementById("customer-create-terms").value = "30";
+    invalidateCache("__customers__");
+    loadCustomers();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+// The new-invoice form needs both active customers and revenue accounts to
+// populate its dropdowns -- fetched together so the form is never half
+// usable.
+let ciCustomers = [];
+let ciRevenueAccounts = [];
+let ciAllAccounts = [];
+
+async function loadCustomerInvoiceFormData() {
+  await cachedLoad(
+    "__ci_form_data__",
+    async () => {
+      const [customers, accounts] = await Promise.all([
+        apiFetch("/api/customers?active=true").then((r) => r.json()),
+        apiFetch("/api/accounts?active=true").then((r) => r.json()),
+      ]);
+      return { customers: customers.items, accounts: accounts.items };
+    },
+    ({ customers, accounts }) => {
+      ciCustomers = customers;
+      ciAllAccounts = accounts;
+      // Invoice lines can only bill revenue; payments can only land in an
+      // asset account. Both come off this one fetch.
+      ciRevenueAccounts = accounts.filter((a) => a.type === "revenue");
+      document.getElementById("ci-customer").innerHTML = customers
+        .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+        .join("");
+      if (!document.getElementById("ci-lines-body").children.length) addCustomerInvoiceLineRow();
+    }
+  );
+}
+
+function revenueOptionsHtml() {
+  return ciRevenueAccounts
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+}
+
+function updateCustomerInvoiceTotal() {
+  const rows = [...document.getElementById("ci-lines-body").querySelectorAll("tr")];
+  const total = rows.reduce((sum, row) => {
+    const qty = Number(row.querySelector(".ci-qty").value) || 0;
+    const price = Number(row.querySelector(".ci-price").value) || 0;
+    return sum + qty * price;
+  }, 0);
+  document.getElementById("ci-total-indicator").textContent = `Invoice total: ${fmtMoney(total)}`;
+}
+
+function addCustomerInvoiceLineRow() {
+  const body = document.getElementById("ci-lines-body");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><select class="ci-account" required>${revenueOptionsHtml()}</select></td>
+    <td><input type="text" class="ci-desc" maxlength="512" placeholder="What are you billing for?" /></td>
+    <td><input type="number" class="ci-qty" step="0.01" min="0" value="1" /></td>
+    <td><input type="number" class="ci-price" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><button type="button" class="ci-remove-line linklike">Remove</button></td>
+  `;
+  body.appendChild(row);
+  row.querySelectorAll(".ci-qty, .ci-price").forEach((i) => i.addEventListener("input", updateCustomerInvoiceTotal));
+  row.querySelector(".ci-remove-line").addEventListener("click", () => {
+    row.remove();
+    updateCustomerInvoiceTotal();
+  });
+  updateCustomerInvoiceTotal();
+}
+
+document.getElementById("ci-add-line").addEventListener("click", addCustomerInvoiceLineRow);
+
+document.getElementById("customer-invoice-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("customer-invoice-status");
+  const rows = [...document.getElementById("ci-lines-body").querySelectorAll("tr")];
+  try {
+    const res = await apiFetch("/api/customer-invoices", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_id: document.getElementById("ci-customer").value,
+        issue_date: document.getElementById("ci-issue-date").value,
+        memo: document.getElementById("ci-memo").value,
+        lines: rows.map((row) => ({
+          revenue_account_id: row.querySelector(".ci-account").value,
+          description: row.querySelector(".ci-desc").value,
+          quantity: Number(row.querySelector(".ci-qty").value) || 0,
+          unit_price: Number(row.querySelector(".ci-price").value) || 0,
+        })),
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail?.[0]?.message || body.detail || "Something went wrong.";
+      return;
+    }
+    statusEl.textContent = `Created ${body.invoice_number} as a draft. Send it to put it on the books.`;
+    document.getElementById("ci-lines-body").innerHTML = "";
+    addCustomerInvoiceLineRow();
+    document.getElementById("ci-memo").value = "";
+    invalidateCache("__customer_invoices__");
+    loadCustomerInvoices();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+async function loadCustomerInvoices() {
+  await cachedLoad("__customer_invoices__", async () => (await apiFetch("/api/customer-invoices")).json(), renderCustomerInvoices);
+}
+
+function renderCustomerInvoices(data) {
+  const body = document.getElementById("customer-invoices-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No invoices yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (inv) => `
+    <tr>
+      <td>${escapeHtml(inv.invoice_number)}</td>
+      <td>${escapeHtml(inv.customer_name || "—")}</td>
+      <td>${inv.issue_date}</td>
+      <td>${inv.due_date}</td>
+      <td>${fmtMoney(inv.total)}</td>
+      <td>${fmtMoney(inv.amount_outstanding)}</td>
+      <td>${inv.status}</td>
+      <td>
+        ${inv.status === "draft" ? `<button type="button" class="ci-send-btn" data-id="${inv.id}">Send</button>` : ""}
+        ${inv.status === "sent" ? `<button type="button" class="ci-pay-btn" data-id="${inv.id}" data-outstanding="${inv.amount_outstanding}">Record payment</button>` : ""}
+        ${["draft", "sent"].includes(inv.status) ? `<button type="button" class="ci-void-btn linklike" data-id="${inv.id}">Void</button>` : ""}
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  async function act(id, path, body) {
+    const res = await apiFetch(`/api/customer-invoices/${id}/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const parsed = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      await alertDialog("Couldn't complete that", parsed.detail || "Something went wrong.");
+      return false;
+    }
+    invalidateCache("__customer_invoices__");
+    invalidateCache("__ar_aging__");
+    loadCustomerInvoices();
+    return true;
+  }
+
+  body.querySelectorAll(".ci-send-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Send this invoice?", "It becomes a receivable and posts to your books. Sent invoices can't be edited.", {
+        confirmLabel: "Send",
+      });
+      if (confirmed) await act(btn.dataset.id, "send");
+    })
+  );
+
+  body.querySelectorAll(".ci-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Void this invoice?", "If it was already sent, this posts a reversing entry. The invoice stays on record either way.", {
+        confirmLabel: "Void",
+        danger: true,
+      });
+      if (confirmed) await act(btn.dataset.id, "void");
+    })
+  );
+
+  body.querySelectorAll(".ci-pay-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const payment = await paymentDialog(Number(btn.dataset.outstanding));
+      if (!payment) return;
+      await act(btn.dataset.id, "payments", payment);
+    })
+  );
+}
+
+// Where a customer payment can land. Asset accounts, minus Accounts
+// Receivable itself -- depositing into AR posts Debit AR / Credit AR, which
+// balances, passes every check the ledger makes, and does nothing at all.
+// It has to be excluded here rather than left to the user to avoid, since
+// nothing downstream would flag it.
+function ciDepositAccounts() {
+  return ciAllAccounts.filter((a) => a.type === "asset" && a.subtype !== "accounts_receivable");
+}
+
+// Resolves to the payment body to POST, or null if dismissed. Modeled on
+// confirmDialog above -- same overlay, same promise shape -- but with a
+// form, because a payment needs three answers and picking the deposit
+// account for the user is a posting decision made behind their back.
+let paymentModalResolve = null;
+
+async function paymentDialog(outstanding) {
+  const accounts = ciDepositAccounts();
+  if (!accounts.length) {
+    await alertDialog("No deposit account", "Add an asset account for the bank you were paid into first.");
+    return null;
+  }
+
+  document.getElementById("payment-modal-message").textContent = `Outstanding balance is ${fmtMoney(outstanding)}.`;
+  document.getElementById("payment-modal-amount").value = outstanding.toFixed(2);
+  document.getElementById("payment-modal-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("payment-modal-account").innerHTML = accounts
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+  const errorEl = document.getElementById("payment-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("payment-modal").style.display = "flex";
+  document.getElementById("payment-modal-amount").focus();
+
+  return new Promise((resolve) => {
+    paymentModalResolve = resolve;
+  });
+}
+
+function closePaymentModal(result) {
+  document.getElementById("payment-modal").style.display = "none";
+  if (paymentModalResolve) {
+    paymentModalResolve(result);
+    paymentModalResolve = null;
+  }
+}
+
+document.getElementById("payment-modal-cancel").addEventListener("click", () => closePaymentModal(null));
+
+document.getElementById("payment-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const amount = Number(document.getElementById("payment-modal-amount").value);
+  const errorEl = document.getElementById("payment-modal-error");
+  if (!(amount > 0)) {
+    errorEl.textContent = "Enter an amount greater than zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  closePaymentModal({
+    amount,
+    payment_date: document.getElementById("payment-modal-date").value,
+    deposit_account_id: document.getElementById("payment-modal-account").value,
+  });
+});
+
+async function loadArAging() {
+  const asOfEl = document.getElementById("ar-as-of");
+  if (!asOfEl.value) asOfEl.value = new Date().toISOString().slice(0, 10);
+  renderArAging(await (await apiFetch(`/api/reports/ar-aging?as_of=${asOfEl.value}`)).json());
+}
+
+const AR_BUCKET_KEYS = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"];
+
+function renderArAging(data) {
+  const body = document.getElementById("ar-aging-body");
+  if (!data.customers.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">Nothing outstanding — every sent invoice is paid.</td></tr>`;
+  } else {
+    body.innerHTML = data.customers
+      .map(
+        (row) => `
+      <tr>
+        <td>${escapeHtml(row.customer_name)}</td>
+        ${AR_BUCKET_KEYS.map((k) => `<td>${row[k] ? fmtMoney(row[k]) : ""}</td>`).join("")}
+        <td>${fmtMoney(row.total)}</td>
+      </tr>
+    `
+      )
+      .join("");
+  }
+  document.getElementById("ar-aging-totals").innerHTML =
+    `<th>Total</th>${AR_BUCKET_KEYS.map((k) => `<th>${fmtMoney(data.totals[k])}</th>`).join("")}<th>${fmtMoney(
+      data.totals.total
+    )}</th>`;
+}
+
+document.getElementById("ar-aging-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadArAging();
 });
 
 // ---- Init ----

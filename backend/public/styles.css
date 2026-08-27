@@ -448,6 +448,66 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
   color: var(--muted);
 }
 
+/* Forms that compose a document out of repeating line items -- the manual
+   journal entry and the customer invoice. The global `form { display: flex }`
+   is for one-row forms; applied to these it lays the header fields, the line
+   table and the buttons out side by side in a single row, which spills the
+   table straight out of its panel and pushes the submit button off the page.
+   Same override .auth-panel and #onboarding-personalize-form already make,
+   with the section layout these two need on top of it. */
+.line-item-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.9rem;
+}
+
+/* `.panel`'s 720px cap suits the simple two-or-three-field forms it was
+   written for, but a line editor is a document -- it wants the same width
+   as the table of saved documents below it. */
+.panel:has(.line-item-form) { max-width: none; }
+
+/* Header fields (date, customer, memo) share one wrapping row above the
+   table rather than each taking a full line of their own. */
+.line-item-fields label {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.line-item-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem 1.2rem;
+  align-items: flex-end;
+}
+
+/* The line table can outgrow the panel on a narrow window (five columns on
+   the invoice), so it scrolls inside its own box instead of widening the
+   page. */
+.line-item-table { overflow-x: auto; }
+.line-item-table table { margin: 0; min-width: 560px; }
+
+.line-item-form .line-item-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.line-item-form .line-item-footer .hint { margin: 0; }
+/* The status line only has text after a submit -- without this it still
+   takes a row's worth of height under the buttons, and the panel looks
+   like it has a stray empty section at the bottom. */
+.line-item-form > .hint:empty { display: none; }
+/* Pushes the submit button to the far end, so the running total sits with
+   the "add line" control and the commit action stays visually separate. */
+.line-item-form .line-item-footer .line-item-submit { margin-left: auto; }
+
 .export-options { display: flex; gap: 1rem; flex-wrap: wrap; max-width: 720px; }
 .export-card {
   flex: 1 1 260px;

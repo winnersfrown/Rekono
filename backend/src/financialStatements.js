@@ -224,6 +224,21 @@ const CATEGORY_BY_COUNTER_TYPE = {
   asset: "investing",
 };
 
+// Working-capital accounts, which the type-based rule above gets wrong.
+// Accounts Receivable is an asset and Accounts Payable is a liability, so
+// by type alone collecting from a customer would read as *investing* and
+// paying a vendor as *financing*. Both are plainly operating activities --
+// investing means buying and selling long-term assets, financing means
+// raising and returning capital, and neither describes collecting what
+// you're owed or settling what you owe. Matched on subtype, which
+// ledger.js's seeded chart of accounts already sets on both.
+const OPERATING_SUBTYPES = new Set(["accounts_receivable", "accounts_payable"]);
+
+function cashFlowCategoryFor(account) {
+  if (OPERATING_SUBTYPES.has(account.subtype)) return "operating";
+  return CATEGORY_BY_COUNTER_TYPE[account.type] || "operating";
+}
+
 export async function computeCashFlow(orgId, { from = null, to = null } = {}) {
   const { accountsById, lines } = await loadLines(orgId, { from, to });
 
@@ -250,7 +265,7 @@ export async function computeCashFlow(orgId, { from = null, to = null } = {}) {
       // debit/credit: cash going out (credit cash) pairs with a debit
       // somewhere else, and that debit is what the cash was spent on.
       const cashEffectCents = line.creditCents - line.debitCents;
-      const category = CATEGORY_BY_COUNTER_TYPE[account.type] || "operating";
+      const category = cashFlowCategoryFor(account);
       categories[category] += cashEffectCents;
     }
   }

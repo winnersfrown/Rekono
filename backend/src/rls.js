@@ -39,6 +39,9 @@ const DIRECT_ORG_TABLES = [
   "audit_logs",
   "close_periods",
   "close_tasks",
+  "customer_invoices",
+  "customer_payments",
+  "customers",
   "dismissed_bank_transactions",
   "expense_receipts",
   "invites",
@@ -59,6 +62,7 @@ const DIRECT_ORG_TABLES = [
 // The EXISTS subquery is itself subject to the parent's policy, so these
 // need no org predicate: if the parent row is invisible, so is the child.
 const DERIVED_TABLES = {
+  customer_invoice_lines: `EXISTS (SELECT 1 FROM customer_invoices p WHERE p.id = customer_invoice_lines."customerInvoiceId")`,
   journal_lines: `EXISTS (SELECT 1 FROM journal_entries p WHERE p.id = journal_lines."journalEntryId")`,
   line_items: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = line_items."invoiceId")`,
   match_results: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = match_results."invoiceId")`,
