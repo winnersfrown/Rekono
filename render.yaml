@@ -18,6 +18,9 @@
 #      failed with a clear "please re-upload this document" message -- so it
 #      never sits stuck on "processing" forever, but the source file/preview
 #      for anything uploaded before a restart is still gone for good.
+#      Setting AWS_S3_BUCKET below removes this tradeoff entirely, even on
+#      this single free instance -- see README's "Scaling past one
+#      instance" section.
 #   2. Free web services spin down after 15 minutes of no requests and
 #      cold-start (10-30s) on the next one. A request that lands right as
 #      the service is spinning down mid-extraction gets recovered on the
@@ -71,3 +74,15 @@ services:
         sync: false # optional -- enables the Settings tab's QuickBooks integration
       - key: QUICKBOOKS_CLIENT_SECRET
         sync: false # optional, pairs with QUICKBOOKS_CLIENT_ID -- see README's "QuickBooks Online (Phase 1)" section
+      # Optional escape hatch for both this plan's ephemeral-disk problem
+      # (point 1 above) and running more than one instance -- see README's
+      # "Scaling past one instance (AWS S3 + SQS)" section. Leave unset to
+      # keep today's local-disk/in-process-queue behavior; set AWS_S3_BUCKET
+      # alone to stop losing uploaded files on restart even on this single
+      # free instance, or set both to actually scale to more than one.
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: AWS_SQS_QUEUE_URL
+        sync: false

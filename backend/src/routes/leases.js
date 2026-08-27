@@ -6,7 +6,6 @@
 // only, plus the same expiring-soon filter vendor documents have, extended
 // to also catch a renewal-option notice deadline coming up -- missing that
 // deadline forfeits the option even though the lease itself hasn't expired.
-import fs from "node:fs/promises";
 import multer from "multer";
 import { Router } from "express";
 import { Op, fn, col, where as sequelizeWhere } from "sequelize";
@@ -15,7 +14,15 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import * as jobs from "../jobs.js";
-import { MAX_UPLOAD_BYTES, canonicalContentType, upload } from "../storage.js";
+import {
+  MAX_UPLOAD_BYTES,
+  canonicalContentType,
+  deleteStoredFile,
+  discardRejectedUpload,
+  documentUpload,
+  saveDocumentUpload,
+  sendStoredFile,
+} from "../storage.js";
 import { AuditLog, Lease } from "../models/index.js";
 import { serializeAuditLog, serializeLeaseDetail, serializeLeaseListItem } from "../serializers.js";
 import { documentsUsedThisMonth } from "../documentUsage.js";
@@ -107,7 +114,7 @@ router.get("/api/leases", requireAuth, requireActivePlan, async (req, res, next)
 // Multer errors (e.g. LIMIT_FILE_SIZE) happen inside upload.single() itself
 // -- same handling as ingestion.js's handleUpload.
 function handleUpload(req, res, next) {
-  upload.single("file")(req, res, (err) => {
+  documentUpload.single("file")(req, res, (err) => {
     if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
       const maxMb = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
       return res.status(413).json({ detail: `File too large. Maximum size is ${maxMb}MB.` });
@@ -130,7 +137,7 @@ router.post("/api/leases/upload", requireAuth, requireActivePlan, handleUpload, 
     if (plan) {
       const uploadedThisMonth = await documentsUsedThisMonth(req.currentUser.orgId);
       if (uploadedThisMonth >= plan.docCapPerMonth) {
-        await fs.rm(req.file.path, { force: true });
+        await discardRejectedUpload(req.file);
         return res.status(402).json({
           detail: `You've reached your ${plan.name} plan's limit of ${plan.docCapPerMonth} documents this month. Upgrade your plan to upload more.`,
           plan_cap_reached: true,
@@ -140,7 +147,7 @@ router.post("/api/leases/upload", requireAuth, requireActivePlan, handleUpload, 
 
     const contentType = canonicalContentType(req.file.originalname);
     if (!contentType) {
-      await fs.rm(req.file.path, { force: true });
+      await discardRejectedUpload(req.file);
       return res.status(422).json({
         detail: `Unsupported file type: ${req.file.originalname} (${req.file.mimetype}). Rekono accepts PDF or image files (png/jpg/tiff/bmp/webp).`,
       });
@@ -149,7 +156,7 @@ router.post("/api/leases/upload", requireAuth, requireActivePlan, handleUpload, 
     const lease = await Lease.create({
       orgId: req.currentUser.orgId,
       originalFilename: req.file.originalname || "upload",
-      storagePath: req.file.path,
+      storagePath: await saveDocumentUpload(req.file, contentType),
       contentType,
       status: "queued",
     });
@@ -185,17 +192,7 @@ router.get("/api/leases/:id/file", requireAuth, requireActivePlan, async (req, r
   try {
     const lease = await getOwnedLease(req.params.id, req.currentUser.orgId);
     if (!lease) return res.status(404).json({ detail: "Lease not found" });
-    res.sendFile(
-      lease.storagePath,
-      { headers: { "Content-Type": lease.contentType || "application/octet-stream" } },
-      (err) => {
-        if (!err) return;
-        if (err.code === "ENOENT") {
-          return res.status(404).json({ detail: "This document's source file is no longer available on the server." });
-        }
-        next(err);
-      }
-    );
+    await sendStoredFile(lease.storagePath, lease.contentType, res, next);
   } catch (err) {
     next(err);
   }
@@ -343,11 +340,7 @@ router.delete("/api/leases/:id", requireAuth, requireActivePlan, async (req, res
       details: { original_filename: lease.originalFilename, status: lease.status },
     });
 
-    if (lease.storagePath) {
-      await fs.unlink(lease.storagePath).catch((err) => {
-        if (err.code !== "ENOENT") console.error(`Failed to remove file for deleted lease ${lease.id}:`, err.message);
-      });
-    }
+    await deleteStoredFile(lease.storagePath, `lease ${lease.id}`);
 
     await lease.destroy();
     res.json({ ok: true });
