@@ -317,6 +317,27 @@
             </div>
 
             <div class="topnav-group">
+              <button type="button" class="topnav-trigger" data-menu="receivables" aria-expanded="false" aria-haspopup="true">
+                Receivables
+                <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="topnav-menu" data-menu-for="receivables" hidden>
+          <button class="tab-btn" data-tab="customers">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+            Customers
+          </button>
+          <button class="tab-btn" data-tab="customerinvoices">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15h6"/></svg>
+            Customer Invoices
+          </button>
+          <button class="tab-btn" data-tab="araging">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            AR Aging
+          </button>
+              </div>
+            </div>
+
+            <div class="topnav-group">
               <button type="button" class="topnav-trigger" data-menu="accounting" aria-expanded="false" aria-haspopup="true">
                 Accounting
                 <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1106,6 +1127,70 @@
           </div>
         </section>
 
+        <section id="tab-customers" class="tab-panel">
+          <h1>Customers</h1>
+          <p class="hint">Who you bill. Payment terms here set the default due date on every invoice for them.</p>
+          <div class="panel">
+            <h3>Add a customer</h3>
+            <form id="customer-create-form">
+              <label>Name<input type="text" id="customer-create-name" maxlength="256" required /></label>
+              <label>Email<input type="email" id="customer-create-email" /></label>
+              <label>Net terms (days)<input type="number" id="customer-create-terms" min="0" max="365" value="30" /></label>
+              <button type="submit">Add customer</button>
+            </form>
+            <div id="customer-create-status" class="hint"></div>
+          </div>
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Terms</th><th>Status</th><th></th></tr></thead>
+            <tbody id="customers-body"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-customerinvoices" class="tab-panel">
+          <h1>Customer Invoices</h1>
+          <p class="hint">Invoices you issue. A draft affects nothing until you send it -- sending is what puts it on the books as a receivable.</p>
+          <div class="panel">
+            <h3>New invoice</h3>
+            <form id="customer-invoice-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Customer<select id="ci-customer" required></select></label>
+                <label>Issue date<input type="date" id="ci-issue-date" required /></label>
+                <label>Memo<input type="text" id="ci-memo" maxlength="512" placeholder="Optional" /></label>
+              </div>
+              <div class="line-item-table">
+                <table>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th></th></tr></thead>
+                  <tbody id="ci-lines-body"></tbody>
+                </table>
+              </div>
+              <div class="line-item-footer">
+                <button type="button" id="ci-add-line">+ Add line</button>
+                <p class="hint" id="ci-total-indicator"></p>
+                <button type="submit" class="line-item-submit">Create draft</button>
+              </div>
+              <div id="customer-invoice-status" class="hint"></div>
+            </form>
+          </div>
+          <table>
+            <thead><tr><th>Number</th><th>Customer</th><th>Issued</th><th>Due</th><th>Total</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
+            <tbody id="customer-invoices-body"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-araging" class="tab-panel">
+          <h1>AR Aging</h1>
+          <p class="hint">What customers owe you, bucketed by how far past due. Counted from the due date, not the issue date.</p>
+          <form id="ar-aging-form" class="statement-period">
+            <label>As of<input type="date" id="ar-as-of" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <table>
+            <thead><tr><th>Customer</th><th>Current</th><th>1-30</th><th>31-60</th><th>61-90</th><th>90+</th><th>Total</th></tr></thead>
+            <tbody id="ar-aging-body"></tbody>
+            <tfoot><tr id="ar-aging-totals"></tr></tfoot>
+          </table>
+        </section>
+
         <section id="tab-chartofaccounts" class="tab-panel">
           <h1>Chart of Accounts</h1>
           <p class="hint">Every account posted invoice approvals and manual journal entries can use. System accounts (bold) can be renamed but not deactivated.</p>
@@ -1138,17 +1223,23 @@
           <p class="hint">Every entry here is either posted by hand below, or auto-posted when an invoice is approved (see Chart of Accounts for where those land).</p>
           <div class="panel">
             <h3>Post a manual entry</h3>
-            <form id="journal-entry-form">
-              <label>Date<input type="date" id="je-date" required /></label>
-              <label>Memo<input type="text" id="je-memo" maxlength="512" placeholder="What is this entry for?" /></label>
-              <table>
-                <thead><tr><th>Account</th><th>Debit</th><th>Credit</th><th></th></tr></thead>
-                <tbody id="je-lines-body"></tbody>
-              </table>
-              <button type="button" id="je-add-line">+ Add line</button>
-              <p class="hint" id="je-balance-indicator"></p>
+            <form id="journal-entry-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Date<input type="date" id="je-date" required /></label>
+                <label>Memo<input type="text" id="je-memo" maxlength="512" placeholder="What is this entry for?" /></label>
+              </div>
+              <div class="line-item-table">
+                <table>
+                  <thead><tr><th>Account</th><th>Debit</th><th>Credit</th><th></th></tr></thead>
+                  <tbody id="je-lines-body"></tbody>
+                </table>
+              </div>
+              <div class="line-item-footer">
+                <button type="button" id="je-add-line">+ Add line</button>
+                <p class="hint" id="je-balance-indicator"></p>
+                <button type="submit" class="line-item-submit">Post entry</button>
+              </div>
               <div id="journal-entry-status" class="hint"></div>
-              <button type="submit">Post entry</button>
             </form>
           </div>
           <table>
@@ -1609,6 +1700,30 @@
         <button type="button" id="confirm-modal-cancel" class="modal-btn-cancel">Cancel</button>
         <button type="button" id="confirm-modal-confirm">OK</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Recording a customer payment needs three answers (how much, when, and
+       into which account), so it gets a real form rather than riding on the
+       confirm modal. Which account the cash lands in is a posting decision,
+       not a detail to guess at -- an org with more than one bank account has
+       no way to correct it afterwards short of voiding the payment. -->
+  <div id="payment-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Record a payment</h2>
+      <p id="payment-modal-message"></p>
+      <form id="payment-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Amount<input type="number" id="payment-modal-amount" step="0.01" min="0.01" required /></label>
+          <label>Date received<input type="date" id="payment-modal-date" required /></label>
+          <label>Deposit into<select id="payment-modal-account" required></select></label>
+        </div>
+        <p id="payment-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="payment-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Record payment</button>
+        </div>
+      </form>
     </div>
   </div>
 

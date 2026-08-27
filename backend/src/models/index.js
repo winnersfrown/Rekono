@@ -25,6 +25,10 @@ import { NetWorthEntry } from "./NetWorthEntry.js";
 import { Account } from "./Account.js";
 import { JournalEntry } from "./JournalEntry.js";
 import { JournalLine } from "./JournalLine.js";
+import { Customer } from "./Customer.js";
+import { CustomerInvoice } from "./CustomerInvoice.js";
+import { CustomerInvoiceLine } from "./CustomerInvoiceLine.js";
+import { CustomerPayment } from "./CustomerPayment.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -95,6 +99,21 @@ NetWorthEntry.belongsTo(NetWorthAccount, { foreignKey: "accountId" });
 JournalEntry.hasMany(JournalLine, { foreignKey: "journalEntryId", as: "lines", onDelete: "CASCADE", hooks: true });
 JournalLine.belongsTo(JournalEntry, { foreignKey: "journalEntryId" });
 JournalLine.belongsTo(Account, { foreignKey: "accountId" });
+
+// A customer's invoices outlive any edit to the customer, but deleting a
+// customer outright isn't offered (they're deactivated instead, see
+// Customer.js) -- the cascade here is for completeness/consistency with
+// every other parent/child pair, not a path the app actually exercises.
+Customer.hasMany(CustomerInvoice, { foreignKey: "customerId", as: "invoices", onDelete: "CASCADE", hooks: true });
+CustomerInvoice.belongsTo(Customer, { foreignKey: "customerId", as: "customer" });
+
+CustomerInvoice.hasMany(CustomerInvoiceLine, { foreignKey: "customerInvoiceId", as: "lines", onDelete: "CASCADE", hooks: true });
+CustomerInvoiceLine.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
+CustomerInvoiceLine.belongsTo(Account, { foreignKey: "revenueAccountId", as: "revenueAccount" });
+
+CustomerInvoice.hasMany(CustomerPayment, { foreignKey: "customerInvoiceId", as: "payments", onDelete: "CASCADE", hooks: true });
+CustomerPayment.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
+CustomerPayment.belongsTo(Account, { foreignKey: "depositAccountId", as: "depositAccount" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -218,4 +237,8 @@ export {
   Account,
   JournalEntry,
   JournalLine,
+  Customer,
+  CustomerInvoice,
+  CustomerInvoiceLine,
+  CustomerPayment,
 };
