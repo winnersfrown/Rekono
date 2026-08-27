@@ -15,6 +15,7 @@
 // The list response also carries totals for the filtered set, since "what
 // do I report for 2025" is the question the tax_year filter exists to
 // answer and a per-page sum would answer a different one.
+import fs from "node:fs/promises";
 import multer from "multer";
 import { Router } from "express";
 import { Op, fn, col, where as sequelizeWhere } from "sequelize";
@@ -23,15 +24,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import * as jobs from "../jobs.js";
-import {
-  MAX_UPLOAD_BYTES,
-  canonicalContentType,
-  deleteStoredFile,
-  discardRejectedUpload,
-  documentUpload,
-  saveDocumentUpload,
-  sendStoredFile,
-} from "../storage.js";
+import { MAX_UPLOAD_BYTES, canonicalContentType, upload } from "../storage.js";
 import { AuditLog, TaxDocument } from "../models/index.js";
 import { TAX_DOCUMENT_TYPES } from "../models/TaxDocument.js";
 import { tinLast4 } from "../extractionTaxDocs.js";
@@ -158,7 +151,7 @@ router.get("/api/tax-documents", requireAuth, requireActivePlan, async (req, res
 // Multer errors (e.g. LIMIT_FILE_SIZE) happen inside upload.single() itself
 // -- same handling as ingestion.js's handleUpload.
 function handleUpload(req, res, next) {
-  documentUpload.single("file")(req, res, (err) => {
+  upload.single("file")(req, res, (err) => {
     if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
       const maxMb = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
       return res.status(413).json({ detail: `File too large. Maximum size is ${maxMb}MB.` });
@@ -181,7 +174,7 @@ router.post("/api/tax-documents/upload", requireAuth, requireActivePlan, handleU
     if (plan) {
       const uploadedThisMonth = await documentsUsedThisMonth(req.currentUser.orgId);
       if (uploadedThisMonth >= plan.docCapPerMonth) {
-        await discardRejectedUpload(req.file);
+        await fs.rm(req.file.path, { force: true });
         return res.status(402).json({
           detail: `You've reached your ${plan.name} plan's limit of ${plan.docCapPerMonth} documents this month. Upgrade your plan to upload more.`,
           plan_cap_reached: true,
@@ -191,7 +184,7 @@ router.post("/api/tax-documents/upload", requireAuth, requireActivePlan, handleU
 
     const contentType = canonicalContentType(req.file.originalname);
     if (!contentType) {
-      await discardRejectedUpload(req.file);
+      await fs.rm(req.file.path, { force: true });
       return res.status(422).json({
         detail: `Unsupported file type: ${req.file.originalname} (${req.file.mimetype}). Rekono accepts PDF or image files (png/jpg/tiff/bmp/webp).`,
       });
@@ -200,7 +193,7 @@ router.post("/api/tax-documents/upload", requireAuth, requireActivePlan, handleU
     const doc = await TaxDocument.create({
       orgId: req.currentUser.orgId,
       originalFilename: req.file.originalname || "upload",
-      storagePath: await saveDocumentUpload(req.file, contentType),
+      storagePath: req.file.path,
       contentType,
       status: "queued",
     });
@@ -236,7 +229,17 @@ router.get("/api/tax-documents/:id/file", requireAuth, requireActivePlan, async 
   try {
     const doc = await getOwnedTaxDocument(req.params.id, req.currentUser.orgId);
     if (!doc) return res.status(404).json({ detail: "Tax document not found" });
-    await sendStoredFile(doc.storagePath, doc.contentType, res, next);
+    res.sendFile(
+      doc.storagePath,
+      { headers: { "Content-Type": doc.contentType || "application/octet-stream" } },
+      (err) => {
+        if (!err) return;
+        if (err.code === "ENOENT") {
+          return res.status(404).json({ detail: "This document's source file is no longer available on the server." });
+        }
+        next(err);
+      }
+    );
   } catch (err) {
     next(err);
   }
@@ -405,7 +408,11 @@ router.delete("/api/tax-documents/:id", requireAuth, requireActivePlan, async (r
       details: { original_filename: doc.originalFilename, status: doc.status },
     });
 
-    await deleteStoredFile(doc.storagePath, `tax document ${doc.id}`);
+    if (doc.storagePath) {
+      await fs.unlink(doc.storagePath).catch((err) => {
+        if (err.code !== "ENOENT") console.error(`Failed to remove file for deleted tax document ${doc.id}:`, err.message);
+      });
+    }
 
     await doc.destroy();
     res.json({ ok: true });

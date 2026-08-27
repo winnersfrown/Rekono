@@ -4,6 +4,17 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.19
+
+Reverted v1.17's optional AWS S3 + SQS backend. Explicit decision to not
+build on AWS at all -- not even a dormant, off-by-default integration --
+after a separate conversation about moving deployment off Render onto AWS
+didn't pan out. `storage.js`, `jobs.js`, and `ocr.js` are back to their
+pre-v1.17 shape (local disk, in-process queue only); the `@aws-sdk/*`
+dependencies, `AWS_S3_BUCKET`/`AWS_SQS_QUEUE_URL`/`AWS_REGION` config, and
+their tests are removed. `render.yaml` is unchanged otherwise -- Render
+remains the deployment target.
+
 ## v1.18
 
 Added a global "slow network" loading indicator -- a thin bar at the top
@@ -77,7 +88,8 @@ model at all.
 Tested down to the configured/unconfigured branch via a mocked S3/SQS
 client (`tests/storage.test.js`, `tests/sqsQueue.test.js`), same pattern
 as this app's Stripe/Google/QuickBooks coverage; not against a live AWS
-account. See README.md's new "Scaling past one instance" section.
+account. See README.md's new "Scaling past one instance" section. Reverted
+in v1.19 above -- see that entry for why.
 
 ## v1.16
 
