@@ -180,12 +180,20 @@ export async function voidJournalEntry(orgId, journalEntryId, { postedByUserId =
 // Every account's debit/credit totals as of a date -- the simplest report
 // that proves the ledger is internally consistent (a real GL always
 // balances to zero; if this doesn't, something upstream posted an
-// unbalanced entry some way other than postJournalEntry). Voided entries'
-// lines are excluded, but their reversals are included -- a void's net
-// effect on the balance is exactly zero either way, so this doesn't change
-// the totals, only which rows explain how they got there.
+// unbalanced entry some way other than postJournalEntry).
+//
+// Voided entries are deliberately INCLUDED here, alongside the reversing
+// entries that cancel them. Filtering to status: "posted" instead looks
+// right but isn't: it drops the original while keeping its reversal,
+// leaving the account showing the exact negative of the voided amount.
+// That bug is invisible in this report specifically -- a reversal is
+// itself balanced, so `balanced` below stays true while the per-account
+// numbers are wrong -- which is how it survived until the financial
+// statements (financialStatements.js) surfaced it. voidJournalEntry posts
+// the reversal before marking the original voided, so a voided entry
+// without its cancelling reversal can't exist.
 export async function computeTrialBalance(orgId, asOfDate = null) {
-  const entryWhere = { orgId, status: "posted" };
+  const entryWhere = { orgId };
   if (asOfDate) entryWhere.entryDate = { [Op.lte]: asOfDate };
 
   const [accounts, entries] = await Promise.all([

@@ -433,6 +433,21 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
 .empty-state svg { color: var(--muted); opacity: 0.5; }
 .empty-state .hint { margin: 0; max-width: 30ch; }
 
+/* The date-range picker above each financial statement. The base `form`
+   rule already lays this out as a centered flex row; this only stacks each
+   label's caption over its input, matching how the auth/onboarding forms
+   present a labelled field. */
+.statement-period label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .export-options { display: flex; gap: 1rem; flex-wrap: wrap; max-width: 720px; }
 .export-card {
   flex: 1 1 260px;

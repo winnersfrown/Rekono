@@ -334,6 +334,18 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8l-3 5a4 4 0 0 0 6 0zM19 8l-3 5a4 4 0 0 0 6 0z"/><path d="M5 8h14M9 21h6"/></svg>
             Trial Balance
           </button>
+          <button class="tab-btn" data-tab="profitandloss">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+            Profit &amp; Loss
+          </button>
+          <button class="tab-btn" data-tab="balancesheet">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 12h18"/></svg>
+            Balance Sheet
+          </button>
+          <button class="tab-btn" data-tab="cashflow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 7a5 5 0 0 0-5-5 5 5 0 0 0-5 5c0 6 10 4 10 10a5 5 0 0 1-5 5 5 5 0 0 1-5-5"/></svg>
+            Cash Flow
+          </button>
               </div>
             </div>
 
@@ -1155,6 +1167,86 @@
             <tfoot>
               <tr><th colspan="3">Total</th><th id="trial-balance-total-debit"></th><th id="trial-balance-total-credit"></th></tr>
             </tfoot>
+          </table>
+        </section>
+
+        <section id="tab-profitandloss" class="tab-panel">
+          <h1>Profit &amp; Loss</h1>
+          <p class="hint">Revenue earned minus expenses incurred over the period. Accrual basis -- an approved invoice counts here even before it's paid.</p>
+          <form id="pnl-period-form" class="statement-period">
+            <label>From<input type="date" id="pnl-from" /></label>
+            <label>To<input type="date" id="pnl-to" /></label>
+            <button type="submit">Update</button>
+          </form>
+
+          <h3 style="margin-top: 1.5rem;">Revenue</h3>
+          <table>
+            <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+            <tbody id="pnl-revenue-body"></tbody>
+            <tfoot><tr><th colspan="2">Total revenue</th><th id="pnl-revenue-total"></th></tr></tfoot>
+          </table>
+
+          <h3 style="margin-top: 1.5rem;">Expenses</h3>
+          <table>
+            <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+            <tbody id="pnl-expenses-body"></tbody>
+            <tfoot><tr><th colspan="2">Total expenses</th><th id="pnl-expenses-total"></th></tr></tfoot>
+          </table>
+
+          <div class="panel" style="margin-top: 1.5rem;">
+            <h3>Net income</h3>
+            <p class="kpi-value" id="pnl-net-income"></p>
+          </div>
+        </section>
+
+        <section id="tab-balancesheet" class="tab-panel">
+          <h1>Balance Sheet</h1>
+          <p class="hint">What the business owns and owes as of a date. Assets always equal liabilities plus equity.</p>
+          <form id="bs-period-form" class="statement-period">
+            <label>As of<input type="date" id="bs-as-of" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <p id="bs-banner"></p>
+
+          <h3 style="margin-top: 1.5rem;">Assets</h3>
+          <table>
+            <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+            <tbody id="bs-assets-body"></tbody>
+            <tfoot><tr><th colspan="2">Total assets</th><th id="bs-assets-total"></th></tr></tfoot>
+          </table>
+
+          <h3 style="margin-top: 1.5rem;">Liabilities</h3>
+          <table>
+            <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+            <tbody id="bs-liabilities-body"></tbody>
+            <tfoot><tr><th colspan="2">Total liabilities</th><th id="bs-liabilities-total"></th></tr></tfoot>
+          </table>
+
+          <h3 style="margin-top: 1.5rem;">Equity</h3>
+          <p class="hint">Retained earnings is this ledger's cumulative net income to date -- Rekono derives it rather than posting year-end closing entries, so the figure always matches the P&amp;L without anything being written to your books.</p>
+          <table>
+            <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+            <tbody id="bs-equity-body"></tbody>
+            <tfoot>
+              <tr><th colspan="2">Total equity</th><th id="bs-equity-total"></th></tr>
+              <tr><th colspan="2">Total liabilities and equity</th><th id="bs-total-liab-equity"></th></tr>
+            </tfoot>
+          </table>
+        </section>
+
+        <section id="tab-cashflow" class="tab-panel">
+          <h1>Cash Flow</h1>
+          <p class="hint">Cash actually in and out over the period, grouped by what it moved against. Direct method -- an approved but unpaid invoice doesn't appear here at all.</p>
+          <form id="cf-period-form" class="statement-period">
+            <label>From<input type="date" id="cf-from" /></label>
+            <label>To<input type="date" id="cf-to" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <p id="cf-banner"></p>
+          <table>
+            <thead><tr><th>Activity</th><th>Amount</th></tr></thead>
+            <tbody id="cash-flow-body"></tbody>
+            <tfoot><tr><th>Net change in cash</th><th id="cf-net-change"></th></tr></tfoot>
           </table>
         </section>
 

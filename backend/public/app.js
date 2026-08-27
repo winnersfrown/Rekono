@@ -226,6 +226,9 @@ function switchTab(name) {
   if (name === "chartofaccounts") loadAccounts();
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
   if (name === "trialbalance") loadTrialBalance();
+  if (name === "profitandloss") loadProfitAndLoss();
+  if (name === "balancesheet") loadBalanceSheet();
+  if (name === "cashflow") loadCashFlow();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4384,6 +4387,128 @@ function renderTrialBalance(data) {
   banner.textContent = data.balanced ? "Balanced." : "Not balanced -- this shouldn't happen; please contact support.";
   banner.className = data.balanced ? "hint" : "hint kpi-sub-warning";
 }
+
+// ---- Financial statements (P&L, balance sheet, cash flow) ----
+// All three are read-only views over the ledger (financialStatements.js on
+// the backend) -- nothing here creates or stores a statement, so there's
+// no cache to invalidate on a mutation the way the ledger tabs above have.
+
+function statementAccountRows(accounts) {
+  if (!accounts.length) return `<tr><td colspan="3" class="table-empty-row">No activity in this period.</td></tr>`;
+  return accounts
+    .map((a) => `<tr><td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.name)}</td><td>${fmtMoney(a.amount)}</td></tr>`)
+    .join("");
+}
+
+// The period inputs default to the same window the API does when asked for
+// nothing (year to date), so what's shown in the form always matches what's
+// actually on screen rather than sitting blank over a defaulted report.
+function defaultStatementPeriod() {
+  const today = new Date().toISOString().slice(0, 10);
+  return { from: `${new Date().getUTCFullYear()}-01-01`, to: today };
+}
+
+function periodQuery(fromId, toId) {
+  const period = defaultStatementPeriod();
+  const fromEl = document.getElementById(fromId);
+  const toEl = document.getElementById(toId);
+  if (!fromEl.value) fromEl.value = period.from;
+  if (!toEl.value) toEl.value = period.to;
+  return `from=${fromEl.value}&to=${toEl.value}`;
+}
+
+async function loadProfitAndLoss() {
+  const query = periodQuery("pnl-from", "pnl-to");
+  renderProfitAndLoss(await (await apiFetch(`/api/statements/profit-and-loss?${query}`)).json());
+}
+
+function renderProfitAndLoss(data) {
+  document.getElementById("pnl-revenue-body").innerHTML = statementAccountRows(data.revenue.accounts);
+  document.getElementById("pnl-revenue-total").textContent = fmtMoney(data.revenue.total);
+  document.getElementById("pnl-expenses-body").innerHTML = statementAccountRows(data.expenses.accounts);
+  document.getElementById("pnl-expenses-total").textContent = fmtMoney(data.expenses.total);
+
+  const netIncomeEl = document.getElementById("pnl-net-income");
+  netIncomeEl.textContent = fmtMoney(data.net_income);
+  // A loss is the one number on this page worth calling out in color --
+  // it's the whole reason someone opens a P&L.
+  netIncomeEl.className = data.net_income < 0 ? "kpi-value kpi-sub-warning" : "kpi-value";
+}
+
+document.getElementById("pnl-period-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadProfitAndLoss();
+});
+
+async function loadBalanceSheet() {
+  const asOfEl = document.getElementById("bs-as-of");
+  if (!asOfEl.value) asOfEl.value = new Date().toISOString().slice(0, 10);
+  renderBalanceSheet(await (await apiFetch(`/api/statements/balance-sheet?as_of=${asOfEl.value}`)).json());
+}
+
+function renderBalanceSheet(data) {
+  document.getElementById("bs-assets-body").innerHTML = statementAccountRows(data.assets.accounts);
+  document.getElementById("bs-assets-total").textContent = fmtMoney(data.assets.total);
+  document.getElementById("bs-liabilities-body").innerHTML = statementAccountRows(data.liabilities.accounts);
+  document.getElementById("bs-liabilities-total").textContent = fmtMoney(data.liabilities.total);
+
+  // Retained earnings is appended as its own row rather than being folded
+  // into the equity totals silently -- see financialStatements.js on why
+  // it's derived instead of posted.
+  const equityRows = statementAccountRows(data.equity.accounts).replace(
+    /<tr><td colspan="3" class="table-empty-row">.*?<\/tr>/,
+    ""
+  );
+  document.getElementById("bs-equity-body").innerHTML =
+    equityRows + `<tr><td></td><td><em>Retained earnings</em></td><td>${fmtMoney(data.equity.retained_earnings)}</td></tr>`;
+  document.getElementById("bs-equity-total").textContent = fmtMoney(data.equity.total);
+  document.getElementById("bs-total-liab-equity").textContent = fmtMoney(data.total_liabilities_and_equity);
+
+  const banner = document.getElementById("bs-banner");
+  banner.textContent = data.balanced
+    ? "Balanced -- assets equal liabilities plus equity."
+    : "Not balanced -- this shouldn't happen; please contact support.";
+  banner.className = data.balanced ? "hint" : "hint kpi-sub-warning";
+}
+
+document.getElementById("bs-period-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadBalanceSheet();
+});
+
+async function loadCashFlow() {
+  const query = periodQuery("cf-from", "cf-to");
+  renderCashFlow(await (await apiFetch(`/api/statements/cash-flow?${query}`)).json());
+}
+
+const CASH_FLOW_ROWS = [
+  ["operating", "Operating activities", "Cash moved against revenue and expense accounts -- the core business."],
+  ["investing", "Investing activities", "Cash moved against other assets -- equipment, deposits, and the like."],
+  ["financing", "Financing activities", "Cash moved against equity or debt -- contributions, draws, loans."],
+];
+
+function renderCashFlow(data) {
+  document.getElementById("cash-flow-body").innerHTML = CASH_FLOW_ROWS.map(
+    ([key, label, hint]) => `
+    <tr>
+      <td>${label}<br /><span class="hint">${hint}</span></td>
+      <td>${fmtMoney(data[key])}</td>
+    </tr>
+  `
+  ).join("");
+  document.getElementById("cf-net-change").textContent = fmtMoney(data.net_change_in_cash);
+
+  const banner = document.getElementById("cf-banner");
+  banner.textContent = data.reconciled
+    ? "Reconciled -- the activity above accounts for every dollar of cash movement."
+    : "Not reconciled -- this shouldn't happen; please contact support.";
+  banner.className = data.reconciled ? "hint" : "hint kpi-sub-warning";
+}
+
+document.getElementById("cf-period-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadCashFlow();
+});
 
 // ---- Init ----
 // ---- Dashboard (the landing tab) ----
