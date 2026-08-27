@@ -4,6 +4,52 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.21
+
+Added the three financial statements -- profit & loss, balance sheet, and
+cash flow -- computed directly from v1.20's general ledger. Phase 2 of the
+accounting pivot, and the first thing that makes Rekono legible as
+accounting software to someone who has never opened the invoice queue.
+
+- **`financialStatements.js`** derives all three from posted journal
+  lines. No new tables, no stored balances, no write path -- a stored
+  statement is a second copy of the truth that can drift from the ledger
+  it came from, so every figure is recomputed per request.
+- **P&L** is accrual basis (an approved invoice counts before it's paid),
+  **balance sheet** is a point-in-time snapshot, **cash flow** is the
+  direct method: every entry that moved cash, classified by what the cash
+  moved against (revenue/expense counter-accounts are operating, other
+  assets investing, equity and debt financing).
+- **Retained earnings is derived rather than posted.** Rekono never posts
+  year-end closing entries, so revenue and expenses accumulate forever and
+  belong to no equity account -- a naive assets-vs-liabilities+equity
+  comparison would be off by exactly the cumulative net income, every
+  time. Rather than posting closing entries (which would mean picking a
+  fiscal year end and writing entries the user never asked for), the
+  balance sheet computes retained earnings as cumulative revenue minus
+  expenses through its as-of date and presents it as its own labeled
+  equity line. Same number a closing entry would have moved, arrived at by
+  derivation instead of mutation. A test asserts it equals the P&L's own
+  independently-computed net income for the same window.
+- Three new tabs in the Accounting nav group, each with its own period
+  picker defaulting to the same window the API does.
+
+**Fixed a latent v1.20 bug these surfaced**: `computeTrialBalance`
+filtered to `status: "posted"`, which dropped a voided entry while keeping
+the reversing entry that cancels it -- leaving the account showing the
+exact *negative* of the voided amount. It stayed invisible in that report
+because a reversal is itself balanced, so the `balanced` flag never went
+false; only a statement that reads per-account totals could expose it.
+Voided entries are now included alongside their reversals, which is what
+nets them to zero. A regression test pins it, and because a reversal
+carries its own later date, an entry voided in a subsequent period now
+correctly reverses in the period it was corrected rather than rewriting
+history.
+
+Still ahead (unchanged from v1.20's list, minus financial statements):
+revenue recognition, AR/customer invoicing, live bank feeds, and
+AI-driven close automation.
+
 ## v1.20
 
 Added a real double-entry general ledger -- Phase 1 of turning Rekono from

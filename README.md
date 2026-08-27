@@ -198,6 +198,9 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/journal-entries/:id` | One entry with its full line detail |
 | `POST /api/journal-entries/:id/void` | Posts the entry's exact mirror image and marks the original voided -- corrections are reversals, never edits or deletes |
 | `GET /api/ledger/trial-balance` | Every account's debit/credit totals as of an optional `?as_of=` date, plus whether they balance to zero |
+| `GET /api/statements/profit-and-loss` | Revenue, expenses, and net income over `?from=`/`?to=` (defaults to year-to-date). Accrual basis |
+| `GET /api/statements/balance-sheet` | Assets, liabilities, and equity as of `?as_of=` (defaults to today), including derived retained earnings and whether it balances |
+| `GET /api/statements/cash-flow` | Cash movement over `?from=`/`?to=`, split into operating/investing/financing, plus whether it reconciles |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -444,7 +447,20 @@ Amounts are stored as integer cents (`JournalLine.debitCents`/`creditCents`), no
 
 The **Accounting** nav group (Chart of Accounts, Journal Entries, Trial Balance) is the UI for all of this -- available on every plan, not gated to Business/Scale like the confidence-threshold/auto-approval features are, since this is meant to be core to what the product is now rather than an advanced add-on.
 
-Deliberately not built yet (the roadmap after this): financial statements (P&L, balance sheet, cash flow -- each a query over `JournalLine` once this exists), revenue recognition (deferred-revenue schedules for subscription businesses), accounts receivable/customer invoicing (money coming in, not just out), live bank feeds replacing manual CSV import, and AI-driven close automation. See `CHANGELOG.md`'s v1.20 entry for the fuller context on why this scope and not more, in one pass.
+Deliberately not built yet (the roadmap after this): revenue recognition (deferred-revenue schedules for subscription businesses), accounts receivable/customer invoicing (money coming in, not just out), live bank feeds replacing manual CSV import, and AI-driven close automation. See `CHANGELOG.md`'s v1.20 entry for the fuller context on why this scope and not more, in one pass.
+
+### Financial statements
+
+`financialStatements.js` computes the three statements directly from posted journal lines -- no new tables, no stored balances, nothing to drift out of sync with the ledger it reads. All three are read-only.
+
+**Profit & loss** (`?from=`/`?to=`, defaults to year-to-date) is accrual basis: an approved invoice hits it the moment it's approved, not when it's paid. **Balance sheet** (`?as_of=`, defaults to today) is a point-in-time snapshot. **Cash flow** (`?from=`/`?to=`) is the direct method -- every entry that moved cash, classified by what the cash moved *against*: revenue/expense counter-accounts are operating, other assets are investing, equity and debt are financing.
+
+Two design decisions worth knowing:
+
+- **Retained earnings is derived, not posted.** Rekono never posts year-end closing entries (the traditional move that sweeps revenue and expense balances into equity and resets them to zero). Without those, revenue and expenses accumulate forever and belong to no equity account, so a naive assets-vs-liabilities+equity comparison would be off by exactly the cumulative net income, every time. Rather than posting closing entries — which would mean picking a fiscal year end and writing entries the user never asked for — the balance sheet computes retained earnings as cumulative revenue minus expenses through its as-of date and shows it as its own labeled equity line. Same number a closing entry would have moved, arrived at by derivation instead of mutation: the statement balances, the ledger stays untouched, and there's nothing to un-post if the fiscal year is configured differently later. `tests/financialStatements.test.js` asserts that this figure equals the P&L's own independently-computed net income for the same window.
+- **The direct method, not indirect.** Most SaaS finance teams present the indirect method (net income plus non-cash adjustments), but it needs a working-capital story — period-over-period AR and AP deltas — and Rekono has no AR side yet. The direct method is the honest version to ship first; indirect follows AR.
+
+Building these surfaced a latent bug in v1.20's trial balance: it filtered to `status: "posted"`, which dropped a voided entry while keeping the reversing entry that cancels it, leaving the account showing the exact *negative* of the voided amount. It stayed invisible in that report because a reversal is itself balanced, so its `balanced` flag never went false. Both the statements and the trial balance now include voided entries alongside their reversals, which is what nets them to zero — and because a reversal carries its own (later) date, an entry voided in a subsequent period correctly reverses in the period it was corrected rather than rewriting history.
 
 ### Staff / cross-org usage dashboard
 
@@ -460,7 +476,6 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
-- **Financial statements**: P&L, balance sheet, and cash flow -- each a query over `ledger.js`'s `JournalLine` now that a real general ledger exists (see "General ledger" above), not a new data model.
 - **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
 - **Accounts receivable / customer invoicing**: creating and sending invoices to customers, tracking their payments -- the ledger currently only has a debit/credit story for AP (bills owed), not AR (money owed to the org).
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
