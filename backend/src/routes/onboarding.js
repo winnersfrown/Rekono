@@ -10,6 +10,7 @@ import { settings } from "../config.js";
 import { PAID_PLAN_IDS, TRIAL_DAYS, isValidPlanId } from "../plans.js";
 import { createCheckoutSession } from "./billing.js";
 import { seedSampleInvoiceForNewOrg } from "../sampleSeed.js";
+import { seedDefaultChartOfAccounts } from "../ledger.js";
 
 const router = Router();
 
@@ -43,6 +44,7 @@ router.post("/api/onboarding", requireAuth, async (req, res, next) => {
       org.onboardingCompletedAt = new Date();
       await org.save();
       await seedSampleInvoiceForNewOrg(org);
+      await seedDefaultChartOfAccounts(org);
       return res.json({ checkout_required: false, onboarding_completed: true });
     }
 

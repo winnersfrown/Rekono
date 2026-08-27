@@ -9,6 +9,7 @@ import { settings } from "./config.js";
 import { PLANS } from "./plans.js";
 import { AuditLog, Invoice, LineItem, Organization } from "./models/index.js";
 import { lookupVendorAlias } from "./vendorAlias.js";
+import { postInvoiceApproval } from "./ledger.js";
 
 // If this exact raw vendor text has been corrected before for this org
 // (see vendorAlias.js / routes/invoices.js), use the known-good name and
@@ -153,6 +154,7 @@ export async function processInvoice(invoiceId) {
     const autoApproved = !flagged && (await shouldAutoApprove(invoice, knownVendor));
     invoice.status = flagged ? "needs_review" : autoApproved ? "approved" : "extracted";
     await invoice.save();
+    if (autoApproved) await postInvoiceApproval(invoice);
 
     await LineItem.destroy({ where: { invoiceId: invoice.id } });
     await LineItem.bulkCreate(

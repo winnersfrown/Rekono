@@ -296,3 +296,57 @@ export function serializeNetWorthAccount(a) {
     updated_at: a.updatedAt,
   };
 }
+
+export function serializeAccount(a) {
+  return {
+    id: a.id,
+    code: a.code,
+    name: a.name,
+    type: a.type,
+    subtype: a.subtype,
+    is_system_account: a.isSystemAccount,
+    active: a.active,
+  };
+}
+
+// centsToDollars is deliberately not imported here -- ledger.js owns the
+// cents<->dollars boundary, and a line's amount is already handed to this
+// serializer as a dollar float by the route, same as every other money
+// field this app serializes.
+export function serializeJournalLine(line) {
+  return {
+    id: line.id,
+    account_id: line.accountId,
+    account_name: line.account?.name,
+    debit: line.debit,
+    credit: line.credit,
+    memo: line.memo,
+  };
+}
+
+export function serializeJournalEntryDetail(entry, lines) {
+  return {
+    id: entry.id,
+    entry_date: entry.entryDate,
+    memo: entry.memo,
+    source: entry.source,
+    source_type: entry.sourceType,
+    source_id: entry.sourceId,
+    status: entry.status,
+    voided_by_entry_id: entry.voidedByEntryId,
+    lines,
+    created_at: entry.createdAt,
+  };
+}
+
+export function serializeJournalEntryListItem(entry, totalDebit) {
+  return {
+    id: entry.id,
+    entry_date: entry.entryDate,
+    memo: entry.memo,
+    source: entry.source,
+    status: entry.status,
+    total: totalDebit,
+    created_at: entry.createdAt,
+  };
+}

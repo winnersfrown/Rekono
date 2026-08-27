@@ -1,8 +1,8 @@
 # Rekono
 
-AI-powered invoice ingestion, extraction, and reconciliation for accounts payable. Upload an invoice, get back structured, confidence-scored data, review/correct what the model wasn't sure about, and match it against your POs or bank statement.
+AI-powered invoice ingestion, extraction, and reconciliation for accounts payable, with a real double-entry general ledger underneath it. Upload an invoice, get back structured, confidence-scored data, review/correct what the model wasn't sure about, match it against your POs or bank statement -- and have its approval post itself to the books automatically.
 
-This repo is the MVP described below: upload → extract → review → export → single-rule matching. It's built to extend cleanly toward the fuller architecture (email ingestion, accounting-software integrations, richer reconciliation) without a rewrite.
+This repo is the MVP described below: upload → extract → review → export → single-rule matching, plus a general ledger foundation (chart of accounts, journal entries, trial balance) that invoice approval posts to automatically. It's built to extend cleanly toward the fuller architecture (email ingestion, financial statements, revenue recognition, richer reconciliation) without a rewrite.
 
 ## MVP scope
 
@@ -190,6 +190,14 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/team/invite/:token` | Public. Validates an invite link and returns the org name + invited email, for the accept-invite page |
 | `POST /api/team/invite/:token/accept` | Public. `{full_name, password}` → creates a `role: "member"` User on the inviting org, returns a bearer token |
 | `GET /api/staff/overview` | Rekono staff only (`STAFF_EMAILS`), refused with `403` for everyone else. Aggregate, cross-org usage metrics -- org/plan counts, activation funnel, document volume, subscription health. See README.md's "Staff / cross-org usage dashboard" section |
+| `GET /api/accounts` | List the org's chart of accounts, optionally filtered by `type` or `active` |
+| `POST /api/accounts` | `{name, type, code?}` -- add a custom account. Rejects a duplicate name |
+| `PATCH /api/accounts/:id` | Rename, re-code, or deactivate an account. A system account (the seeded defaults) can be renamed but not deactivated |
+| `GET /api/journal-entries` | Paginated list of the org's journal entries, newest first, each with its total |
+| `POST /api/journal-entries` | `{entry_date, memo?, lines: [{account_id, debit?, credit?}]}` -- posts a manual entry. `422` if it doesn't balance or has fewer than 2 lines |
+| `GET /api/journal-entries/:id` | One entry with its full line detail |
+| `POST /api/journal-entries/:id/void` | Posts the entry's exact mirror image and marks the original voided -- corrections are reversals, never edits or deletes |
+| `GET /api/ledger/trial-balance` | Every account's debit/credit totals as of an optional `?as_of=` date, plus whether they balance to zero |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -422,6 +430,22 @@ The Matching tab also surfaces **bank reconciliation** once connected: QuickBook
 4. The Developer Portal also provides a free Sandbox company file (**Sandbox** tab) to connect against and inspect pushed Bills in.
 5. Connecting stores tokens per-org on `Organization` (`quickbooksAccessToken`/`quickbooksRefreshToken`, both nullable so a disconnected org just has `null`s -- see `models/Organization.js`); access tokens auto-refresh on use (`ensureFreshToken` in `quickbooks.js`). Going to Production later means switching `QUICKBOOKS_ENVIRONMENT=production`, swapping in Production keys, and passing Intuit's app-assessment review (token storage/data retention, roughly 2-3 weeks) -- Sandbox needs none of that.
 
+### General ledger
+
+`ledger.js` is a real double-entry general ledger sitting underneath the invoice pipeline -- the first piece of turning Rekono from an AP-automation tool into actual accounting software. Three tables: `Account` (chart of accounts), `JournalEntry` (a header: date, memo, source, status), and `JournalLine` (its debit/credit lines). `postJournalEntry` is the one place a line ever gets written -- it rejects (with a clean `422`, not a raw DB error) any entry with fewer than 2 lines or where debits don't exactly equal credits, so nothing that reaches the database can be unbalanced.
+
+Every org gets a starter chart of accounts at onboarding (same hook point `sampleSeed.js`'s sample invoice uses): Cash, Accounts Receivable, Accounts Payable, Credit Card, Owner's Equity, Uncategorized Revenue, one expense account per `ExpenseReceipt.EXPENSE_CATEGORIES` value, and Uncategorized Expense -- so the ledger has something to post to from day one instead of an empty setup screen.
+
+**Approving an invoice auto-posts it**: Debit the matched expense account, Credit Accounts Payable, for the invoice's total. Every path that can transition an invoice to `approved` -- the single approve route, bulk-action, the quick-review flow auto-approving once every flag clears, and `pipeline.js`'s own auto-approval -- calls the same `postInvoiceApproval`, which reuses `invoice.quickbooksExpenseAccountName` (the *existing* AI-suggested-or-vendor-learned field from the QuickBooks integration) to pick the expense account, falling back to "Uncategorized Expense" when it's unset or doesn't match anything in the chart of accounts. No new categorization logic -- it's the same inference the app already computes for QuickBooks, reused as the ledger's posting signal too. `postInvoiceApproval` checks for an already-posted entry before posting, so it's safe to call from every one of those sites without risking a double-post. Rejecting or deleting a previously-approved invoice reverses its entry (`voidInvoiceJournalEntry`) automatically.
+
+Posted entries are immutable -- there's no edit or delete route, only `POST /api/journal-entries/:id/void`, which posts the entry's exact mirror image and marks the original voided. Corrections are always a new entry, never a rewrite of history, same reasoning invoices are soft-deleted rather than destroyed.
+
+Amounts are stored as integer cents (`JournalLine.debitCents`/`creditCents`), not the `FLOAT` the rest of this app's money fields (`Invoice.total`, etc.) use, and not `DECIMAL` either -- floating-point rounding error is a real problem specifically here, where debits have to sum to *exactly* credits, and Sequelize's SQLite dialect (this app's test/local default) can hand `DECIMAL` columns back as strings depending on the value, which would silently break that arithmetic. Integer cents behaves identically on SQLite and Postgres with no parsing required; `ledger.js`'s `dollarsToCents`/`centsToDollars` convert at the one boundary where this meets the rest of the app's dollar-float fields.
+
+The **Accounting** nav group (Chart of Accounts, Journal Entries, Trial Balance) is the UI for all of this -- available on every plan, not gated to Business/Scale like the confidence-threshold/auto-approval features are, since this is meant to be core to what the product is now rather than an advanced add-on.
+
+Deliberately not built yet (the roadmap after this): financial statements (P&L, balance sheet, cash flow -- each a query over `JournalLine` once this exists), revenue recognition (deferred-revenue schedules for subscription businesses), accounts receivable/customer invoicing (money coming in, not just out), live bank feeds replacing manual CSV import, and AI-driven close automation. See `CHANGELOG.md`'s v1.20 entry for the fuller context on why this scope and not more, in one pass.
+
 ### Staff / cross-org usage dashboard
 
 `GET /api/staff/overview` and the app shell's "Staff" nav tab are Rekono's own team's view of the product -- not a customer feature. It answers "how is Rekono doing" (org counts and plan mix, a signup trend, an activation funnel from signup through a first approved document, document volume, and subscription health), never a way to read any single customer's actual documents, vendor names, or dollar amounts. Demo orgs (`Organization.isDemo`) and seeded sample invoices (`Invoice.isSampleData`, see below) are excluded from every figure so they don't inflate the numbers with activity nobody actually did.
@@ -435,7 +459,12 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Email ingestion** (forward invoices to a dedicated address) and **watched folder/Drive integration** — additive front-ends onto `storage.js`'s upload handling + the existing job queue.
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
-- **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support — this is what makes it sellable rather than a CSV toy.
+- **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
+- **Financial statements**: P&L, balance sheet, and cash flow -- each a query over `ledger.js`'s `JournalLine` now that a real general ledger exists (see "General ledger" above), not a new data model.
+- **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
+- **Accounts receivable / customer invoicing**: creating and sending invoices to customers, tracking their payments -- the ledger currently only has a debit/credit story for AP (bills owed), not AR (money owed to the org).
+- **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
+- **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.
 - **Dashboard**: exceptions queue, reconciliation status, aging report, once there's enough volume for those views to matter.
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.
