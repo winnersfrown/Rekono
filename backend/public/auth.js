@@ -1,6 +1,72 @@
 // Auth gate: token storage, authenticated fetch wrapper, and the
 // login/signup/onboarding screens that guard the rest of the app.
 
+// ---- Global "slow network" loading indicator ----
+// A thin bar at the top of the page (#network-loading-bar, index.html)
+// that appears only once a request has been in flight for a moment. On a
+// normal connection every request resolves before that delay and this
+// never appears at all -- it's specifically a "your click registered, the
+// network is just slow" signal for bad wifi, not a spinner on every click
+// regardless of speed. Wraps window.fetch itself (rather than only
+// apiFetch below) so it covers every request in the app uniformly,
+// including the pre-login screens' direct fetch() calls (sign in, create
+// account, password reset) that run before apiFetch's bearer-token
+// wrapping even applies.
+const NETWORK_BAR_SHOW_DELAY_MS = 250;
+let activeRequestCount = 0;
+let networkBarShowTimer = null;
+let networkBarHideTimer = null;
+
+function showNetworkBar() {
+  const bar = document.getElementById("network-loading-bar");
+  if (!bar) return;
+  clearTimeout(networkBarHideTimer);
+  bar.style.transition = "none";
+  bar.style.width = "0%";
+  void bar.offsetWidth; // forces a reflow so the width below animates from 0 instead of jumping to it
+  bar.classList.add("is-visible");
+  bar.style.transition = "width 3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease";
+  // Never reaches 100% on its own -- stopping short is what still reads as
+  // "in progress" rather than "stuck" for a request that's taking unusually
+  // long, and finishNetworkBar below jumps the rest of the way once the
+  // response actually lands.
+  bar.style.width = "80%";
+}
+
+function finishNetworkBar() {
+  const bar = document.getElementById("network-loading-bar");
+  if (!bar || !bar.classList.contains("is-visible")) return;
+  bar.style.transition = "width 0.2s ease, opacity 0.2s ease";
+  bar.style.width = "100%";
+  networkBarHideTimer = setTimeout(() => {
+    bar.classList.remove("is-visible");
+    bar.style.width = "0%";
+  }, 250);
+}
+
+function beginNetworkRequest() {
+  activeRequestCount += 1;
+  if (activeRequestCount > 1) return; // already showing (or about to) for an earlier in-flight request
+  networkBarShowTimer = setTimeout(showNetworkBar, NETWORK_BAR_SHOW_DELAY_MS);
+}
+
+function endNetworkRequest() {
+  activeRequestCount = Math.max(0, activeRequestCount - 1);
+  if (activeRequestCount > 0) return; // other requests still in flight -- keep it showing for them
+  clearTimeout(networkBarShowTimer);
+  finishNetworkBar();
+}
+
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  beginNetworkRequest();
+  try {
+    return await nativeFetch(...args);
+  } finally {
+    endNetworkRequest();
+  }
+};
+
 const TOKEN_KEY = "rekono_token";
 
 const PLAN_NAMES = { free: "Free", starter: "Starter", growth: "Growth", business: "Business", scale: "Scale" };

@@ -26,6 +26,12 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
+  <!-- Global "slow network" indicator (auth.js) -- fixed at the top of the
+       viewport so it shows on every screen (sign-in included), not just
+       inside the app shell. Appears only once a request has been in
+       flight for a moment, so a fast connection never sees it at all. -->
+  <div id="network-loading-bar" aria-hidden="true"></div>
+
   <div id="auth-gate" class="auth-gate">
     <div class="auth-card">
       <div class="brand" style="margin-bottom: 1.5rem;"><img src="/favicon.svg" class="logomark" alt="" />Rekono</div>
