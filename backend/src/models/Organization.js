@@ -49,6 +49,16 @@ export const Organization = sequelize.define(
     // without the feature, and orgs that never touch it, are unaffected.
     confidenceThreshold: { type: DataTypes.FLOAT, allowNull: true },
 
+    // The month a fiscal year ends in (1-12). 12 = a calendar year, which
+    // is what the overwhelming majority of SMBs use and so the default.
+    // Only the month, not a day: a fiscal year effectively always ends on
+    // the last day of some month, so storing a day too would add a way to
+    // configure something invalid without adding any real expressiveness.
+    // Drives fiscalYear.js's period boundaries, which the balance sheet
+    // uses to split prior-year retained earnings from current-year
+    // earnings (financialStatements.js).
+    fiscalYearEndMonth: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 12 },
+
     // Business/Scale-only (see plans.js's riskBasedAutoApproval): when an
     // invoice would already have been fast-tracked as `extracted` (passes
     // the confidence bar, cross-check, not a duplicate/possible-multi), skip

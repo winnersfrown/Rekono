@@ -3373,6 +3373,12 @@ function renderOrgSettings({ settingsRes, me }) {
   document.getElementById("settings-account-status").textContent = "";
   document.getElementById("settings-password-status").textContent = "";
 
+  // Accounting -- fiscal year end (drives the balance sheet's earnings
+  // split, see financialStatements.js). Not owner-gated, unlike renaming
+  // the org below.
+  document.getElementById("settings-fiscal-month").value = String(settingsRes.fiscal_year_end_month || 12);
+  document.getElementById("settings-fiscal-status").textContent = "";
+
   // Two-factor authentication -- reset back to the status view on every
   // render, same as the setup/backup-codes views resetting to hidden below,
   // so re-opening Settings never leaves a stale in-progress state showing.
@@ -3646,6 +3652,28 @@ document.getElementById("settings-org-form").addEventListener("submit", async (e
     const body = await res.json();
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
     if (res.ok) invalidateCache("__org_settings__");
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+document.getElementById("settings-fiscal-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("settings-fiscal-status");
+  try {
+    const res = await apiFetch("/api/org/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fiscal_year_end_month: Number(document.getElementById("settings-fiscal-month").value) }),
+    });
+    const body = await res.json();
+    statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
+    if (res.ok) {
+      invalidateCache("__org_settings__");
+      // The balance sheet's earnings split is computed from this, so a
+      // cached render of it is stale the moment this changes.
+      invalidateCache("__trial_balance__");
+    }
   } catch (err) {
     statusEl.textContent = err.message || String(err);
   }
@@ -4452,15 +4480,24 @@ function renderBalanceSheet(data) {
   document.getElementById("bs-liabilities-body").innerHTML = statementAccountRows(data.liabilities.accounts);
   document.getElementById("bs-liabilities-total").textContent = fmtMoney(data.liabilities.total);
 
-  // Retained earnings is appended as its own row rather than being folded
-  // into the equity totals silently -- see financialStatements.js on why
-  // it's derived instead of posted.
+  // Both earnings figures are appended as their own rows rather than being
+  // folded into the equity total silently -- see financialStatements.js on
+  // why they're derived instead of posted. Retained earnings is settled
+  // history (prior fiscal years); current-year earnings is the year in
+  // progress and reconciles to a P&L run over the same window.
   const equityRows = statementAccountRows(data.equity.accounts).replace(
     /<tr><td colspan="3" class="table-empty-row">.*?<\/tr>/,
     ""
   );
+  const fy = data.fiscal_year;
   document.getElementById("bs-equity-body").innerHTML =
-    equityRows + `<tr><td></td><td><em>Retained earnings</em></td><td>${fmtMoney(data.equity.retained_earnings)}</td></tr>`;
+    equityRows +
+    `<tr><td></td><td><em>Retained earnings</em><br /><span class="hint">Prior fiscal years, through ${fy.prior_years_through}</span></td><td>${fmtMoney(
+      data.equity.retained_earnings
+    )}</td></tr>` +
+    `<tr><td></td><td><em>Current year earnings</em><br /><span class="hint">${fy.label}, ${fy.start} to ${fy.end}</span></td><td>${fmtMoney(
+      data.equity.current_year_earnings
+    )}</td></tr>`;
   document.getElementById("bs-equity-total").textContent = fmtMoney(data.equity.total);
   document.getElementById("bs-total-liab-equity").textContent = fmtMoney(data.total_liabilities_and_equity);
 

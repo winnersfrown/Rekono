@@ -12,8 +12,9 @@
 // approval's auto-posting) can produce an unbalanced one.
 
 import { Op, fn, col, where as sequelizeWhere } from "sequelize";
-import { Account, JournalEntry, JournalLine } from "./models/index.js";
+import { Account, AuditLog, JournalEntry, JournalLine } from "./models/index.js";
 import { EXPENSE_CATEGORIES } from "./models/ExpenseReceipt.js";
+import { isPeriodClosed, periodMonthFor } from "./fiscalYear.js";
 
 export class LedgerError extends Error {
   constructor(message, status = 422) {
@@ -116,6 +117,19 @@ export async function postJournalEntry(
   const accounts = await Account.findAll({ where: { id: [...accountIds], orgId } });
   if (accounts.length !== accountIds.size) {
     throw new LedgerError("One or more accounts weren't found.", 404);
+  }
+
+  // Nothing may be posted into a month that's already been closed --
+  // otherwise a backdated entry could silently rewrite financials that
+  // were already reported. Checked here rather than in the routes so it
+  // covers every posting path (manual entries, invoice approval, voids)
+  // from one place. Reopening the period in the Month-End Close tab
+  // unlocks it again.
+  if (await isPeriodClosed(orgId, entryDate)) {
+    throw new LedgerError(
+      `${periodMonthFor(entryDate)} has been closed. Reopen that period in Month-End Close before posting to it.`,
+      409
+    );
   }
 
   const entry = await JournalEntry.create({
@@ -287,16 +301,37 @@ export async function postInvoiceApproval(invoice) {
   ]);
   if (!expenseAccount || !apAccount) return null;
 
-  return postJournalEntry(invoice.orgId, {
-    memo: `Invoice ${invoice.invoiceNumber || invoice.id.slice(0, 8)} -- ${invoice.vendorName || "Unknown vendor"}`,
-    source: "invoice_approval",
-    sourceType: "invoice",
-    sourceId: invoice.id,
-    lines: [
-      { accountId: expenseAccount.id, debitCents: amountCents },
-      { accountId: apAccount.id, creditCents: amountCents },
-    ],
-  });
+  try {
+    return await postJournalEntry(invoice.orgId, {
+      memo: `Invoice ${invoice.invoiceNumber || invoice.id.slice(0, 8)} -- ${invoice.vendorName || "Unknown vendor"}`,
+      source: "invoice_approval",
+      sourceType: "invoice",
+      sourceId: invoice.id,
+      lines: [
+        { accountId: expenseAccount.id, debitCents: amountCents },
+        { accountId: apAccount.id, creditCents: amountCents },
+      ],
+    });
+  } catch (err) {
+    if (!(err instanceof LedgerError)) throw err;
+    // The only LedgerError reachable here is a closed period (the amount
+    // and accounts were both validated above), and it should be rare:
+    // auto-posting always carries today's date, and a period is normally
+    // closed only after it has ended. Approving must not fail because of
+    // it -- but the invoice would then be approved with nothing on the
+    // books, so this records *why* rather than swallowing it. The audit
+    // entry is what makes the gap findable at close time instead of
+    // showing up as an unexplained variance months later.
+    console.error(`Invoice ${invoice.id} approved but not posted to the ledger: ${err.message}`);
+    await AuditLog.create({
+      orgId: invoice.orgId,
+      invoiceId: invoice.id,
+      action: "journal_posting_skipped",
+      actor: "system",
+      details: { reason: err.message, amount: invoice.total },
+    });
+    return null;
+  }
 }
 
 // Reverses whatever postInvoiceApproval posted for this invoice, if

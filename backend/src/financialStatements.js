@@ -6,8 +6,9 @@
 // to drift out of sync with the ledger.
 
 import { Op } from "sequelize";
-import { Account, JournalEntry, JournalLine } from "./models/index.js";
+import { Account, JournalEntry, JournalLine, Organization } from "./models/index.js";
 import { centsToDollars } from "./ledger.js";
+import { DEFAULT_FISCAL_YEAR_END_MONTH, dayBefore, fiscalYearFor } from "./fiscalYear.js";
 
 // Which side of an account increases it. Assets and expenses are
 // debit-normal (a debit makes them bigger); liabilities, equity, and
@@ -119,38 +120,70 @@ export async function computeProfitAndLoss(orgId, { from = null, to = null } = {
 // any equity account -- so a naive assets-vs-liabilities+equity comparison
 // would be off by exactly the cumulative net income, every time.
 //
-// Rather than posting closing entries (which would mean picking a fiscal
-// year end, and making entries the user never asked for), retained
-// earnings is computed here: cumulative revenue minus cumulative expenses
-// through `as_of`, presented as its own equity line. That's the same
-// number a closing entry would have moved, arrived at by derivation
-// instead of by mutation -- so the statement balances, the ledger stays
-// untouched, and there's nothing to un-post if the fiscal year is later
-// configured differently.
+// Both earnings figures below are therefore derived rather than posted.
+// That's not a shortcut: QuickBooks and Xero both compute current-year
+// earnings the same way, because the year isn't over yet and there's
+// nothing to close. Deriving the prior years too (instead of posting real
+// closing entries) additionally means there's nothing to un-post if the
+// fiscal year end is reconfigured later -- the split just moves.
+//
+// What the two lines mean, matching how every other GL presents them:
+//   - retained_earnings: everything earned in FISCAL YEARS BEFORE the one
+//     containing `asOf`. Settled history.
+//   - current_year_earnings: the fiscal year in progress. This is the
+//     figure that reconciles to a P&L run over the same fiscal year.
 export async function computeBalanceSheet(orgId, { asOf = null } = {}) {
-  const { accounts, lines } = await loadLines(orgId, { to: asOf });
-  const totals = totalsByAccount(lines);
+  const asOfDate = asOf || new Date().toISOString().slice(0, 10);
+  const org = await Organization.findByPk(orgId, { attributes: ["fiscalYearEndMonth"], raw: true });
+  const fiscalYearEndMonth = org?.fiscalYearEndMonth ?? DEFAULT_FISCAL_YEAR_END_MONTH;
+  const fiscalYear = fiscalYearFor(asOfDate, fiscalYearEndMonth);
+
+  const [allTime, currentYear] = await Promise.all([
+    loadLines(orgId, { to: asOfDate }),
+    loadLines(orgId, { from: fiscalYear.start, to: asOfDate }),
+  ]);
+
+  const totals = totalsByAccount(allTime.lines);
+  const { accounts } = allTime;
 
   const assets = sectionFor(accounts, totals, "asset");
   const liabilities = sectionFor(accounts, totals, "liability");
   const equity = sectionFor(accounts, totals, "equity");
-  const revenue = sectionFor(accounts, totals, "revenue");
-  const expenses = sectionFor(accounts, totals, "expense");
 
-  const retainedEarningsCents = revenue.totalCents - expenses.totalCents;
-  const totalEquityCents = equity.totalCents + retainedEarningsCents;
+  // Cumulative earnings through asOf, then the slice of it belonging to
+  // the fiscal year still in progress. Prior years are the remainder --
+  // computed by subtraction rather than by a third query, so the two can
+  // never disagree about where the year boundary falls.
+  const cumulativeEarningsCents =
+    sectionFor(accounts, totals, "revenue").totalCents - sectionFor(accounts, totals, "expense").totalCents;
+
+  const currentTotals = totalsByAccount(currentYear.lines);
+  const currentYearEarningsCents =
+    sectionFor(accounts, currentTotals, "revenue").totalCents - sectionFor(accounts, currentTotals, "expense").totalCents;
+
+  const retainedEarningsCents = cumulativeEarningsCents - currentYearEarningsCents;
+  const totalEquityCents = equity.totalCents + cumulativeEarningsCents;
 
   return {
-    as_of: asOf,
+    as_of: asOfDate,
+    fiscal_year: {
+      label: fiscalYear.label,
+      start: fiscalYear.start,
+      end: fiscalYear.end,
+      // The cutoff retained earnings covers through, spelled out so the
+      // UI can say "as of <date>" rather than making the user infer it.
+      prior_years_through: dayBefore(fiscalYear.start),
+    },
     assets: { accounts: assets.rows, total: centsToDollars(assets.totalCents) },
     liabilities: { accounts: liabilities.rows, total: centsToDollars(liabilities.totalCents) },
     equity: {
       accounts: equity.rows,
-      // Surfaced as its own labeled line rather than folded silently into
-      // the equity total -- an accountant looking at this needs to see
-      // where it came from, and it reconciles directly to the P&L's
-      // net income for the same window.
+      // Both surfaced as their own labeled lines rather than folded
+      // silently into the equity total -- an accountant reading this needs
+      // to see where each came from, and current_year_earnings reconciles
+      // directly to a P&L run over `fiscal_year`.
       retained_earnings: centsToDollars(retainedEarningsCents),
+      current_year_earnings: centsToDollars(currentYearEarningsCents),
       total: centsToDollars(totalEquityCents),
     },
     total_liabilities_and_equity: centsToDollars(liabilities.totalCents + totalEquityCents),
