@@ -31,6 +31,10 @@ const settingsSchema = z.object({
   // below. Rate is a fraction (0.05 = 5%), not a percentage.
   sample_review_enabled: z.boolean().optional(),
   sample_review_rate: z.number().min(0).max(1).nullable().optional(),
+  // Which month the fiscal year ends in (1-12). Not plan-gated -- this is
+  // a basic property of how a business keeps its books, not a premium
+  // feature, and the general ledger it drives isn't gated either.
+  fiscal_year_end_month: z.number().int().min(1).max(12).optional(),
 });
 
 function settingsResponse(org) {
@@ -48,6 +52,7 @@ function settingsResponse(org) {
     risk_based_auto_approval_available: Boolean(plan?.riskBasedAutoApproval),
     sample_review_enabled: Boolean(org.sampleReviewEnabled),
     sample_review_rate: org.sampleReviewRate,
+    fiscal_year_end_month: org.fiscalYearEndMonth,
   };
 }
 
@@ -118,6 +123,14 @@ router.patch("/api/org/settings", requireAuth, requireActivePlan, async (req, re
 
     if (org.sampleReviewEnabled && org.sampleReviewRate == null) {
       return res.status(422).json({ detail: "Set a sample rate before enabling statistical sampling." });
+    }
+
+    if (parsed.data.fiscal_year_end_month !== undefined) {
+      // Changing this re-slices which earnings count as prior-year vs.
+      // current-year on the balance sheet, but posts nothing and rewrites
+      // nothing -- both figures are derived (financialStatements.js), so
+      // this is safe to change at any time.
+      org.fiscalYearEndMonth = parsed.data.fiscal_year_end_month;
     }
 
     if (parsed.data.org_name !== undefined) {

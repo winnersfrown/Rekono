@@ -4,6 +4,47 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.22
+
+Closed the two real gaps in v1.21's balance sheet: it conflated prior-year
+retained earnings with current-year earnings, and nothing anywhere stopped
+a backdated entry from silently rewriting already-reported financials.
+
+- **Fiscal year** (`Organization.fiscalYearEndMonth`, default December,
+  settable under Settings -> Accounting). `fiscalYear.js` computes the
+  boundaries and handles non-calendar years properly -- a June year-end
+  means FY2026 runs 2025-07-01 to 2026-06-30 -- with the last day of the
+  year-end month computed rather than hardcoded, so a leap February lands
+  on the 29th.
+- **The balance sheet now splits earnings into two labeled equity lines**,
+  matching how every other GL presents them: *retained earnings* (prior
+  fiscal years -- settled history) and *current year earnings* (the year in
+  progress, which reconciles exactly to a P&L run over the same fiscal
+  year). Both stay derived rather than posted: QuickBooks and Xero compute
+  current-year earnings the same way, and deriving the prior years too
+  means changing the fiscal year end re-slices the split instantly with
+  nothing to un-post. The split is presentational -- totals are unchanged
+  and the sheet still balances either way.
+- **Closing a month now locks it.** `postJournalEntry` refuses any entry
+  dated into a closed period, so a backdated entry can't rewrite
+  financials you already reported. Enforced in the ledger rather than the
+  routes, so it covers every posting path from one place; reopening the
+  period unlocks it again. Before this, `ClosePeriod` was a pure checklist
+  that touched nothing in the ledger -- this is what finally gives
+  month-end close teeth.
+- One deliberate exception: invoice approval must never *fail* because the
+  ledger refused a posting. Auto-posting carries today's date, so it only
+  hits a closed period if the current month was closed early. When that
+  happens the approval still succeeds and a `journal_posting_skipped`
+  audit entry records why -- findable at close time rather than surfacing
+  months later as an unexplained variance.
+
+Two v1.21 tests were updated rather than fixed: they asserted the old
+single-line semantics where `retained_earnings` meant all cumulative
+earnings. Under the split, activity dated today is current-year earnings
+and retained earnings covers prior years only -- the assertions moved to
+match, and the totals they check are unchanged.
+
 ## v1.21
 
 Added the three financial statements -- profit & loss, balance sheet, and

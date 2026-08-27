@@ -126,16 +126,19 @@ test("the balance sheet balances, with retained earnings carrying the period's n
   expect(res.body.assets.total).toBeCloseTo(13800, 2);
   // Accounts Payable from the approved-but-unpaid invoice.
   expect(res.body.liabilities.total).toBeCloseTo(800, 2);
-  // Owner's Equity 10,000 + retained earnings 3,000 (= the P&L's net
-  // income for the same window, since the ledger starts empty).
-  expect(res.body.equity.retained_earnings).toBeCloseTo(3000, 2);
+  // Owner's Equity 10,000 + this year's earnings 3,000. Everything in
+  // this scenario is dated today, so it's all current-year -- retained
+  // earnings covers *prior* fiscal years only and stays at zero (see
+  // tests/fiscalYear.test.js for the split itself).
+  expect(res.body.equity.current_year_earnings).toBeCloseTo(3000, 2);
+  expect(res.body.equity.retained_earnings).toBeCloseTo(0, 2);
   expect(res.body.equity.total).toBeCloseTo(13000, 2);
 
   expect(res.body.total_liabilities_and_equity).toBeCloseTo(13800, 2);
   expect(res.body.balanced).toBe(true);
 });
 
-test("retained earnings on the balance sheet equals net income on the P&L for the same window", async () => {
+test("current-year earnings on the balance sheet equals net income on the P&L for the same window", async () => {
   const token = await signup(app, request);
   await seedScenario(token);
 
@@ -145,9 +148,9 @@ test("retained earnings on the balance sheet equals net income on the P&L for th
   ]);
 
   // The two reports are computed independently -- this is the check that
-  // they actually agree, which is the whole point of deriving retained
-  // earnings rather than storing it.
-  expect(bs.body.equity.retained_earnings).toBeCloseTo(pnl.body.net_income, 2);
+  // they actually agree, which is the whole point of deriving earnings
+  // rather than storing them.
+  expect(bs.body.equity.current_year_earnings).toBeCloseTo(pnl.body.net_income, 2);
 });
 
 test("a brand-new org's balance sheet is empty but still balances", async () => {
@@ -157,6 +160,7 @@ test("a brand-new org's balance sheet is empty but still balances", async () => 
   expect(res.status).toBe(200);
   expect(res.body.assets.total).toBe(0);
   expect(res.body.equity.retained_earnings).toBe(0);
+  expect(res.body.equity.current_year_earnings).toBe(0);
   expect(res.body.balanced).toBe(true);
 });
 
