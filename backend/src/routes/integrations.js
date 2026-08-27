@@ -20,8 +20,10 @@ import { requireAuth, requireReauth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { settings } from "../config.js";
 import * as quickbooks from "../quickbooks.js";
-import { AuditLog, DismissedBankTransaction, Invoice, LineItem, Organization } from "../models/index.js";
+import { Account, AuditLog, DismissedBankTransaction, Invoice, LineItem, Organization } from "../models/index.js";
 import { lookupVendorExpenseAccount, rememberVendorExpenseAccount } from "../vendorExpenseAccount.js";
+import { LedgerError, centsToDollars } from "../ledger.js";
+import { amountPaidCents, invoiceTotalCents, isValidPaymentAccount, recordBillPayment } from "../accountsPayable.js";
 
 const router = Router();
 
@@ -418,7 +420,24 @@ router.get(
 const confirmBankMatchSchema = z.object({
   invoice_id: z.string().min(1),
   transaction_date: z.string().min(1),
+  // Which Rekono account the money left from, so confirming the match can
+  // post the payment to the ledger as well as record it against the
+  // QuickBooks bill. Optional: Rekono has no mapping from QuickBooks' bank
+  // accounts to its own chart, so when it isn't given we fall back to the
+  // org's primary bank account (see primaryBankAccount below) rather than
+  // refusing a confirmation that used to work without it.
+  payment_account_id: z.string().min(1).optional(),
 });
+
+// The account a bill payment defaults to: the lowest-coded bank or cash
+// account, which in the seeded chart is 1000 Cash. Only used when the
+// caller didn't name one.
+async function primaryBankAccount(orgId) {
+  return Account.findOne({
+    where: { orgId, type: "asset", subtype: { [Op.in]: ["bank", "cash"] }, active: true },
+    order: [["code", "ASC"]],
+  });
+}
 
 router.post(
   "/api/integrations/quickbooks/bank-transactions/:txnId/confirm",
@@ -440,19 +459,68 @@ router.post(
       invoice.quickbooksPaymentTransactionType = "Purchase";
       await invoice.save();
 
+      // Confirming the match is the moment Rekono learns the bill was
+      // actually paid, so it's the moment the payable should be relieved.
+      // Before this, the loop closed only in QuickBooks' direction and
+      // Accounts Payable kept the bill forever.
+      //
+      // Deliberately best-effort: a refused posting (a closed period, or
+      // no bank account in the chart of accounts) must not fail the match
+      // itself, since the QuickBooks fact is true regardless. The skip is
+      // recorded so it's findable at close time rather than surfacing
+      // later as an unexplained AP balance -- same treatment
+      // postInvoiceApproval gives the approval path.
+      let ledgerPosted = false;
+      let ledgerSkippedReason = null;
+      const outstandingCents = invoiceTotalCents(invoice) - (await amountPaidCents(invoice.id));
+      if (outstandingCents > 0) {
+        const paymentAccount = parsed.data.payment_account_id
+          ? await Account.findOne({ where: { id: parsed.data.payment_account_id, orgId: req.currentUser.orgId } })
+          : await primaryBankAccount(req.currentUser.orgId);
+
+        if (!isValidPaymentAccount(paymentAccount)) {
+          ledgerSkippedReason = "No usable payment account found in the chart of accounts.";
+        } else {
+          try {
+            await recordBillPayment(invoice, {
+              amountCents: outstandingCents,
+              paymentDate: parsed.data.transaction_date.slice(0, 10),
+              paymentAccountId: paymentAccount.id,
+              memo: `QuickBooks bank match ${req.params.txnId}`,
+              postedByUserId: req.currentUser.id,
+            });
+            ledgerPosted = true;
+          } catch (err) {
+            if (!(err instanceof LedgerError)) throw err;
+            ledgerSkippedReason = err.message;
+          }
+        }
+      }
+
       await AuditLog.create({
         orgId: req.currentUser.orgId,
         userId: req.currentUser.id,
         invoiceId: invoice.id,
         action: "quickbooks_payment_matched",
         actor: req.currentUser.email,
-        details: { quickbooks_transaction_id: req.params.txnId },
+        details: { quickbooks_transaction_id: req.params.txnId, ledger_posted: ledgerPosted },
       });
+
+      if (ledgerSkippedReason) {
+        await AuditLog.create({
+          orgId: req.currentUser.orgId,
+          invoiceId: invoice.id,
+          action: "journal_posting_skipped",
+          actor: "system",
+          details: { reason: ledgerSkippedReason, amount: centsToDollars(outstandingCents) },
+        });
+      }
 
       res.json({
         ok: true,
         quickbooks_paid_at: invoice.quickbooksPaidAt,
         quickbooks_payment_transaction_id: invoice.quickbooksPaymentTransactionId,
+        ledger_posted: ledgerPosted,
       });
     } catch (err) {
       next(err);

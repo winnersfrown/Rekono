@@ -4,6 +4,70 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.24
+
+Bill payments -- the other half of accounts payable, and the asymmetry
+v1.23 made obvious. Approving a vendor bill has posted Debit expense /
+Credit Accounts Payable since v1.20, but nothing ever relieved that
+payable: AP only grew, and the balance sheet showed every bill the org had
+ever approved as still owed. Paying a bill now posts Debit Accounts
+Payable / Credit whatever account the money left from.
+
+- **`BillPayment`** is the AP mirror of `CustomerPayment` -- its own table
+  rather than a `paidAt` flag on the invoice, because partial payments are
+  normal and each one is a dated event the cash flow statement needs. Same
+  guards the AR side learned: overpayment refused, a posting the ledger
+  refuses unwinds its own row, and the payment is dated to when the money
+  actually moved.
+- **A credit card is a valid thing to pay from.** Paying a bill with one
+  swaps one liability for another rather than spending cash, and the ledger
+  models that correctly, so it would be wrong to restrict this to bank
+  accounts. Accounts Payable and Accounts Receivable are both refused:
+  paying from AP posts Debit AP / Credit AP, which balances and moves
+  nothing, and crediting AR to pay a vendor reads as a customer having
+  settled their invoice.
+- **You can only relieve a payable that exists.** Approving a bill is what
+  credits AP, and that posting can be skipped (a bill approved into a
+  closed period), so an `approved` status alone isn't proof it landed.
+  Debiting AP for a bill that never credited it drives the balance negative
+  against nothing. Refused, and recoverable -- re-approving re-runs the
+  idempotent `postInvoiceApproval`.
+- **AP aging**, the mirror of v1.23's AR aging: what's owed, bucketed by
+  days past due, grouped by vendor. Vendor names are normalized for
+  grouping (trimmed and case-folded, first spelling kept for display),
+  which is a weaker key than AR's real `Customer` table -- noted in the
+  code as the known limitation rather than papered over.
+- **New Payables nav group**: Bill Payments (approved bills and what's
+  still owed, with a payment action) and AP Aging. `GET /api/bills`
+  backs the first, deliberately its own endpoint rather than the invoice
+  list plus a payments call per row -- that shape is an N+1, and the
+  invoice list serializer carries neither a due date nor any payment
+  state.
+- **Confirming a QuickBooks bank match now posts the payment too.** That
+  loop previously closed only in QuickBooks' direction -- the bill was
+  marked paid there and Accounts Payable kept it forever. Best-effort by
+  design: the QuickBooks fact is true whether or not the ledger accepts the
+  posting, so a refusal records a `journal_posting_skipped` audit entry
+  instead of failing the match.
+
+**AP aging counts approved sample invoices.** Found by running the UI, not
+by a test: the Review Queue deliberately shows the seeded sample and lets
+it be approved like any other invoice, and approving it posts to Accounts
+Payable for real. `Invoice`'s default scope hides sample data, which is
+right for usage metrics and wrong here -- it left the aging report
+disagreeing with the balance sheet by exactly the sample's amount. Both the
+report and the payments endpoints now use the `withSamples` scope, so a
+sample that shows as owed can also be paid.
+
+**CORS refusals are no longer reported as 500s.** Rejecting a disallowed
+origin by passing an `Error` handed it to the generic error handler, so a
+request understood perfectly and refused on policy came back as "Internal
+server error" -- and a misconfigured `ALLOWED_ORIGINS` looked like a bug in
+the app. The middleware now omits the CORS headers instead (which is what
+actually enforces this -- the browser blocks the response), and a preflight
+from a disallowed origin gets an honest 403 rather than falling through to
+the SPA catch-all and returning 200 with an HTML body.
+
 ## v1.23
 
 Accounts receivable -- customers, customer invoices, payments, and the AR

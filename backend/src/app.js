@@ -31,6 +31,7 @@ import accountsRoutes from "./routes/accounts.js";
 import journalEntriesRoutes from "./routes/journalEntries.js";
 import financialStatementsRoutes from "./routes/financialStatements.js";
 import receivablesRoutes from "./routes/receivables.js";
+import payablesRoutes from "./routes/payables.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,14 +56,32 @@ app.set("trust proxy", 1);
 // applies to in the first place -- only a browser sends that header, to
 // enforce its own same-origin policy client-side -- so those are let
 // through unconditionally rather than rejected.
+// Rejecting by passing an Error hands it to the generic error handler,
+// which reports it as a 500 "Internal server error" -- a misleading status
+// for a request that was understood perfectly and refused on policy, and
+// one that makes a misconfigured ALLOWED_ORIGINS look like a server bug.
+// Passing `false` instead just omits the CORS headers, so the browser
+// blocks the response on its own (which is what actually enforces this),
+// and the request still gets a truthful status from whatever handles it.
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || settings.allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error("Not allowed by CORS"));
+      callback(null, !origin || settings.allowedOrigins.includes(origin));
     },
   })
 );
+
+// A preflight for a disallowed origin gets no CORS headers from the
+// middleware above and would otherwise fall through to the SPA's catch-all
+// and return 200 with an HTML body. Answering it 403 is both truthful and
+// far easier to diagnose than a silent browser-side block.
+app.options(/.*/, (req, res) => {
+  const origin = req.headers.origin;
+  if (origin && !settings.allowedOrigins.includes(origin)) {
+    return res.status(403).json({ detail: "Origin not allowed." });
+  }
+  res.sendStatus(204);
+});
 
 // The review UI's actual script/style/resource footprint (verified by
 // grepping backend/public/ rather than guessed): no inline <script> blocks
@@ -206,6 +225,7 @@ app.use(accountsRoutes);
 app.use(journalEntriesRoutes);
 app.use(financialStatementsRoutes);
 app.use(receivablesRoutes);
+app.use(payablesRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));

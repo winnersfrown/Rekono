@@ -11,6 +11,7 @@ import { newId } from "./idDefault.js";
 export const JOURNAL_ENTRY_SOURCES = [
   "manual",
   "invoice_approval", // AP: a vendor bill was approved
+  "bill_payment", // AP: a vendor bill was paid
   "customer_invoice", // AR: an invoice was issued to a customer
   "customer_payment", // AR: a customer paid
   "void",

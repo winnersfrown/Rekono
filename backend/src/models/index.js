@@ -29,6 +29,7 @@ import { Customer } from "./Customer.js";
 import { CustomerInvoice } from "./CustomerInvoice.js";
 import { CustomerInvoiceLine } from "./CustomerInvoiceLine.js";
 import { CustomerPayment } from "./CustomerPayment.js";
+import { BillPayment } from "./BillPayment.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -114,6 +115,11 @@ CustomerInvoiceLine.belongsTo(Account, { foreignKey: "revenueAccountId", as: "re
 CustomerInvoice.hasMany(CustomerPayment, { foreignKey: "customerInvoiceId", as: "payments", onDelete: "CASCADE", hooks: true });
 CustomerPayment.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
 CustomerPayment.belongsTo(Account, { foreignKey: "depositAccountId", as: "depositAccount" });
+
+// The AP mirror of CustomerPayment. Invoice is the vendor bill being paid.
+Invoice.hasMany(BillPayment, { foreignKey: "invoiceId", as: "billPayments", onDelete: "CASCADE", hooks: true });
+BillPayment.belongsTo(Invoice, { foreignKey: "invoiceId" });
+BillPayment.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -241,4 +247,5 @@ export {
   CustomerInvoice,
   CustomerInvoiceLine,
   CustomerPayment,
+  BillPayment,
 };

@@ -338,6 +338,23 @@
             </div>
 
             <div class="topnav-group">
+              <button type="button" class="topnav-trigger" data-menu="payables" aria-expanded="false" aria-haspopup="true">
+                Payables
+                <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="topnav-menu" data-menu-for="payables" hidden>
+          <button class="tab-btn" data-tab="billpayments">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
+            Bill Payments
+          </button>
+          <button class="tab-btn" data-tab="apaging">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            AP Aging
+          </button>
+              </div>
+            </div>
+
+            <div class="topnav-group">
               <button type="button" class="topnav-trigger" data-menu="accounting" aria-expanded="false" aria-haspopup="true">
                 Accounting
                 <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
@@ -1191,6 +1208,35 @@
           </table>
         </section>
 
+        <section id="tab-billpayments" class="tab-panel">
+          <h1>Bill Payments</h1>
+          <p class="hint">Approved bills and what's still owed on them. Recording a payment here is what clears the payable off your books -- approving a bill only records that you owe it.</p>
+          <form id="bill-payments-filter" class="statement-period">
+            <label>Show<select id="bp-filter">
+              <option value="outstanding">Still owed</option>
+              <option value="all">All approved bills</option>
+            </select></label>
+          </form>
+          <table>
+            <thead><tr><th>Vendor</th><th>Bill</th><th>Due</th><th>Total</th><th>Paid</th><th>Outstanding</th><th></th></tr></thead>
+            <tbody id="bill-payments-body"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-apaging" class="tab-panel">
+          <h1>AP Aging</h1>
+          <p class="hint">What you owe vendors, bucketed by how far past due. Counted from the due date, and only approved bills count.</p>
+          <form id="ap-aging-form" class="statement-period">
+            <label>As of<input type="date" id="ap-as-of" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <table>
+            <thead><tr><th>Vendor</th><th>Current</th><th>1-30</th><th>31-60</th><th>61-90</th><th>90+</th><th>Total</th></tr></thead>
+            <tbody id="ap-aging-body"></tbody>
+            <tfoot><tr id="ap-aging-totals"></tr></tfoot>
+          </table>
+        </section>
+
         <section id="tab-chartofaccounts" class="tab-panel">
           <h1>Chart of Accounts</h1>
           <p class="hint">Every account posted invoice approvals and manual journal entries can use. System accounts (bold) can be renamed but not deactivated.</p>
@@ -1710,13 +1756,13 @@
        no way to correct it afterwards short of voiding the payment. -->
   <div id="payment-modal" class="modal-overlay" style="display: none;">
     <div class="confirm-modal-card">
-      <h2>Record a payment</h2>
+      <h2 id="payment-modal-title">Record a payment</h2>
       <p id="payment-modal-message"></p>
       <form id="payment-modal-form" class="line-item-form">
         <div class="line-item-fields">
           <label>Amount<input type="number" id="payment-modal-amount" step="0.01" min="0.01" required /></label>
-          <label>Date received<input type="date" id="payment-modal-date" required /></label>
-          <label>Deposit into<select id="payment-modal-account" required></select></label>
+          <label><span id="payment-modal-date-label">Date received</span><input type="date" id="payment-modal-date" required /></label>
+          <label><span id="payment-modal-account-label">Deposit into</span><select id="payment-modal-account" required></select></label>
         </div>
         <p id="payment-modal-error" class="confirm-modal-error" style="display: none;"></p>
         <div class="confirm-modal-actions">
