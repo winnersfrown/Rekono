@@ -4,6 +4,50 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.17
+
+Added an optional AWS S3 + SQS backend, so this app can run on more than
+one instance -- came out of a conversation about whether to move off
+Render onto AWS Lambda for scale; Lambda would need a real rewrite (the
+in-process job queue and local-disk storage don't translate), but the
+actual blocker at any scale is narrower than that: local disk storage and
+the in-process job queue both silently assume exactly one running
+instance, which breaks the moment a second one is added purely for
+request capacity. This closes that gap without changing the deployment
+model at all.
+
+- **`AWS_S3_BUCKET`** switches document storage (the 5 OCR/LLM pipelines)
+  from local disk to S3. `storage.js` dispatches every operation --
+  save, serve, delete, and the temp-file download OCR needs to shell out
+  to pdftoppm/tesseract against -- on the *shape* of a record's
+  `storagePath` (a plain path vs. an `s3://` string), not on whether S3 is
+  currently configured, so demoSeed.js's always-local sample files keep
+  working unmodified either way, and a record written under one mode
+  still resolves correctly if the deployment's mode changes later. A
+  document is always streamed through this server when served back, never
+  redirected to a presigned URL -- the bearer token that authorized the
+  request is the only thing that should ever prove access to it.
+- **`AWS_SQS_QUEUE_URL`** switches the background job queue (`jobs.js`)
+  from an in-memory array to SQS, which every instance polls -- the actual
+  fix for "instance B never processes a job instance A queued." SQS's own
+  visibility timeout replaces the local queue's boot-time orphaned-job
+  recovery: a message that's received but never deleted (its instance
+  crashed mid-job) simply becomes receivable again once the timeout
+  expires, so `recoverOrphanedJobs` is skipped entirely in SQS mode rather
+  than risking a duplicate enqueue of a message that's just waiting out
+  its timeout.
+- Both independent, both off by default -- unset, everything behaves
+  exactly as it always has. Credentials come from the AWS SDK's own
+  standard chain, not a Rekono-specific setting.
+- As a side effect, `AWS_S3_BUCKET` alone also fixes Render's free-tier
+  ephemeral-disk problem (uploaded files lost on every restart/redeploy)
+  even on a single instance -- see render.yaml.
+
+Tested down to the configured/unconfigured branch via a mocked S3/SQS
+client (`tests/storage.test.js`, `tests/sqsQueue.test.js`), same pattern
+as this app's Stripe/Google/QuickBooks coverage; not against a live AWS
+account. See README.md's new "Scaling past one instance" section.
+
 ## v1.16
 
 Added a staff-only cross-org usage dashboard -- the "Rekono operator" view

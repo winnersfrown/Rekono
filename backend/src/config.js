@@ -108,6 +108,28 @@ export const settings = {
     .map((origin) => origin.trim())
     .filter(Boolean),
 
+  // Horizontal-scaling escape hatch: local disk storage (storageDir above)
+  // and the in-process job queue (jobs.js) both assume exactly one running
+  // instance, which is fine at low volume but breaks the moment a second
+  // instance is added for capacity -- a file saved by one instance isn't
+  // visible to another, and each instance would drain its own private
+  // queue instead of sharing the work. Setting AWS_S3_BUCKET switches
+  // storage.js's document uploads (the 5 OCR/LLM pipelines -- invoices,
+  // expense receipts, vendor documents, leases, tax documents) to S3;
+  // setting AWS_SQS_QUEUE_URL switches jobs.js's queue to SQS, which every
+  // instance can poll. Independent flags since either can be adopted on
+  // its own, but going to more than one instance needs both -- S3 alone
+  // doesn't help if only one instance is still draining the job queue.
+  // Unset (the default) keeps today's single-instance behavior exactly as
+  // it is; credentials come from the AWS SDK's own standard chain
+  // (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, or an IAM role if this ever
+  // runs on AWS compute), not from a Rekono-specific env var, since that
+  // chain already exists and there's no reason to reinvent it. See
+  // README.md's "Scaling past one instance (AWS S3 + SQS)" section.
+  awsRegion: process.env.AWS_REGION || "us-east-1",
+  awsS3Bucket: process.env.AWS_S3_BUCKET || "",
+  awsSqsQueueUrl: process.env.AWS_SQS_QUEUE_URL || "",
+
   // Rekono's own team, not a customer role -- gates routes/staff.js's
   // cross-org usage dashboard (auth.js's requireStaff). Deliberately an
   // email allowlist rather than a database column: there's no signup flow

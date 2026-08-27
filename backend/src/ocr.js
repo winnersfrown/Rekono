@@ -7,10 +7,12 @@
 // is a drop-in replacement behind `extractText`.
 
 import { execFile } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { downloadToLocalFile, isS3Path } from "./storage.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,6 +27,12 @@ const PDFTOPPM_TIMEOUT_MS = 60_000;
 export class OcrError extends Error {}
 
 export async function extractText(storagePath, contentType) {
+  // pdftoppm/tesseract both shell out against a real path on disk -- there's
+  // no way to point either at an S3 object directly, so an S3-backed
+  // document is downloaded to a throwaway temp file first (removed after,
+  // success or failure) and this function recurses onto that local copy.
+  if (isS3Path(storagePath)) return extractTextFromS3(storagePath, contentType);
+
   try {
     await fs.access(storagePath);
   } catch {
@@ -33,6 +41,21 @@ export async function extractText(storagePath, contentType) {
 
   const isPdf = contentType === "application/pdf" || path.extname(storagePath).toLowerCase() === ".pdf";
   return isPdf ? extractFromPdf(storagePath) : extractFromImage(storagePath);
+}
+
+async function extractTextFromS3(storagePath, contentType) {
+  const tempPath = path.join(os.tmpdir(), `rekono-ocr-src-${crypto.randomUUID()}${path.extname(storagePath)}`);
+  try {
+    await downloadToLocalFile(storagePath, tempPath);
+  } catch (err) {
+    if (err.code === "ENOENT") throw new OcrError(`File not found: ${storagePath}`);
+    throw err;
+  }
+  try {
+    return await extractText(tempPath, contentType);
+  } finally {
+    await fs.rm(tempPath, { force: true });
+  }
 }
 
 async function extractFromImage(imagePath) {

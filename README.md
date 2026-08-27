@@ -354,6 +354,25 @@ One caveat on that Postgres run: `tests/rls.test.js` and the rest of the row-lev
 
 No software is ever fully "unhackable" -- this is a genuine, tested hardening pass against the realistic risks for an app like this (XSS, stored-content-type confusion, brute force, spreadsheet formula injection, cross-org data leakage), not a guarantee against every possible attack.
 
+### Scaling past one instance (AWS S3 + SQS)
+
+Two things about the default setup only work correctly with exactly one running instance:
+
+1. **Uploaded documents live on local disk** (`STORAGE_DIR`). A file saved by one instance isn't visible to another -- on Render's free plan this already loses every upload on restart/redeploy for the single-instance case too (see `render.yaml`'s note on ephemeral storage), and a second instance makes it a routine problem (whichever instance didn't handle the upload can never serve it back) rather than an occasional one.
+2. **The background job queue (`jobs.js`) is in-process.** Each instance would drain its own private, empty queue, so a document uploaded to instance A never gets processed if the job landed on instance B.
+
+Setting `AWS_S3_BUCKET` switches document storage (the 5 OCR/LLM pipelines -- invoices, expense receipts, vendor documents, leases, tax documents) to S3; setting `AWS_SQS_QUEUE_URL` switches the job queue to Amazon SQS, which every instance polls. Independent flags -- either can be adopted alone -- but running more than one instance needs both, since S3 alone doesn't help if only one instance is still draining the job queue, and SQS alone doesn't help if uploads still land wherever one instance's local disk happens to be.
+
+Both are entirely optional and off by default, same graceful-degradation shape as every other integration in this file: unset, everything behaves exactly as it always has (local disk, in-process queue). Credentials come from the AWS SDK's own standard chain (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, or an IAM role automatically if this ever runs on AWS compute) rather than a Rekono-specific setting -- there's no reason to reinvent credential resolution AWS's own SDK already does correctly.
+
+What actually changes under the hood:
+
+- **`storage.js`** dispatches every storage operation (save, serve, delete, and the temp-file download OCR needs to shell out to pdftoppm/tesseract against) on the *shape* of a given record's `storagePath` -- a plain filesystem path, or an `s3://<bucket>/<key>` string -- rather than on whether S3 is currently configured. A record written under one mode keeps working if the deployment's mode changes later, and demo/sample documents (always written to local disk by `demoSeed.js`) keep serving and deleting correctly even in an S3-configured deployment.
+- **A document's file is streamed through this server when served back**, never redirected to a presigned S3 URL -- the bearer token that already authorized the request is the only thing that ever proves access to it; a redirect would hand the client a bucket URL it could pass around on its own.
+- **`jobs.js`** sends `{id, kind}` to SQS instead of an in-memory array; every instance long-polls the same queue at boot (`startSqsConsumer`, called from `server.js`). SQS's own visibility timeout is what keeps two instances from processing the same message twice, and a message that's received but never deleted (the instance handling it crashed mid-job) simply becomes receivable again once that timeout expires -- which is also why `recoverOrphanedJobs` (the local queue's own restart-recovery sweep) is skipped entirely in SQS mode rather than risking a duplicate enqueue of a message that's just waiting out its timeout, not actually lost.
+
+Tested down to the configured/unconfigured branch via a mocked S3/SQS client (`tests/storage.test.js`, `tests/sqsQueue.test.js`), not a live AWS account -- same pattern as this app's Stripe/Google/QuickBooks coverage. The one thing that isn't unit-tested is the SQS consumer's actual infinite poll loop, for the same reason: there's no safe way to let a genuine `for (;;)` run inside a test.
+
 ### LLM provider (Gemini or OpenRouter)
 
 One model powers structured extraction, merchant categorization, the QuickBooks expense-account and bank-match suggestions, and Ask Rekono. Two providers are supported and either satisfies all of them -- `llm.js` is the only file that knows which is in use.
