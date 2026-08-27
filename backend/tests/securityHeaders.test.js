@@ -53,6 +53,30 @@ describe("CORS allowlist", () => {
   test("does not grant CORS access to an arbitrary third-party origin", async () => {
     const res = await request(app).get("/api/health").set("Origin", "https://evil.example.com");
     expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+    // Withholding the header is what enforces this -- the browser blocks
+    // the response. The request itself is still answered truthfully rather
+    // than being turned into a 500, which is what rejecting with an Error
+    // used to do: a policy refusal reported as a server fault, and a
+    // misconfigured ALLOWED_ORIGINS that looks like a bug in the app.
+    expect(res.status).toBe(200);
+  });
+
+  test("a preflight from a disallowed origin is refused with 403, not a 200 HTML page", async () => {
+    const res = await request(app)
+      .options("/api/invoices")
+      .set("Origin", "https://evil.example.com")
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.status).toBe(403);
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  test("a preflight from an allowed origin succeeds", async () => {
+    const res = await request(app)
+      .options("/api/invoices")
+      .set("Origin", "https://winnersfrown.github.io")
+      .set("Access-Control-Request-Method", "POST");
+    expect(res.status).toBeLessThan(300);
+    expect(res.headers["access-control-allow-origin"]).toBe("https://winnersfrown.github.io");
   });
 
   test("a request with no Origin header (server-to-server, curl) is unaffected", async () => {

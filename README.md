@@ -211,6 +211,11 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/customer-invoices/:id/void` | Reverses the invoice off the books. Refused if payments exist against it |
 | `POST /api/customer-invoices/:id/payments` | `{amount, payment_date, deposit_account_id}` -- records cash received. Posts Debit deposit / Credit AR, and flips the invoice to `paid` once settled. Overpayment and depositing into AR itself are both refused |
 | `GET /api/reports/ar-aging` | What customers owe, bucketed current / 1-30 / 31-60 / 61-90 / 90+ days past due as of `?as_of=` |
+| `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
+| `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
+| `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
+| `DELETE /api/invoices/:id/payments/:paymentId` | Unapplies a payment, reversing its journal entry |
+| `GET /api/reports/ap-aging` | What you owe vendors, bucketed the same way as AR aging, grouped by vendor |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -496,6 +501,22 @@ Invoice numbers are sequential per org (`INV-0001`), derived from the highest ex
 
 Building this surfaced a bug in v1.21's cash flow classifier. It bucketed by account *type* alone, so collecting a receivable (an asset) read as **investing** and paying down a payable (a liability) read as **financing**. Both are plainly operating activities — investing means buying and selling long-term assets, financing means raising and returning capital, and neither describes collecting what you're owed or settling what you owe. `financialStatements.js` now special-cases the `accounts_receivable`/`accounts_payable` subtypes, with tests pinning both directions.
 
+### Accounts payable: paying bills
+
+`accountsPayable.js` is the mirror of `accountsReceivable.js`, and closes the asymmetry AR made obvious. Approving a vendor bill has posted **Debit expense / Credit Accounts Payable** since v1.20, but nothing relieved that payable — AP only ever grew, and the balance sheet showed every bill the org had ever approved as still owed. Recording a payment posts **Debit Accounts Payable / Credit the account the money left from**.
+
+`BillPayment` is its own table rather than a `paidAt` flag on `Invoice`, for the same reasons as `CustomerPayment`: partial payments are normal, and each is a dated event the cash flow statement needs. `Invoice.total` is a FLOAT in dollars (the AP pipeline predates the ledger's integer-cents convention), so `invoiceTotalCents` converts at that one boundary rather than mixing representations.
+
+**A credit card is a valid thing to pay from** — paying a bill with one swaps one liability for another rather than spending cash, and the ledger models that correctly. Accounts Payable and Accounts Receivable are both refused as sources: paying from AP posts Debit AP / Credit AP, which balances, passes every check, and moves nothing; crediting AR to pay a vendor reads as a customer having settled their invoice.
+
+**You can only relieve a payable that exists.** Approving is what credits AP, and that posting can be skipped (a bill approved into a closed period — see `postInvoiceApproval`), so an `approved` status alone isn't proof it landed. Debiting AP for a bill that never credited it drives the balance negative against nothing, so it's refused — recoverably, since re-approving re-runs the idempotent posting.
+
+**AP aging** buckets outstanding balances by days past due, grouped by vendor. Vendor names are normalized for grouping only (trimmed and case-folded, first spelling kept for display) — a weaker key than AR's real `Customer` table, which is exactly the argument `Customer.js` makes for AR having one.
+
+One subtlety worth knowing: the aging report and the payments endpoints both use `Invoice`'s `withSamples` scope rather than its default. The Review Queue deliberately shows the seeded sample invoice and lets it be approved like any other, and approving it posts to Accounts Payable for real — so filtering it out of aging alone would leave the report disagreeing with the balance sheet by exactly the sample's amount.
+
+Confirming a QuickBooks bank match posts a payment too, which is what finally closes that loop in both directions. It's best-effort: the QuickBooks fact is true whether or not the ledger accepts the posting, so a refusal writes a `journal_posting_skipped` audit entry rather than failing the match.
+
 ### Staff / cross-org usage dashboard
 
 `GET /api/staff/overview` and the app shell's "Staff" nav tab are Rekono's own team's view of the product -- not a customer feature. It answers "how is Rekono doing" (org counts and plan mix, a signup trend, an activation funnel from signup through a first approved document, document volume, and subscription health), never a way to read any single customer's actual documents, vendor names, or dollar amounts. Demo orgs (`Organization.isDemo`) and seeded sample invoices (`Invoice.isSampleData`, see below) are excluded from every figure so they don't inflate the numbers with activity nobody actually did.
@@ -510,11 +531,11 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
-- **AP bill payment posting**: the AR side posts cash payments to the ledger; the AP side still marks invoices paid via the QuickBooks reconciliation flow without a corresponding journal entry. Closing that asymmetry is the natural companion to this release.
+- **Vendors as a real table**: AP has no `Vendor` model, so AP aging groups by a normalized vendor name. That's the weaker key `Customer.js` argues against for AR, and giving vendors payment terms and a stable identity is the fix.
 - **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.
-- **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR aging shipped with accounts receivable, above.)
+- **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.
 - **Compliance**: audit logging exists from day one; formal data retention policy and SOC 2 groundwork come with the first real customer conversations.

@@ -232,6 +232,8 @@ function switchTab(name) {
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
+  if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
+  if (name === "apaging") loadApAging();
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -4798,7 +4800,11 @@ function renderCustomerInvoices(data) {
     btn.addEventListener("click", async () => {
       const payment = await paymentDialog(Number(btn.dataset.outstanding));
       if (!payment) return;
-      await act(btn.dataset.id, "payments", payment);
+      await act(btn.dataset.id, "payments", {
+        amount: payment.amount,
+        payment_date: payment.payment_date,
+        deposit_account_id: payment.account_id,
+      });
     })
   );
 }
@@ -4818,17 +4824,34 @@ function ciDepositAccounts() {
 // account for the user is a posting decision made behind their back.
 let paymentModalResolve = null;
 
-async function paymentDialog(outstanding) {
-  const accounts = ciDepositAccounts();
-  if (!accounts.length) {
-    await alertDialog("No deposit account", "Add an asset account for the bank you were paid into first.");
+// Shared by both sides of the ledger: money coming in against a customer
+// invoice, and money going out against a vendor bill. The only differences
+// are the wording and which accounts are offered, so those are arguments
+// rather than a second near-identical dialog.
+async function paymentDialog(
+  outstanding,
+  {
+    title = "Record a payment",
+    dateLabel = "Date received",
+    accountLabel = "Deposit into",
+    accounts = null,
+    emptyTitle = "No deposit account",
+    emptyMessage = "Add an asset account for the bank you were paid into first.",
+  } = {}
+) {
+  const options = accounts || ciDepositAccounts();
+  if (!options.length) {
+    await alertDialog(emptyTitle, emptyMessage);
     return null;
   }
 
+  document.getElementById("payment-modal-title").textContent = title;
+  document.getElementById("payment-modal-date-label").textContent = dateLabel;
+  document.getElementById("payment-modal-account-label").textContent = accountLabel;
   document.getElementById("payment-modal-message").textContent = `Outstanding balance is ${fmtMoney(outstanding)}.`;
   document.getElementById("payment-modal-amount").value = outstanding.toFixed(2);
   document.getElementById("payment-modal-date").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("payment-modal-account").innerHTML = accounts
+  document.getElementById("payment-modal-account").innerHTML = options
     .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
     .join("");
   const errorEl = document.getElementById("payment-modal-error");
@@ -4861,10 +4884,13 @@ document.getElementById("payment-modal-form").addEventListener("submit", (e) => 
     errorEl.style.display = "";
     return;
   }
+  // Resolved with a neutral `account_id` -- the AR API calls it
+  // deposit_account_id and the AP API calls it payment_account_id, so each
+  // caller names it rather than the shared dialog picking a side.
   closePaymentModal({
     amount,
     payment_date: document.getElementById("payment-modal-date").value,
-    deposit_account_id: document.getElementById("payment-modal-account").value,
+    account_id: document.getElementById("payment-modal-account").value,
   });
 });
 
@@ -4874,7 +4900,8 @@ async function loadArAging() {
   renderArAging(await (await apiFetch(`/api/reports/ar-aging?as_of=${asOfEl.value}`)).json());
 }
 
-const AR_BUCKET_KEYS = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"];
+// Shared by both aging reports -- AR and AP bucket identically.
+const AGING_BUCKET_KEYS = ["current", "d1_30", "d31_60", "d61_90", "d90_plus"];
 
 function renderArAging(data) {
   const body = document.getElementById("ar-aging-body");
@@ -4886,7 +4913,7 @@ function renderArAging(data) {
         (row) => `
       <tr>
         <td>${escapeHtml(row.customer_name)}</td>
-        ${AR_BUCKET_KEYS.map((k) => `<td>${row[k] ? fmtMoney(row[k]) : ""}</td>`).join("")}
+        ${AGING_BUCKET_KEYS.map((k) => `<td>${row[k] ? fmtMoney(row[k]) : ""}</td>`).join("")}
         <td>${fmtMoney(row.total)}</td>
       </tr>
     `
@@ -4894,7 +4921,7 @@ function renderArAging(data) {
       .join("");
   }
   document.getElementById("ar-aging-totals").innerHTML =
-    `<th>Total</th>${AR_BUCKET_KEYS.map((k) => `<th>${fmtMoney(data.totals[k])}</th>`).join("")}<th>${fmtMoney(
+    `<th>Total</th>${AGING_BUCKET_KEYS.map((k) => `<th>${fmtMoney(data.totals[k])}</th>`).join("")}<th>${fmtMoney(
       data.totals.total
     )}</th>`;
 }
@@ -4902,6 +4929,135 @@ function renderArAging(data) {
 document.getElementById("ar-aging-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadArAging();
+});
+
+// ---- Payables (bill payments, AP aging) ----
+// The AP side of the ledger -- see accountsPayable.js on the backend.
+// Approving a bill records that you owe it; paying it here is what clears
+// the payable off the books.
+
+// Accounts a bill can be paid *from*: assets and liabilities, minus
+// Accounts Payable itself (paying from AP posts Debit AP / Credit AP,
+// which balances and moves nothing). A credit card is deliberately
+// included -- paying a bill with one swaps one liability for another.
+let bpPaymentAccounts = [];
+
+async function loadPaymentAccounts() {
+  await cachedLoad(
+    "__payment_accounts__",
+    async () => (await apiFetch("/api/accounts?active=true")).json(),
+    ({ items }) => {
+      // Mirrors accountsPayable.js's isValidPaymentAccount: assets and
+      // liabilities, minus the two control accounts. Paying from AP posts
+      // Debit AP / Credit AP and moves nothing; crediting AR to pay a
+      // vendor reads as a customer having settled their invoice.
+      bpPaymentAccounts = items.filter(
+        (a) =>
+          ["asset", "liability"].includes(a.type) &&
+          !["accounts_payable", "accounts_receivable"].includes(a.subtype)
+      );
+    }
+  );
+}
+
+async function loadBillPayments() {
+  const showAll = document.getElementById("bp-filter").value === "all";
+  const data = await (await apiFetch(`/api/bills?outstanding=${showAll ? "false" : "true"}`)).json();
+  renderBillPayments(data.items);
+}
+
+function renderBillPayments(rows) {
+  const body = document.getElementById("bill-payments-body");
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">Nothing owed — every approved bill is paid.</td></tr>`;
+    return;
+  }
+  body.innerHTML = rows
+    .map(
+      (r) => `
+    <tr>
+      <td>${escapeHtml(r.vendor_name || "—")}</td>
+      <td>${escapeHtml(r.invoice_number || "—")}</td>
+      <td>${r.due_date || "—"}</td>
+      <td>${fmtMoney(r.total)}</td>
+      <td>${fmtMoney(r.amount_paid)}</td>
+      <td>${fmtMoney(r.amount_outstanding)}</td>
+      <td>${
+        r.amount_outstanding > 0
+          ? `<button type="button" class="bp-pay-btn" data-id="${r.invoice_id}" data-outstanding="${r.amount_outstanding}">Record payment</button>`
+          : ""
+      }</td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".bp-pay-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const payment = await paymentDialog(Number(btn.dataset.outstanding), {
+        title: "Record a bill payment",
+        dateLabel: "Date paid",
+        accountLabel: "Pay from",
+        accounts: bpPaymentAccounts,
+        emptyTitle: "No account to pay from",
+        emptyMessage: "Add a bank, cash, or credit card account to your chart of accounts first.",
+      });
+      if (!payment) return;
+
+      const res = await apiFetch(`/api/invoices/${btn.dataset.id}/payments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: payment.amount,
+          payment_date: payment.payment_date,
+          payment_account_id: payment.account_id,
+        }),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't record that payment", parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__ap_aging__");
+      loadBillPayments();
+    })
+  );
+}
+
+document.getElementById("bp-filter").addEventListener("change", loadBillPayments);
+
+async function loadApAging() {
+  const asOfEl = document.getElementById("ap-as-of");
+  if (!asOfEl.value) asOfEl.value = new Date().toISOString().slice(0, 10);
+  renderApAging(await (await apiFetch(`/api/reports/ap-aging?as_of=${asOfEl.value}`)).json());
+}
+
+function renderApAging(data) {
+  const body = document.getElementById("ap-aging-body");
+  if (!data.vendors.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">Nothing outstanding — every approved bill is paid.</td></tr>`;
+  } else {
+    body.innerHTML = data.vendors
+      .map(
+        (row) => `
+      <tr>
+        <td>${escapeHtml(row.vendor_name)}</td>
+        ${AGING_BUCKET_KEYS.map((k) => `<td>${row[k] ? fmtMoney(row[k]) : ""}</td>`).join("")}
+        <td>${fmtMoney(row.total)}</td>
+      </tr>
+    `
+      )
+      .join("");
+  }
+  document.getElementById("ap-aging-totals").innerHTML =
+    `<th>Total</th>${AGING_BUCKET_KEYS.map((k) => `<th>${fmtMoney(data.totals[k])}</th>`).join("")}<th>${fmtMoney(
+      data.totals.total
+    )}</th>`;
+}
+
+document.getElementById("ap-aging-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadApAging();
 });
 
 // ---- Init ----
