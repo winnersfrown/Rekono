@@ -1,13 +1,12 @@
 import { app } from "./app.js";
 import { initDb } from "./models/index.js";
-import { recoverOrphanedJobs, startSqsConsumer } from "./jobs.js";
+import { recoverOrphanedJobs } from "./jobs.js";
 import { llmConfigurationWarning, llmProvider } from "./llm.js";
 
 const port = process.env.PORT || 8000;
 
 await initDb();
 await recoverOrphanedJobs();
-startSqsConsumer();
 
 // Which model (if any) is behind extraction, categorization and Ask Rekono
 // is otherwise invisible until someone uploads a document and wonders why

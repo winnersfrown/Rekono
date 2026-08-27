@@ -5,6 +5,7 @@
 // duplicate detection, no QuickBooks push -- the same core loop the
 // invoice pipeline started with, before those grew on top of it one at a
 // time.
+import fs from "node:fs/promises";
 import multer from "multer";
 import { Router } from "express";
 import { Op, fn, col, where as sequelizeWhere } from "sequelize";
@@ -13,15 +14,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { PLANS } from "../plans.js";
 import * as jobs from "../jobs.js";
-import {
-  MAX_UPLOAD_BYTES,
-  canonicalContentType,
-  deleteStoredFile,
-  discardRejectedUpload,
-  documentUpload,
-  saveDocumentUpload,
-  sendStoredFile,
-} from "../storage.js";
+import { MAX_UPLOAD_BYTES, canonicalContentType, upload } from "../storage.js";
 import { AuditLog, ExpenseReceipt } from "../models/index.js";
 import { EXPENSE_CATEGORIES } from "../models/ExpenseReceipt.js";
 import { serializeAuditLog, serializeExpenseReceiptDetail, serializeExpenseReceiptListItem } from "../serializers.js";
@@ -96,7 +89,7 @@ router.get("/api/expenses", requireAuth, requireActivePlan, async (req, res, nex
 // Multer errors (e.g. LIMIT_FILE_SIZE) happen inside upload.single() itself
 // -- same handling as ingestion.js's handleUpload.
 function handleUpload(req, res, next) {
-  documentUpload.single("file")(req, res, (err) => {
+  upload.single("file")(req, res, (err) => {
     if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
       const maxMb = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
       return res.status(413).json({ detail: `File too large. Maximum size is ${maxMb}MB.` });
@@ -119,7 +112,7 @@ router.post("/api/expenses/upload", requireAuth, requireActivePlan, handleUpload
     if (plan) {
       const uploadedThisMonth = await documentsUsedThisMonth(req.currentUser.orgId);
       if (uploadedThisMonth >= plan.docCapPerMonth) {
-        await discardRejectedUpload(req.file);
+        await fs.rm(req.file.path, { force: true });
         return res.status(402).json({
           detail: `You've reached your ${plan.name} plan's limit of ${plan.docCapPerMonth} documents this month. Upgrade your plan to upload more.`,
           plan_cap_reached: true,
@@ -129,7 +122,7 @@ router.post("/api/expenses/upload", requireAuth, requireActivePlan, handleUpload
 
     const contentType = canonicalContentType(req.file.originalname);
     if (!contentType) {
-      await discardRejectedUpload(req.file);
+      await fs.rm(req.file.path, { force: true });
       return res.status(422).json({
         detail: `Unsupported file type: ${req.file.originalname} (${req.file.mimetype}). Rekono accepts PDF or image files (png/jpg/tiff/bmp/webp).`,
       });
@@ -138,7 +131,7 @@ router.post("/api/expenses/upload", requireAuth, requireActivePlan, handleUpload
     const receipt = await ExpenseReceipt.create({
       orgId: req.currentUser.orgId,
       originalFilename: req.file.originalname || "upload",
-      storagePath: await saveDocumentUpload(req.file, contentType),
+      storagePath: req.file.path,
       contentType,
       status: "queued",
     });
@@ -174,7 +167,17 @@ router.get("/api/expenses/:id/file", requireAuth, requireActivePlan, async (req,
   try {
     const receipt = await getOwnedReceipt(req.params.id, req.currentUser.orgId);
     if (!receipt) return res.status(404).json({ detail: "Receipt not found" });
-    await sendStoredFile(receipt.storagePath, receipt.contentType, res, next);
+    res.sendFile(
+      receipt.storagePath,
+      { headers: { "Content-Type": receipt.contentType || "application/octet-stream" } },
+      (err) => {
+        if (!err) return;
+        if (err.code === "ENOENT") {
+          return res.status(404).json({ detail: "This document's source file is no longer available on the server." });
+        }
+        next(err);
+      }
+    );
   } catch (err) {
     next(err);
   }
@@ -321,7 +324,11 @@ router.delete("/api/expenses/:id", requireAuth, requireActivePlan, async (req, r
       details: { original_filename: receipt.originalFilename, status: receipt.status },
     });
 
-    await deleteStoredFile(receipt.storagePath, `receipt ${receipt.id}`);
+    if (receipt.storagePath) {
+      await fs.unlink(receipt.storagePath).catch((err) => {
+        if (err.code !== "ENOENT") console.error(`Failed to remove file for deleted receipt ${receipt.id}:`, err.message);
+      });
+    }
 
     await receipt.destroy();
     res.json({ ok: true });
