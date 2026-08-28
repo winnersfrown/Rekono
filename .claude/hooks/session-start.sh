@@ -16,6 +16,16 @@
 #      to make it "permanent" is to reinstall it on each cold container, which
 #      is what this does.
 #
+#   3. ruflo (github.com/ruvnet/ruflo). Same ephemerality problem, plus one
+#      that is easy to miss: ruflo-core registers PreToolUse/PostToolUse hooks
+#      that fire on *every* Bash, Write and Edit. Those hooks prefer a local
+#      `ruflo` binary and fall back to `npx` when there isn't one -- measured
+#      on this image at ~6s per tool call via npx versus ~450ms with the CLI
+#      installed. Over a session's few hundred tool calls that is the
+#      difference between a tolerable tax and roughly ten minutes of dead
+#      time, so installing the CLI is not an optimization here, it is what
+#      makes the plugin usable at all.
+#
 # Both steps are idempotent: on a warm container they cost a few seconds.
 set -euo pipefail
 
@@ -127,6 +137,44 @@ bridge_chromium() {
 
 if ! install_gstack; then
   echo "[session-start] WARNING: gstack setup did not complete; continuing without it." >&2
+fi
+
+# ------------------------------------------------------------------ ruflo ---
+# Best-effort for the same reason gstack is: it's developer tooling, and a
+# registry blip must not stop the session from starting.
+#
+# Order matters. The CLI goes in first, because the moment the plugin is
+# enabled its hooks start firing on every tool call, and a hook that has to
+# reach for `npx` costs ~6s a call (measured) versus ~450ms against the
+# installed binary.
+install_ruflo() {
+  command -v claude >/dev/null 2>&1 || {
+    echo "[session-start] claude CLI not found; skipping ruflo." >&2
+    return 1
+  }
+
+  if ! command -v ruflo >/dev/null 2>&1; then
+    echo "[session-start] installing ruflo CLI (~1.8GB)..."
+    npm install -g ruflo@latest --no-audit --no-fund --silent || return 1
+  fi
+
+  # `marketplace add` fails if the marketplace is already registered, and
+  # `plugin install` fails if the plugin already is, so both are no-ops on a
+  # warm container rather than errors -- hence swallowing their output and
+  # letting the enabled check below be the thing that decides.
+  claude plugin marketplace add ruvnet/ruflo >/dev/null 2>&1 || true
+  claude plugin install ruflo-core@ruflo >/dev/null 2>&1 || true
+
+  claude plugin details ruflo-core@ruflo >/dev/null 2>&1 || {
+    echo "[session-start] ruflo-core did not install cleanly." >&2
+    return 1
+  }
+
+  echo "[session-start] ruflo ready ($(ruflo --version 2>/dev/null | head -1 || echo '?'))"
+}
+
+if ! install_ruflo; then
+  echo "[session-start] WARNING: ruflo setup did not complete; continuing without it." >&2
 fi
 
 echo "[session-start] done."

@@ -4,6 +4,38 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.32
+
+Installs ruflo (github.com/ruvnet/ruflo) from the SessionStart hook, so it
+survives the container swap between sessions the same way gstack does.
+
+Tooling only -- no application code changes, and the plugin writes nothing
+into the repo.
+
+The part worth recording is the ordering, because it is not obvious and it
+is expensive to get wrong. `ruflo-core` registers PreToolUse and PostToolUse
+hooks that fire on **every** Bash, Write and Edit. Those hooks prefer a
+locally installed `ruflo` binary and fall back to `npx` when there isn't
+one, and on this image that fallback measures ~6s per tool call against
+~450ms with the CLI present -- 27s on a cold npx cache. Over the few hundred
+tool calls in a working session that is the difference between a tolerable
+tax and roughly ten minutes of dead time, spent on hooks that without the
+CLI write telemetry into a `.claude-flow/` store that doesn't exist. So the
+hook installs the CLI *before* enabling the plugin, and the comment there
+says why so nobody later "simplifies" it by dropping the install.
+
+Two things checked before wiring this in, both because this is a private
+codebase: the hook manifest advertises that "telemetry runs in both paths",
+which turns out to be local -- the hook script makes no HTTP calls, and the
+outbound URLs in the CLI package are documentation links from bundled
+dependencies. And the whole thing is MIT with no paid tier; API keys are
+optional and only for routing to non-Claude models.
+
+Costs, so the trade is on the record: ~1.8GB of disk, about a minute added
+to a cold session start, and ~450ms on every Bash/Write/Edit thereafter.
+`claude plugin disable ruflo-core@ruflo` turns the per-call cost off without
+unpicking the hook.
+
 ## v1.31
 
 The option pool, and the fully-diluted ownership that falls out of it.
