@@ -211,6 +211,11 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/customer-invoices/:id/void` | Reverses the invoice off the books. Refused if payments exist against it |
 | `POST /api/customer-invoices/:id/payments` | `{amount, payment_date, deposit_account_id}` -- records cash received. Posts Debit deposit / Credit AR, and flips the invoice to `paid` once settled. Overpayment and depositing into AR itself are both refused |
 | `GET /api/reports/ar-aging` | What customers owe, bucketed current / 1-30 / 31-60 / 61-90 / 90+ days past due as of `?as_of=` |
+| `GET /api/revenue/pending` | What a recognition run through `?period_month=` would post, per period, without posting it |
+| `POST /api/revenue/recognize` | `{period_month}` -- releases every pending month through that period out of deferred revenue. One journal entry per month |
+| `GET /api/revenue/schedule` | Every scheduled month across the org, filterable by `?period_month=` / `?recognized=false` |
+| `GET /api/customer-invoices/:id/revenue-schedule` | One invoice's schedule, recognized and pending, with the entry that recognized each month |
+| `GET /api/reports/deferred-revenue` | The waterfall: what's unearned and which month each part releases in |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -517,6 +522,30 @@ AP aging used to group by normalizing the extracted vendor name. That handles `"
 
 **The normalizer** (`normalizeVendorName`, shared by `vendorAlias.js` and `vendorExpenseAccount.js` so a key written by one and read by another folds identically) draws its line at what carries no information: case, surrounding and repeated whitespace, trailing punctuation. Anything that could conceivably distinguish two companies stays out — no stripping of `Inc`/`Ltd`, no edit-distance matching, no dropping internal punctuation. The costs are asymmetric: a missed fold is one visible merge click, while a wrong one silently combines two real companies and is nearly impossible to notice.
 
+### Revenue recognition (ASC 606)
+
+Sending a customer an annual invoice in January used to credit twelve months of revenue into January — a P&L spike that didn't happen and eleven dead months. What's true on day one is that a receivable exists and the org **owes twelve months of service**, which is a liability, not income.
+
+A `CustomerInvoiceLine` with a service period credits **Deferred Revenue** rather than its revenue account, and a monthly run releases each month's earned share:
+
+```
+Invoice sent   Debit Accounts Receivable / Credit Deferred Revenue
+Each month     Debit Deferred Revenue     / Credit Revenue
+```
+
+A line *without* a service period is unchanged — point-in-time delivery is earned when billed — so a setup fee and a subscription on the same invoice are each treated on their own terms.
+
+**Straight-line over days, not equal twelfths.** A term almost never starts on the 1st: Jan 15 – Jan 14 is 17 days of the first January and 14 of the last, and calling both "one month" overstates one end and understates the other. The rounding remainder lands on the final month so the schedule sums to the line *exactly* — rounding each month independently strands a cent in deferred revenue that never clears and that nobody can explain a year later.
+
+`RevenueScheduleEntry` stores the plan rather than recomputing it, for the same reason journal entries are stored while statements are derived: the schedule is a document someone reconciles against, and once a month is recognized it carries the journal entry that did it.
+
+Two properties worth knowing:
+
+- **Recognition posts into the month it recognizes**, dated to that month's last day rather than the day the job ran. Otherwise a subscription's revenue smears across whichever months the operator happened to be at their desk.
+- **A later run catches up everything missed.** Running April also recognizes a January nobody ran. `GET /api/revenue/pending` previews exactly what would post first — this writes into months that may already have been reported on.
+
+It's a normal posting, so a closed period refuses it and the month stays pending rather than being marked recognized against an entry that never posted. Voiding an invoice drops its unearned months and leaves recognized ones alone.
+
 ### Accounts payable: paying bills
 
 `accountsPayable.js` is the mirror of `accountsReceivable.js`, and closes the asymmetry AR made obvious. Approving a vendor bill has posted **Debit expense / Credit Accounts Payable** since v1.20, but nothing relieved that payable — AP only ever grew, and the balance sheet showed every bill the org had ever approved as still owed. Recording a payment posts **Debit Accounts Payable / Credit the account the money left from**.
@@ -548,7 +577,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
 - **Vendor payment terms on new bills**: `Vendor.paymentTermsDays` is stored but nothing reads it yet — a bill that arrives without a due date could inherit it the way a customer invoice already does.
-- **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
+- **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)

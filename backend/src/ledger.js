@@ -61,6 +61,10 @@ function defaultAccountsFor() {
     { code: "1900", name: "Uncategorized Asset", type: "asset" },
     { code: "2000", name: "Accounts Payable", type: "liability", subtype: "accounts_payable" },
     { code: "2100", name: "Credit Card", type: "liability", subtype: "credit_card" },
+    // Billed-but-not-yet-earned revenue. See revenueRecognition.js --
+    // a service you have invoiced for but not yet delivered is money
+    // you owe as service, which is a liability, not income.
+    { code: "2200", name: "Deferred Revenue", type: "liability", subtype: "deferred_revenue" },
     { code: "2900", name: "Uncategorized Liability", type: "liability" },
     { code: "3000", name: "Owner's Equity", type: "equity" },
     { code: "4900", name: "Uncategorized Revenue", type: "revenue" },

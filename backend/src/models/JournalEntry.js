@@ -14,6 +14,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "bill_payment", // AP: a vendor bill was paid
   "customer_invoice", // AR: an invoice was issued to a customer
   "customer_payment", // AR: a customer paid
+  "revenue_recognition", // AR: a month of deferred revenue was earned
   "void",
 ];
 

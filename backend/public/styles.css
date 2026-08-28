@@ -492,6 +492,17 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
    page. */
 .line-item-table { overflow-x: auto; }
 .line-item-table table { margin: 0; min-width: 560px; }
+/* A bare `input[type=date]` sizes itself well wider than "mm/dd/yyyy" needs.
+   With two of them on the invoice line editor that was enough to push the
+   row's Remove control past the panel edge on a full-width window -- the
+   table scrolled rather than clipped, but a control you have to scroll to
+   find by default is still the wrong default. */
+.line-item-table input[type="date"] { width: 8.5rem; }
+/* Same argument for the numeric columns: quantity, unit price, debit and
+   credit all hold short numbers, and letting them take an input's default
+   width spends the row's budget on whitespace that the description column
+   would use better. */
+.line-item-table input[type="number"] { width: 7rem; }
 
 .line-item-form .line-item-footer {
   display: flex;

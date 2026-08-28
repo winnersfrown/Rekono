@@ -31,6 +31,7 @@ import { CustomerInvoiceLine } from "./CustomerInvoiceLine.js";
 import { CustomerPayment } from "./CustomerPayment.js";
 import { BillPayment } from "./BillPayment.js";
 import { Vendor } from "./Vendor.js";
+import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -127,6 +128,14 @@ BillPayment.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAcc
 // vendor, and a vendor nobody merged away is deactivated, not deleted.
 Vendor.hasMany(Invoice, { foreignKey: "vendorId", as: "bills" });
 Invoice.belongsTo(Vendor, { foreignKey: "vendorId", as: "vendor" });
+
+// Schedule rows die with the invoice line they plan out -- an invoice
+// deleted outright should not leave revenue planned for a line that no
+// longer exists. Voiding is different and handled in the routes:
+// recognized months stay, only unrecognized ones are dropped.
+CustomerInvoiceLine.hasMany(RevenueScheduleEntry, { foreignKey: "customerInvoiceLineId", as: "revenueSchedule", onDelete: "CASCADE", hooks: true });
+RevenueScheduleEntry.belongsTo(CustomerInvoiceLine, { foreignKey: "customerInvoiceLineId" });
+RevenueScheduleEntry.belongsTo(Account, { foreignKey: "revenueAccountId", as: "revenueAccount" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -256,4 +265,5 @@ export {
   CustomerPayment,
   BillPayment,
   Vendor,
+  RevenueScheduleEntry,
 };

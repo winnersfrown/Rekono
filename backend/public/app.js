@@ -232,6 +232,7 @@ function switchTab(name) {
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
+  if (name === "revenue") loadDeferredRevenue();
   if (name === "vendors") loadVendors();
   if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
   if (name === "apaging") loadApAging();
@@ -4681,6 +4682,8 @@ function addCustomerInvoiceLineRow() {
     <td><input type="text" class="ci-desc" maxlength="512" placeholder="What are you billing for?" /></td>
     <td><input type="number" class="ci-qty" step="0.01" min="0" value="1" /></td>
     <td><input type="number" class="ci-price" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="date" class="ci-service-start" /></td>
+    <td><input type="date" class="ci-service-end" /></td>
     <td><button type="button" class="ci-remove-line linklike">Remove</button></td>
   `;
   body.appendChild(row);
@@ -4706,12 +4709,20 @@ document.getElementById("customer-invoice-form").addEventListener("submit", asyn
         customer_id: document.getElementById("ci-customer").value,
         issue_date: document.getElementById("ci-issue-date").value,
         memo: document.getElementById("ci-memo").value,
-        lines: rows.map((row) => ({
-          revenue_account_id: row.querySelector(".ci-account").value,
-          description: row.querySelector(".ci-desc").value,
-          quantity: Number(row.querySelector(".ci-qty").value) || 0,
-          unit_price: Number(row.querySelector(".ci-price").value) || 0,
-        })),
+        lines: rows.map((row) => {
+          const start = row.querySelector(".ci-service-start").value;
+          const end = row.querySelector(".ci-service-end").value;
+          return {
+            revenue_account_id: row.querySelector(".ci-account").value,
+            description: row.querySelector(".ci-desc").value,
+            quantity: Number(row.querySelector(".ci-qty").value) || 0,
+            unit_price: Number(row.querySelector(".ci-price").value) || 0,
+            // Omitted entirely unless both are filled -- the API rejects a
+            // half-specified period rather than guessing at it, and an
+            // empty string isn't a date.
+            ...(start && end ? { service_start_date: start, service_end_date: end } : {}),
+          };
+        }),
       }),
     });
     const body = await res.json();
@@ -4930,6 +4941,84 @@ function renderArAging(data) {
 document.getElementById("ar-aging-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadArAging();
+});
+
+// ---- Revenue recognition ----
+// Revenue billed up front but earned over time (see revenueRecognition.js)
+// sits in Deferred Revenue until delivered. This tab runs the monthly
+// release and shows what's still waiting.
+
+function revPeriod() {
+  const el = document.getElementById("rev-period");
+  if (!el.value) el.value = new Date().toISOString().slice(0, 7);
+  return el.value;
+}
+
+async function loadDeferredRevenue() {
+  revPeriod();
+  const data = await (await apiFetch("/api/reports/deferred-revenue")).json();
+  const body = document.getElementById("revenue-waterfall-body");
+  if (!data.periods.length) {
+    body.innerHTML = `<tr><td colspan="2" class="table-empty-row">Nothing deferred — every invoiced line has been earned.</td></tr>`;
+  } else {
+    body.innerHTML = data.periods
+      .map((p) => `<tr><td>${p.period_month}</td><td>${fmtMoney(p.amount)}</td></tr>`)
+      .join("");
+    if (data.beyond.periods > 0) {
+      body.innerHTML += `<tr><td class="hint">+ ${data.beyond.periods} later period${
+        data.beyond.periods === 1 ? "" : "s"
+      }</td><td>${fmtMoney(data.beyond.amount)}</td></tr>`;
+    }
+  }
+  document.getElementById("revenue-waterfall-total").innerHTML =
+    `<th>Total deferred</th><th>${fmtMoney(data.total_deferred)}</th>`;
+}
+
+// Previewing before posting matters here: recognition writes a journal
+// entry dated into a month someone may already have reported on, so the
+// number should be seen before it lands, not after.
+document.getElementById("rev-preview").addEventListener("click", async () => {
+  const statusEl = document.getElementById("revenue-recognize-status");
+  const data = await (await apiFetch(`/api/revenue/pending?period_month=${revPeriod()}`)).json();
+  if (!data.entry_count) {
+    statusEl.textContent = `Nothing to recognize through ${data.period_month}.`;
+    return;
+  }
+  const months = data.periods.map((p) => `${p.period_month} ${fmtMoney(p.amount)}`).join(", ");
+  statusEl.textContent = `Would recognize ${fmtMoney(data.total)} across ${data.periods.length} period${
+    data.periods.length === 1 ? "" : "s"
+  }: ${months}.`;
+});
+
+document.getElementById("revenue-recognize-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("revenue-recognize-status");
+  const period = revPeriod();
+
+  const confirmed = await confirmDialog(
+    `Recognize revenue through ${period}?`,
+    "This posts a journal entry for each period, dated to the end of the month it recognizes. Any earlier month that was never run is caught up too.",
+    { confirmLabel: "Recognize" }
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch("/api/revenue/recognize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ period_month: period }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = "";
+    await alertDialog("Couldn't recognize that period", parsed.detail || "Something went wrong.");
+    return;
+  }
+  statusEl.textContent = parsed.periods.length
+    ? `Recognized ${fmtMoney(parsed.recognized)} across ${parsed.periods.length} period${
+        parsed.periods.length === 1 ? "" : "s"
+      }.`
+    : `Nothing was pending through ${period}.`;
+  loadDeferredRevenue();
 });
 
 // ---- Payables (bill payments, AP aging) ----
