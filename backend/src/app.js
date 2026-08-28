@@ -35,6 +35,7 @@ import payablesRoutes from "./routes/payables.js";
 import vendorsRoutes from "./routes/vendors.js";
 import revenueRoutes from "./routes/revenue.js";
 import adjustmentsRoutes from "./routes/adjustments.js";
+import equityRoutes from "./routes/equity.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -232,6 +233,7 @@ app.use(payablesRoutes);
 app.use(vendorsRoutes);
 app.use(revenueRoutes);
 app.use(adjustmentsRoutes);
+app.use(equityRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));

@@ -226,6 +226,10 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/close/year-end` | The fiscal year's closable balances, whether it's closed, and whether it's gone stale since |
 | `POST /api/close/year-end` | Zeroes revenue and expense into Retained Earnings, dated to the year's last day |
 | `POST /api/close/year-end/reopen` | Reverses the closing entry and puts the balances back |
+| `GET /api/equity/transactions` | Contributions, distributions, dividends and treasury movements, newest first |
+| `POST /api/equity/transactions` | `{type, transaction_date, amount, cash_account_id?, shares?, par_value?, cost_basis?}` |
+| `POST /api/equity/transactions/:id/void` | Reverses the posting; the record is kept |
+| `GET /api/statements/stockholders-equity` | The roll-forward over `?from=`/`?to=`, tying to the balance sheet at both ends |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -532,6 +536,21 @@ AP aging used to group by normalizing the extracted vendor name. That handles `"
 
 **The normalizer** (`normalizeVendorName`, shared by `vendorAlias.js` and `vendorExpenseAccount.js` so a key written by one and read by another folds identically) draws its line at what carries no information: case, surrounding and repeated whitespace, trailing punctuation. Anything that could conceivably distinguish two companies stays out — no stripping of `Inc`/`Ltd`, no edit-distance matching, no dropping internal punctuation. The costs are asymmetric: a missed fold is one visible merge click, while a wrong one silently combines two real companies and is nearly impossible to notice.
 
+### Stockholders' equity
+
+Every equity posting was expressible as a raw journal entry already. What was missing is **classification** — a credit to an equity account says equity went up, not whether that was a capital contribution, a share issuance, or a treasury reissue, and those are three different lines on a statement of stockholders' equity. The type is what a journal entry can't carry.
+
+Six typed events: contribution, distribution, dividend declared, dividend paid, treasury purchase, treasury reissue. All post through `postJournalEntry`, so they inherit balance enforcement and closed-period refusal like everything else.
+
+- **Declaring and paying a dividend are separate.** A declared-but-unpaid dividend is a liability the balance sheet has to show. Paying it moves cash and clears the liability — equity is unchanged, because the reduction was recognized at declaration. Counting it twice is the classic error.
+- **A contribution splits par from premium only when shares and a par value are given** (par to Common Stock, the rest to APIC). Without them it credits Owner's Equity. Driven by the transaction rather than an org-level flag, because the same company can do both.
+- **Treasury stock uses the cost method** — no gain or loss is ever recognized on a company's own shares. Reissuing above cost credits paid-in capital; reissuing below cost charges paid-in capital first and reaches retained earnings only once that's exhausted.
+- **Distributions and Treasury Stock are contra-equity** and carry debit balances. No special handling was needed: an equity account's normal balance is credit minus debit, so they subtract on their own.
+
+**Par value is stored in millionths of a dollar, not cents.** $0.001 par is common and $0.0001 is the Delaware default; both round to zero cents. Converting per-share par to cents before multiplying by the share count destroys the par and emits a zero-value line the ledger rejects. Multiply first, round once.
+
+**The statement ties by construction.** Beginning and ending totals come straight from `computeBalanceSheet` at the two dates, so it can't disagree with the balance sheet beside it. Movements are attributed from the typed transactions plus net income; anything left over lands on an explicit `other` line. Equity is reachable by a plain journal entry, so a hand-posted credit to Owner's Equity is always possible — a statement that swallowed it would be wrong, and one that refused to balance would be useless, so it gets named instead.
+
 ### Adjusting entries and the year-end close
 
 Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
@@ -607,7 +626,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
-- **Stockholders' equity**: contributions, distributions, dividends and stock issuance are postable as journal entries today, but there's no dedicated equity account set (common stock, APIC, treasury) and no statement of stockholders' equity.
+- **Share register**: equity transactions record a share count, but nothing tracks shares outstanding, cap-table positions, or who holds what. That's the natural next step for the equity side.
 - **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
 - **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)

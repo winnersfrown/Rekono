@@ -4,6 +4,82 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.29
+
+Stockholders' equity: the owner-facing side of the balance sheet, and the
+fourth statement. The balance sheet says equity is $X; this says why.
+
+Every one of these postings was expressible as a raw journal entry
+already. What was missing is **classification**. A credit to an equity
+account tells you equity went up; it does not tell you whether that was a
+capital contribution, a share issuance, or a treasury reissue -- and those
+are three different lines on a statement of stockholders' equity. The type
+is the thing a journal entry can't carry, so each event is now recorded
+with one and posted through `ledger.js` like everything else.
+
+- **Six typed events**: contribution, distribution, dividend declared,
+  dividend paid, treasury purchase, treasury reissue.
+- **Declaring and paying a dividend are separate**, because a
+  declared-but-unpaid dividend is a liability the balance sheet has to
+  show. Paying it moves cash and clears the liability; equity is unchanged,
+  since the reduction was recognized on declaration. Counting it twice is
+  the classic error here, and there's a test pinning it.
+- **A contribution splits par from premium only if you give shares and a
+  par value** -- par to Common Stock, the rest to Additional Paid-In
+  Capital. Without them it's an unincorporated capital injection and
+  credits Owner's Equity. That's driven by the transaction, not by an
+  org-level "are you a corporation" flag, because the same company can do
+  both. Issuing below par is refused.
+- **Treasury stock uses the cost method.** A buyback is carried at what was
+  paid; no gain or loss is ever recognized on a company's own shares, or a
+  company could book profit by trading in itself. Reissuing above cost
+  credits paid-in capital. Reissuing below cost charges paid-in capital
+  first and only reaches retained earnings once that's exhausted --
+  charging earnings first would understate accumulated profit while
+  leaving APIC that exists precisely to absorb this.
+- **Distributions and treasury stock are contra-equity**, carrying debit
+  balances. Nothing special was needed to make them reduce equity:
+  `financialStatements.js` already computes an equity account's normal
+  balance as credit minus debit, so a debit-balance equity account
+  subtracts on its own.
+- New equity accounts (Common Stock, APIC, Treasury Stock, Distributions,
+  Dividends Payable) are created **on demand** rather than seeded, since a
+  sole proprietor never needs them and an empty Treasury Stock line on
+  every new org's chart is clutter. Retained Earnings is reused from
+  `yearEndClose.js` rather than redefined, so two modules can't race to
+  create it under different codes.
+
+**The statement is a roll-forward that ties by construction.** Beginning
+and ending totals are read straight from `computeBalanceSheet` at the two
+dates, so it can never disagree with the balance sheet beside it. The
+movements are attributed from the typed transactions plus net income, and
+whatever they don't account for lands on an explicit `other` line.
+
+That last part is deliberate. Equity accounts are reachable by a plain
+manual journal entry, so a hand-posted credit to Owner's Equity is always
+possible. A statement that silently swallowed it would be wrong; one that
+refused to balance would be useless. Naming it keeps the report honest and
+points at the thing to go look at. It also stays correct after a formal
+year-end close, which moves earnings from the derived half of equity to a
+posted Retained Earnings balance -- both ends come from the balance sheet,
+so the move is invisible to the roll-forward.
+
+**Par value is carried in millionths of a dollar, not cents.** Found by
+smoke-testing with a realistic figure: $0.001 par is common and $0.0001 is
+the Delaware default, and both round to *zero* cents. Converting per-share
+par to cents before multiplying by the share count destroyed the par
+entirely and emitted a zero-value journal line, which the ledger rejects
+outright -- so a normal seed round failed with a confusing error about
+lines being neither debit nor credit. Multiplying first and rounding once
+fixes it. Where par is genuinely too small to register across the whole
+issuance, no-par treatment applies and everything goes to Common Stock
+rather than posting a zero line.
+
+The statement's period is now labelled above the table, because the
+transactions list below it is not period-filtered -- without the label, a
+transaction dated outside the window read as one the statement had
+forgotten.
+
 ## v1.28
 
 Moved what a session keeps re-deriving into `CLAUDE.md`, which loads

@@ -67,6 +67,11 @@ function defaultAccountsFor() {
     { code: "2200", name: "Deferred Revenue", type: "liability", subtype: "deferred_revenue" },
     { code: "2900", name: "Uncategorized Liability", type: "liability" },
     { code: "3000", name: "Owner's Equity", type: "equity" },
+    // The rest of the equity set (common stock, APIC, retained earnings,
+    // treasury, distributions) and dividends payable are created on
+    // demand by equity.js and yearEndClose.js -- a sole proprietor never
+    // needs them, and an empty Treasury Stock line on every new org's
+    // chart is clutter.
     { code: "4900", name: "Uncategorized Revenue", type: "revenue" },
     ...expenseAccounts,
     { code: "5900", name: "Uncategorized Expense", type: "expense" },

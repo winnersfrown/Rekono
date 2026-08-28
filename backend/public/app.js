@@ -229,6 +229,7 @@ function switchTab(name) {
   if (name === "profitandloss") loadProfitAndLoss();
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
+  if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
@@ -4990,6 +4991,183 @@ document.getElementById("rev-preview").addEventListener("click", async () => {
     data.periods.length === 1 ? "" : "s"
   }: ${months}.`;
 });
+
+// ---- Stockholders' equity ----
+// Owner capital in, distributions out, treasury stock -- and the statement
+// that explains the movement. See equity.js and stockholdersEquity.js.
+
+// Which types move cash, and so need an account named. A declared dividend
+// creates the obligation without paying it, so it's the one that doesn't.
+const EQ_CASHLESS = new Set(["dividend_declared"]);
+// Only a contribution can be a share issuance, and only a reissue needs to
+// know what the shares originally cost.
+const EQ_SHARES_TYPES = new Set(["contribution"]);
+const EQ_COST_TYPES = new Set(["treasury_reissue"]);
+
+const EQ_TYPE_LABELS = {
+  contribution: "Contribution",
+  distribution: "Distribution",
+  dividend_declared: "Dividend declared",
+  dividend_paid: "Dividend paid",
+  treasury_purchase: "Treasury purchase",
+  treasury_reissue: "Treasury reissue",
+};
+
+const EQ_HINTS = {
+  contribution: "Money in from owners. Give shares and a par value to record it as a stock issuance -- par goes to Common Stock and the rest to Additional Paid-In Capital.",
+  distribution: "Money out to owners. Reduces equity through a contra account, so the year's distributions stay visible.",
+  dividend_declared: "Creates the obligation without paying it. Equity drops now; the liability sits on the balance sheet until paid.",
+  dividend_paid: "Settles a dividend already declared. Moves cash; equity is unchanged, because the reduction was recognized at declaration.",
+  treasury_purchase: "Buying back your own shares, carried at cost. No gain or loss is ever recognized on your own stock.",
+  treasury_reissue: "Selling treasury shares on. Above cost credits paid-in capital; below cost is charged to paid-in capital first, then retained earnings.",
+};
+
+let eqAccounts = [];
+
+async function loadEquityAccounts() {
+  const data = await (await apiFetch("/api/accounts?active=true")).json();
+  // Cash can come from or go to an asset or a liability (a bank account or
+  // a credit line). Equity accounts are refused by the API -- funding
+  // equity from equity is circular.
+  eqAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type));
+  document.getElementById("eq-cash").innerHTML = eqAccounts
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+  updateEquityForm();
+}
+
+function updateEquityForm() {
+  const type = document.getElementById("eq-type").value;
+  document.getElementById("eq-cash-field").style.display = EQ_CASHLESS.has(type) ? "none" : "";
+  document.querySelectorAll(".eq-shares-field").forEach((el) => {
+    el.style.display = EQ_SHARES_TYPES.has(type) ? "" : "none";
+  });
+  document.getElementById("eq-cost-field").style.display = EQ_COST_TYPES.has(type) ? "" : "none";
+  document.getElementById("eq-hint").textContent = EQ_HINTS[type] || "";
+}
+
+document.getElementById("eq-type").addEventListener("change", updateEquityForm);
+
+document.getElementById("equity-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("equity-status");
+  const type = document.getElementById("eq-type").value;
+  const shares = Number(document.getElementById("eq-shares").value) || 0;
+  const par = document.getElementById("eq-par").value;
+  const cost = Number(document.getElementById("eq-cost").value) || 0;
+
+  const body = {
+    type,
+    transaction_date: document.getElementById("eq-date").value,
+    amount: Number(document.getElementById("eq-amount").value) || 0,
+    ...(EQ_CASHLESS.has(type) ? {} : { cash_account_id: document.getElementById("eq-cash").value }),
+    // Sent only as a pair -- the API rejects one without the other rather
+    // than guessing at the missing half.
+    ...(EQ_SHARES_TYPES.has(type) && shares && par !== "" ? { shares, par_value: Number(par) } : {}),
+    ...(EQ_COST_TYPES.has(type) && cost ? { cost_basis: cost } : {}),
+  };
+
+  const res = await apiFetch("/api/equity/transactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Recorded ${EQ_TYPE_LABELS[type]} of ${fmtMoney(parsed.amount)}.`;
+  document.getElementById("eq-amount").value = "";
+  document.getElementById("eq-shares").value = "";
+  document.getElementById("eq-par").value = "";
+  document.getElementById("eq-cost").value = "";
+  loadEquityStatement();
+  loadEquityTransactions();
+});
+
+async function loadEquityStatement() {
+  const from = document.getElementById("eq-from");
+  const to = document.getElementById("eq-to");
+  if (!to.value) to.value = new Date().toISOString().slice(0, 10);
+  if (!from.value) from.value = `${new Date().getUTCFullYear()}-01-01`;
+
+  const data = await (await apiFetch(`/api/statements/stockholders-equity?from=${from.value}&to=${to.value}`)).json();
+
+  // Totals use <th> cells, which is how every other statement in this app
+  // marks them -- picks up the same emphasis with no new CSS.
+  const row = (label, value, opts = {}) => {
+    const cell = opts.strong ? "th" : "td";
+    return `<tr><${cell}>${escapeHtml(label)}</${cell}><${cell}>${fmtMoney(value)}</${cell}></tr>`;
+  };
+
+  const lines = [
+    row("Beginning balance", data.beginning_balance, { strong: true }),
+    row("Net income", data.net_income),
+    row("Contributions", data.contributions),
+    row("Distributions and dividends", data.distributions),
+    row("Treasury stock", data.treasury_stock),
+  ];
+  // Only shown when it's non-zero: equity moved by a plain journal entry
+  // is real and needs naming, but a permanent zero row is noise.
+  if (data.other !== 0) lines.push(row("Other (manual journal entries)", data.other));
+  lines.push(row("Ending balance", data.ending_balance, { strong: true }));
+
+  // Spelled out because the transactions table below is not
+  // period-filtered -- without this, a transaction dated outside the
+  // window reads as one the statement forgot.
+  document.getElementById("equity-period-label").textContent = `${data.from} to ${data.to}`;
+  document.getElementById("equity-statement-body").innerHTML = lines.join("");
+  document.getElementById("equity-reconcile").textContent = data.reconciles
+    ? `Ties to the balance sheet at ${data.to}.`
+    : "This statement does not reconcile to the balance sheet — please report this.";
+}
+
+document.getElementById("equity-period-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadEquityStatement();
+});
+
+async function loadEquityTransactions() {
+  const data = await (await apiFetch("/api/equity/transactions")).json();
+  const body = document.getElementById("equity-transactions-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No equity transactions yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (t) => `
+    <tr>
+      <td>${t.transaction_date}</td>
+      <td>${escapeHtml(EQ_TYPE_LABELS[t.type] || t.type)}</td>
+      <td>${fmtMoney(t.amount)}</td>
+      <td>${escapeHtml(t.cash_account_name || "—")}</td>
+      <td>${escapeHtml(t.memo || "—")}</td>
+      <td>${t.journal_entry_id ? `<button type="button" class="eq-void-btn linklike" data-id="${t.id}">Void</button>` : "voided"}</td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".eq-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Void this equity transaction?", "Its journal entry is reversed. The record itself is kept — an owner distribution that happened and was corrected is history worth keeping.", {
+        confirmLabel: "Void",
+        danger: true,
+      });
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/equity/transactions/${btn.dataset.id}/void`, { method: "POST" });
+      if (!res.ok) {
+        const parsed = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't void that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      loadEquityStatement();
+      loadEquityTransactions();
+    })
+  );
+}
 
 // ---- Adjusting entries and year-end close ----
 // The entries a close actually consists of. See recurringEntries.js and

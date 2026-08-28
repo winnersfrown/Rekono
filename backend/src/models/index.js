@@ -33,6 +33,7 @@ import { BillPayment } from "./BillPayment.js";
 import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
+import { EquityTransaction } from "./EquityTransaction.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -144,6 +145,11 @@ RevenueScheduleEntry.belongsTo(Account, { foreignKey: "revenueAccountId", as: "r
 RecurringEntry.hasMany(RecurringEntryLine, { foreignKey: "recurringEntryId", as: "lines", onDelete: "CASCADE", hooks: true });
 RecurringEntryLine.belongsTo(RecurringEntry, { foreignKey: "recurringEntryId" });
 RecurringEntryLine.belongsTo(Account, { foreignKey: "accountId" });
+
+// The cash account an equity event moved through. No cascade: deleting
+// an account is not offered, and an equity transaction outlives any
+// edit to one.
+EquityTransaction.belongsTo(Account, { foreignKey: "cashAccountId", as: "cashAccount" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -276,4 +282,5 @@ export {
   RevenueScheduleEntry,
   RecurringEntry,
   RecurringEntryLine,
+  EquityTransaction,
 };

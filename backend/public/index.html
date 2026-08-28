@@ -396,6 +396,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 7a5 5 0 0 0-5-5 5 5 0 0 0-5 5c0 6 10 4 10 10a5 5 0 0 1-5 5 5 5 0 0 1-5-5"/></svg>
             Cash Flow
           </button>
+          <button class="tab-btn" data-tab="equity">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-8H4v8"/><path d="M1 21h22"/><path d="M12 3L2 9h20z"/><path d="M9 13v8M15 13v8"/></svg>
+            Stockholders' Equity
+          </button>
               </div>
             </div>
 
@@ -1472,6 +1476,56 @@
               <tr><th colspan="2">Total equity</th><th id="bs-equity-total"></th></tr>
               <tr><th colspan="2">Total liabilities and equity</th><th id="bs-total-liab-equity"></th></tr>
             </tfoot>
+          </table>
+        </section>
+
+        <section id="tab-equity" class="tab-panel">
+          <h1>Stockholders' Equity</h1>
+          <p class="hint">How the owners' stake got from where it started to where it is. The balance sheet says what equity is; this says why.</p>
+          <div class="panel">
+            <h3>Record an equity transaction</h3>
+            <form id="equity-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Type<select id="eq-type">
+                  <option value="contribution">Contribution / stock issued</option>
+                  <option value="distribution">Distribution to owners</option>
+                  <option value="dividend_declared">Dividend declared</option>
+                  <option value="dividend_paid">Dividend paid</option>
+                  <option value="treasury_purchase">Treasury stock purchased</option>
+                  <option value="treasury_reissue">Treasury stock reissued</option>
+                </select></label>
+                <label>Date<input type="date" id="eq-date" required /></label>
+                <label>Amount<input type="number" id="eq-amount" step="0.01" min="0.01" required /></label>
+                <label id="eq-cash-field">Cash account<select id="eq-cash"></select></label>
+                <label class="eq-shares-field">Shares<input type="number" id="eq-shares" min="1" step="1" placeholder="Optional" /></label>
+                <label class="eq-shares-field">Par value<input type="number" id="eq-par" min="0" step="0.0001" placeholder="Optional" /></label>
+                <label id="eq-cost-field">Original cost<input type="number" id="eq-cost" min="0.01" step="0.01" /></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="eq-hint"></p>
+                <button type="submit" class="line-item-submit">Record</button>
+              </div>
+              <div id="equity-status" class="hint"></div>
+            </form>
+          </div>
+
+          <h3>Statement of stockholders' equity</h3>
+          <form id="equity-period-form" class="statement-period">
+            <label>From<input type="date" id="eq-from" /></label>
+            <label>To<input type="date" id="eq-to" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <p class="hint" id="equity-period-label"></p>
+          <table>
+            <tbody id="equity-statement-body"></tbody>
+          </table>
+          <p class="hint" id="equity-reconcile"></p>
+
+          <h3>Transactions</h3>
+          <p class="hint">Every equity transaction on record, not just the ones inside the period above.</p>
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Memo</th><th></th></tr></thead>
+            <tbody id="equity-transactions-body"></tbody>
           </table>
         </section>
 

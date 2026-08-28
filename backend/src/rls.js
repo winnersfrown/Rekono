@@ -44,6 +44,7 @@ const DIRECT_ORG_TABLES = [
   "customer_payments",
   "customers",
   "dismissed_bank_transactions",
+  "equity_transactions",
   "expense_receipts",
   "invites",
   "invoices",
