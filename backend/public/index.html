@@ -330,6 +330,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6M9 15h6"/></svg>
             Customer Invoices
           </button>
+          <button class="tab-btn" data-tab="revenue">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg>
+            Revenue Recognition
+          </button>
           <button class="tab-btn" data-tab="araging">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
             AR Aging
@@ -1169,7 +1173,7 @@
 
         <section id="tab-customerinvoices" class="tab-panel">
           <h1>Customer Invoices</h1>
-          <p class="hint">Invoices you issue. A draft affects nothing until you send it -- sending is what puts it on the books as a receivable.</p>
+          <p class="hint">Invoices you issue. A draft affects nothing until you send it -- sending is what puts it on the books as a receivable. Give a line a service period and it bills now but earns monthly across that period (deferred revenue) instead of all at once.</p>
           <div class="panel">
             <h3>New invoice</h3>
             <form id="customer-invoice-form" class="line-item-form">
@@ -1180,7 +1184,7 @@
               </div>
               <div class="line-item-table">
                 <table>
-                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th></th></tr></thead>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Service start</th><th>Service end</th><th></th></tr></thead>
                   <tbody id="ci-lines-body"></tbody>
                 </table>
               </div>
@@ -1195,6 +1199,27 @@
           <table>
             <thead><tr><th>Number</th><th>Customer</th><th>Issued</th><th>Due</th><th>Total</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
             <tbody id="customer-invoices-body"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-revenue" class="tab-panel">
+          <h1>Revenue Recognition</h1>
+          <p class="hint">Revenue billed up front but earned over time sits in Deferred Revenue until it's delivered. Running a month posts that month's earned share across to revenue -- and catches up any earlier month nobody ran.</p>
+          <div class="panel">
+            <h3>Run recognition</h3>
+            <form id="revenue-recognize-form" class="statement-period">
+              <label>Through<input type="month" id="rev-period" /></label>
+              <button type="button" id="rev-preview">Preview</button>
+              <button type="submit">Recognize</button>
+            </form>
+            <div id="revenue-recognize-status" class="hint"></div>
+          </div>
+          <h3>Deferred revenue waterfall</h3>
+          <p class="hint">What's still unearned, and the month each part releases in.</p>
+          <table>
+            <thead><tr><th>Period</th><th>Releases</th></tr></thead>
+            <tbody id="revenue-waterfall-body"></tbody>
+            <tfoot><tr id="revenue-waterfall-total"></tr></tfoot>
           </table>
         </section>
 

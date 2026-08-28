@@ -4,6 +4,66 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.26
+
+Revenue recognition (ASC 606) -- the thing a subscription business cannot
+run accounting without, and the reason the AR work in v1.23 came first.
+
+Before this, sending a customer an annual invoice in January credited
+twelve months of revenue into January. The P&L then showed a spike that
+didn't happen and eleven months that looked dead, and neither figure was
+something you could hand an investor. What's actually true on day one is
+that a receivable exists and the org now *owes twelve months of service* --
+a liability, not income.
+
+- **A line with a service period credits Deferred Revenue** instead of its
+  revenue account, and a monthly run releases each month's earned share as
+  it's delivered. A line without one is unchanged: point-in-time delivery
+  is earned when billed, so a setup fee and a subscription on the same
+  invoice are each treated on their own terms.
+- **Straight-line over days, not equal twelfths.** A term almost never
+  starts on the 1st -- Jan 15 to Jan 14 is 17 days of the first January and
+  14 of the last, and calling both "one month" overstates one end and
+  understates the other. The rounding remainder lands on the final month so
+  the schedule sums to the line *exactly*; rounding each month
+  independently would strand a cent in deferred revenue that never clears
+  and that nobody can explain a year later.
+- **`RevenueScheduleEntry`** stores the plan rather than recomputing it,
+  for the same reason journal entries are stored while statements are
+  derived: the schedule is a document someone reconciles against, and once
+  a month is recognized it carries the entry that did it. Recomputing would
+  silently rewrite history the first time a rounding rule changed.
+- **Recognition posts into the month it recognizes**, dated to that month's
+  last day rather than the day someone ran the job -- otherwise a
+  subscription's revenue smears across whichever months the operator
+  happened to be at their desk. One journal entry per period, so each
+  month stays a reviewable document.
+- **A later run catches up every month nobody ran.** A period missed in
+  March shouldn't sit in deferred revenue forever, so running April picks
+  it up too. `GET /api/revenue/pending` previews exactly what would post
+  before it does -- this writes into months that may already have been
+  reported on, so seeing the number first is the difference between a
+  review and a surprise.
+- **Deferred revenue waterfall** (`GET /api/reports/deferred-revenue`):
+  what's still unearned and which month each part releases in. Derived from
+  the schedule rather than the ledger, because the ledger only knows what
+  has already happened.
+- Recognition is a normal posting, so a closed period refuses it and the
+  month stays pending rather than being marked recognized against an entry
+  that never posted. Voiding an invoice drops its unearned months and
+  leaves the recognized ones alone -- those were really earned.
+- **New Revenue Recognition tab** under Receivables, and service-period
+  columns on the invoice line editor. `Deferred Revenue` (2200) joins the
+  seeded chart of accounts, created on demand for orgs that predate it.
+
+**Line-editor column widths.** Adding two date columns pushed the row's
+Remove control past the panel edge at full width. The overflow container
+added in v1.23 did its job -- the table scrolled rather than clipping --
+but a control you have to scroll to find by default is still the wrong
+default. Date and numeric inputs in a line table now get widths matched to
+what they hold instead of the browser's defaults, which fits the row back
+inside the panel and gives the description column the space back.
+
 ## v1.25
 
 Vendors are a real table. AP aging used to group by normalizing the

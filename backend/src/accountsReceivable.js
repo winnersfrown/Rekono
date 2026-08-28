@@ -11,6 +11,7 @@
 
 import { Op } from "sequelize";
 import { LedgerError, centsToDollars, postJournalEntry, voidJournalEntry } from "./ledger.js";
+import { ensureDeferredRevenueAccount, lineIsDeferred } from "./revenueRecognition.js";
 import {
   Account,
   Customer,
@@ -75,12 +76,23 @@ export async function postCustomerInvoice(invoice, lines, { postedByUserId = nul
     throw new LedgerError("This invoice's total doesn't match the sum of its lines.");
   }
 
-  // Credits collapsed per revenue account: two lines billing the same
-  // account produce one credit line, not two, which is how the entry
-  // would be written by hand.
+  // Credits collapsed per account: two lines billing the same account
+  // produce one credit line, not two, which is how the entry would be
+  // written by hand.
+  //
+  // A line with a service period credits Deferred Revenue rather than its
+  // revenue account -- it's been billed but not yet earned, so on the day
+  // the invoice goes out it's a liability (service owed), not income.
+  // revenueRecognition.js releases it month by month from there. A line
+  // with no service period is unchanged: point-in-time delivery is earned
+  // when billed.
+  const deferredLines = lines.filter(lineIsDeferred);
+  const deferredAccount = deferredLines.length ? await ensureDeferredRevenueAccount(invoice.orgId) : null;
+
   const creditsByAccount = new Map();
   for (const line of lines) {
-    creditsByAccount.set(line.revenueAccountId, (creditsByAccount.get(line.revenueAccountId) || 0) + line.amountCents);
+    const accountId = lineIsDeferred(line) ? deferredAccount.id : line.revenueAccountId;
+    creditsByAccount.set(accountId, (creditsByAccount.get(accountId) || 0) + line.amountCents);
   }
 
   return postJournalEntry(invoice.orgId, {

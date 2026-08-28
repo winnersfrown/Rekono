@@ -17,6 +17,7 @@ import {
   refreshInvoiceStatus,
   voidCustomerInvoiceEntry,
 } from "../accountsReceivable.js";
+import { createSchedulesForInvoice, dropUnrecognizedSchedule } from "../revenueRecognition.js";
 import {
   Account,
   AuditLog,
@@ -51,6 +52,8 @@ function serializeLine(line) {
     quantity: line.quantity,
     unit_price: centsToDollars(line.unitPriceCents),
     amount: centsToDollars(line.amountCents),
+    service_start_date: line.serviceStartDate,
+    service_end_date: line.serviceEndDate,
   };
 }
 
@@ -185,12 +188,26 @@ router.get("/api/customer-invoices", requireAuth, requireActivePlan, async (req,
   }
 });
 
-const lineSchema = z.object({
-  revenue_account_id: z.string().min(1),
-  description: z.string().max(512).optional(),
-  quantity: z.number().min(0).default(1),
-  unit_price: z.number().min(0),
-});
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const lineSchema = z
+  .object({
+    revenue_account_id: z.string().min(1),
+    description: z.string().max(512).optional(),
+    quantity: z.number().min(0).default(1),
+    unit_price: z.number().min(0),
+    // Both or neither: a half-specified service period has no defensible
+    // reading (does it run to the end of time?), so it's rejected rather
+    // than guessed at.
+    service_start_date: z.string().regex(ISO_DATE).optional(),
+    service_end_date: z.string().regex(ISO_DATE).optional(),
+  })
+  .refine((l) => Boolean(l.service_start_date) === Boolean(l.service_end_date), {
+    message: "A service period needs both a start and an end date.",
+  })
+  .refine((l) => !l.service_start_date || l.service_start_date <= l.service_end_date, {
+    message: "A service period can't end before it starts.",
+  });
 
 const invoiceSchema = z.object({
   customer_id: z.string().min(1),
@@ -212,6 +229,8 @@ function buildLines(parsedLines) {
       quantity: l.quantity,
       unitPriceCents,
       amountCents: Math.round(unitPriceCents * l.quantity),
+      serviceStartDate: l.service_start_date || null,
+      serviceEndDate: l.service_end_date || null,
       position: i,
     };
   });
@@ -291,6 +310,11 @@ router.post("/api/customer-invoices/:id/send", requireAuth, requireActivePlan, a
       { postedByUserId: req.currentUser.id }
     );
 
+    // Only after the posting succeeded -- a schedule for an invoice whose
+    // journal entry was refused would plan revenue against a receivable
+    // that never landed.
+    await createSchedulesForInvoice(invoice, lines);
+
     invoice.status = "sent";
     invoice.sentAt = new Date();
     await invoice.save();
@@ -327,6 +351,10 @@ router.post("/api/customer-invoices/:id/void", requireAuth, requireActivePlan, a
     }
 
     await voidCustomerInvoiceEntry(req.currentUser.orgId, invoice.id, { postedByUserId: req.currentUser.id });
+    // Months already recognized are history -- their journal entries stand
+    // and the void's reversal cancels the original invoice posting. Months
+    // never earned simply stop being planned.
+    await dropUnrecognizedSchedule(req.currentUser.orgId, invoice.id);
     invoice.status = "void";
     await invoice.save();
 

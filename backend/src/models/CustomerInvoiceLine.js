@@ -21,6 +21,13 @@ export const CustomerInvoiceLine = sequelize.define(
     // integer-cent answer, and recomputing it at read time risks a
     // different rounding than the one the journal entry was posted with.
     amountCents: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // When this line is delivered over time rather than at a point in
+    // time. Both set -> the line is billed up front but earned across the
+    // period, so it credits Deferred Revenue and releases monthly (see
+    // revenueRecognition.js). Both null -> earned when billed, credits
+    // revenue directly, which is what every line did before v1.26.
+    serviceStartDate: { type: DataTypes.DATEONLY, allowNull: true },
+    serviceEndDate: { type: DataTypes.DATEONLY, allowNull: true },
     position: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   },
   {

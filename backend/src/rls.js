@@ -55,6 +55,7 @@ const DIRECT_ORG_TABLES = [
   "transactions",
   "users",
   "vendor_aliases",
+  "revenue_schedule_entries",
   "vendors",
   "vendor_documents",
   "vendor_expense_accounts",
