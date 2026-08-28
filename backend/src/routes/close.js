@@ -15,6 +15,7 @@
 //     attests to. Seeded from a template, fully editable.
 
 import { Router } from "express";
+import { suggestionsFor } from "../closeAutomation.js";
 import { Op } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
@@ -184,6 +185,20 @@ router.get("/api/close/periods", requireAuth, requireActivePlan, async (req, res
 // calendar month if it's been opened, else the most recent period. Returns
 // null (not a 404) when the org has never opened one -- "no periods yet" is
 // an empty state to render, not an error.
+// Ledger-derived suggestions for one period. Separate from
+// /api/close because they scan journal lines across a five-month window,
+// which is a heavier read than the checklist and isn't wanted on every
+// dashboard poll.
+router.get("/api/close/suggestions", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const month = /^\d{4}-\d{2}$/.test(req.query.period_month || "") ? req.query.period_month : null;
+    if (!month) return res.status(422).json({ detail: "period_month must be YYYY-MM." });
+    res.json({ items: await suggestionsFor(req.currentUser.orgId, month) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/api/close", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const requested = req.query.period_month;
