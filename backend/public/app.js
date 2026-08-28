@@ -2891,6 +2891,54 @@ function closeStatus(message, isError = false) {
   el.classList.toggle("close-status-error", Boolean(isError));
 }
 
+async function loadCloseSuggestions(periodMonth) {
+  const el = document.getElementById("close-suggestions");
+  if (!el) return;
+
+  const res = await apiFetch(`/api/close/suggestions?period_month=${encodeURIComponent(periodMonth)}`);
+  if (!res.ok) {
+    el.textContent = "Couldn't work out suggestions for this period.";
+    return;
+  }
+  const { items } = await res.json();
+
+  if (!items.length) {
+    el.innerHTML = `<p class="hint">Nothing looks missing this month.</p>`;
+    return;
+  }
+
+  // The banner renders before suggestions arrive, and its "Everything
+  // checks out" state is computed from the readiness checks alone. Left
+  // alone it would sit directly above a list saying rent is missing, which
+  // is how somebody signs off on a month with a hole in it. Suggestions
+  // are still non-blocking -- the banner keeps its ready state and the
+  // button keeps working -- it just stops claiming there is nothing to
+  // look at.
+  const banner = document.querySelector(".close-banner.is-ready");
+  if (banner) {
+    const strong = banner.querySelector("strong");
+    if (strong) strong.textContent = "Checks all pass, with suggestions below.";
+    const note = document.createElement("span");
+    note.textContent = ` ${items.length} thing${items.length === 1 ? "" : "s"} the ledger flagged worth a look before you sign off.`;
+    strong.after(note);
+  }
+
+  // Each suggestion links to where it would be acted on: a missing expense
+  // to the journal, an undepreciated asset to the adjusting entries that
+  // would depreciate it.
+  el.innerHTML = `<div class="close-checks">${items
+    .map(
+      (s) => `
+      <button type="button" class="close-check is-blocking" data-tab="${s.type === "undepreciated_asset" ? "adjustments" : "journalentries"}">
+        <span class="close-check-mark">?</span>
+        <span class="close-check-label">${escapeHtml(s.detail)}</span>
+      </button>`
+    )
+    .join("")}</div>`;
+
+  el.querySelectorAll(".close-check[data-tab]").forEach((b) => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+}
+
 async function loadClose() {
   closeStatus("");
   const query = selectedClosePeriodMonth ? `?period_month=${encodeURIComponent(selectedClosePeriodMonth)}` : "";
@@ -2901,6 +2949,11 @@ async function loadClose() {
   const data = await closeRes.json();
   const periods = await periodsRes.json();
   renderClose(data, periods);
+
+  // Fetched after the checklist renders rather than alongside it: the
+  // suggestions scan five months of journal lines, and the checklist
+  // shouldn't wait on that to appear.
+  if (data.period) loadCloseSuggestions(data.period.period_month);
 }
 
 function renderClose(data, periods) {
@@ -2981,6 +3034,12 @@ function renderClose(data, periods) {
       <h3>Automatic checks</h3>
       <p class="hint">Derived from your data every time this page loads — these can't be ticked off by hand, only resolved.</p>
       <div class="close-checks">${readinessRows}</div>
+    </div>
+
+    <div class="panel" id="close-suggestions-panel">
+      <h3>Suggestions</h3>
+      <p class="hint">Derived from the ledger, not from the document queue: an expense that posts every month and didn't, or an asset with nothing depreciating it. Suggestions only -- nothing here posts anything or blocks a close.</p>
+      <div id="close-suggestions">Looking…</div>
     </div>
 
     <div class="panel">
