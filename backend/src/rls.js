@@ -55,6 +55,7 @@ const DIRECT_ORG_TABLES = [
   "transactions",
   "users",
   "vendor_aliases",
+  "recurring_entries",
   "revenue_schedule_entries",
   "vendors",
   "vendor_documents",
@@ -66,6 +67,7 @@ const DIRECT_ORG_TABLES = [
 // need no org predicate: if the parent row is invisible, so is the child.
 const DERIVED_TABLES = {
   customer_invoice_lines: `EXISTS (SELECT 1 FROM customer_invoices p WHERE p.id = customer_invoice_lines."customerInvoiceId")`,
+  recurring_entry_lines: `EXISTS (SELECT 1 FROM recurring_entries p WHERE p.id = recurring_entry_lines."recurringEntryId")`,
   journal_lines: `EXISTS (SELECT 1 FROM journal_entries p WHERE p.id = journal_lines."journalEntryId")`,
   line_items: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = line_items."invoiceId")`,
   match_results: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = match_results."invoiceId")`,

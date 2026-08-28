@@ -216,6 +216,16 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/revenue/schedule` | Every scheduled month across the org, filterable by `?period_month=` / `?recognized=false` |
 | `GET /api/customer-invoices/:id/revenue-schedule` | One invoice's schedule, recognized and pending, with the entry that recognized each month |
 | `GET /api/reports/deferred-revenue` | The waterfall: what's unearned and which month each part releases in |
+| `GET /api/recurring-entries` | Adjusting-entry templates with their lines, last posted period, and next due date |
+| `POST /api/recurring-entries` | `{name, frequency, start_date, end_date?, lines}` -- must balance at creation |
+| `POST /api/recurring-entries/depreciation` | `{cost, salvage_value, useful_life_months, ...}` -- builds a straight-line template that ends when the asset is fully depreciated |
+| `GET /api/recurring-entries/pending` | What a run through `?as_of=` would post, without posting it |
+| `POST /api/recurring-entries/run` | Posts every occurrence due through `as_of`, catching up periods nobody ran |
+| `PATCH /api/recurring-entries/:id` | Rename, pause, or set an end date |
+| `DELETE /api/recurring-entries/:id` | Stops future postings; entries already posted stay on the books |
+| `GET /api/close/year-end` | The fiscal year's closable balances, whether it's closed, and whether it's gone stale since |
+| `POST /api/close/year-end` | Zeroes revenue and expense into Retained Earnings, dated to the year's last day |
+| `POST /api/close/year-end/reopen` | Reverses the closing entry and puts the balances back |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -522,6 +532,23 @@ AP aging used to group by normalizing the extracted vendor name. That handles `"
 
 **The normalizer** (`normalizeVendorName`, shared by `vendorAlias.js` and `vendorExpenseAccount.js` so a key written by one and read by another folds identically) draws its line at what carries no information: case, surrounding and repeated whitespace, trailing punctuation. Anything that could conceivably distinguish two companies stays out — no stripping of `Inc`/`Ltd`, no edit-distance matching, no dropping internal punctuation. The costs are asymmetric: a missed fold is one visible merge click, while a wrong one silently combines two real companies and is nearly impossible to notice.
 
+### Adjusting entries and the year-end close
+
+Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
+
+**Recurring entries** are a template plus a schedule, not a queue of future-dated entries. An entry that exists before its period would show up in a trial balance run today, and books already containing next quarter's depreciation are wrong in a way nobody notices until an audit. Due dates derive from the start date and frequency rather than from "the last one plus an interval", so a period nobody ran stays due instead of being lost — and a month starting on the 31st clamps to the 30th in April rather than rolling into May, because an adjusting entry landing in the wrong period is the whole failure mode.
+
+A template that hits a closed period stops there rather than posting over the gap: books with April and June but no May are harder to spot than a template that visibly stopped. Templates must balance at creation, since an unbalanced one is a trap that looks saved and then fails silently every month.
+
+**Year-end closing entries** zero revenue and expense into a Retained Earnings account. One entry, not the textbook Income Summary three-step — that intermediate account exists to make the arithmetic visible by hand, and in a system that posts atomically it adds an account that is always zero plus a second entry that can only be a transcription of the first.
+
+**Why this doesn't double-count retained earnings.** Rekono *derives* retained earnings from cumulative revenue minus expenses (v1.21/v1.22), and a closing entry also credits a Retained Earnings *account*. Both counting would double equity. They don't, because the closing entry debits every revenue account to zero: that year's contribution to the derivation becomes exactly zero at the same instant its net income lands in the account. The earnings move from the derived half of equity to the posted half; the total never changes.
+
+Two consequences worth knowing:
+
+- **The P&L excludes closing entries**, the balance sheet includes them. Otherwise a P&L over a closed year would report zero revenue — going blank precisely because the books were closed properly.
+- **A closed year can pick up later activity**, since period locking is a separate mechanism. Nothing breaks (the balance sheet derives whatever the closing entry missed, so totals stay right), but "closed" stops meaning the accounts are at zero. The year-end preview flags that and names the amount rather than reporting the leftover as if it were the year's income.
+
 ### Revenue recognition (ASC 606)
 
 Sending a customer an annual invoice in January used to credit twelve months of revenue into January — a P&L spike that didn't happen and eleven dead months. What's true on day one is that a receivable exists and the org **owes twelve months of service**, which is a liability, not income.
@@ -579,7 +606,10 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Vendor payment terms on new bills**: `Vendor.paymentTermsDays` is stored but nothing reads it yet — a bill that arrives without a due date could inherit it the way a customer invoice already does.
 - **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
-- **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.
+- **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
+- **Stockholders' equity**: contributions, distributions, dividends and stock issuance are postable as journal entries today, but there's no dedicated equity account set (common stock, APIC, treasury) and no statement of stockholders' equity.
+- **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
+- **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.
 - **Prompt/rule feedback loop**: corrections made in the review UI are already captured as structured `human_correction` audit log entries; using that history to auto-tune the confidence threshold or few-shot the extraction prompt is future work.
