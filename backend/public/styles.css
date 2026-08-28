@@ -524,11 +524,11 @@ tbody tr:hover td:first-child { box-shadow: inset 2.5px 0 0 var(--blue); }
    the "add line" control and the commit action stays visually separate. */
 .line-item-form .line-item-footer .line-item-submit { margin-left: auto; }
 
-/* Two panels of roughly equal weight sitting side by side (the cap table's
-   share-class and shareholder forms). Collapses to one column well before
-   the panels get narrow enough for their fields to wrap awkwardly. */
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
-@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+/* A row of small setup panels of roughly equal weight (the cap table's
+   share-class, shareholder and plan forms). auto-fit rather than a fixed
+   column count so adding a fourth panel doesn't need a new rule, and so
+   each one reflows to full width before its fields wrap awkwardly. */
+.panel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.2rem; align-items: start; }
 
 /* A heading that follows a table directly. Every other statement puts a
    hint paragraph in between, which supplies the gap by accident; these

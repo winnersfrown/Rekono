@@ -4,6 +4,70 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.31
+
+The option pool, and the fully-diluted ownership that falls out of it.
+
+v1.30's register answers "who owns what" in issued shares. That is the
+wrong denominator for almost every question a founder or an investor
+actually asks: a company with a 15% option pool does not own the
+percentages its register shows. Fully diluted is the number on the term
+sheet, and the gap between the two is this release.
+
+Three things sit in that gap -- granted awards that haven't been exercised,
+the unallocated reserve nobody has been promised yet, and exercised awards
+that are already real stock. The middle one is the one people leave out,
+and it is the one that gets negotiated: an unallocated pool dilutes the
+existing holders and nobody else, which is the whole substance of the
+"pool shuffle" argument in a priced round. It is counted, and it gets its
+own row rather than being assigned to a person.
+
+- **A plan is a board reserve, not stock.** Nothing moves in the register
+  when a plan is created or when a grant is made from it. Shares become
+  real only on exercise. That is not a simplification -- it is the
+  definition, and it is why outstanding and fully diluted differ at all.
+- **Vesting is computed, never stored.** A row per vesting month would be
+  a copy of what one function knows exactly, and rows for months that
+  haven't happened are claims about the future -- the same argument
+  `recurringEntries.js` makes for keeping a template instead of pre-writing
+  entries. Months are counted by anniversary with the same clamping the
+  recurring schedule uses, so a vesting start on the 31st has its February
+  anniversary on the 28th; the rounding remainder lands on the final month,
+  so a grant finishes at exactly the number of shares it was for.
+- **Cancelled shares return to the pool; exercised ones don't.** Exercised
+  shares left it permanently the moment they became real stock and are
+  counted by the register from then on. Counting them in both places is
+  the double-count the arithmetic exists to avoid.
+- **Options, RSUs and warrants are one table**, because they dilute
+  identically. What differs is tax treatment, which Rekono deliberately
+  doesn't compute. An RSU is refused a strike price rather than being
+  allowed to carry a number that means nothing.
+- **Events can't be dated in the future.** Every gate here is evaluated at
+  the event's own date, so without this rule a grant that had barely
+  started could be exercised in full by typing a date four years out. The
+  share register deliberately has no equivalent rule: a transfer between
+  two shareholders has no time-based gate to bypass. The asymmetry is the
+  point.
+
+**Exercising posts.** This is the part the browser caught and the tests
+did not. An exercise issues stock through the register's own
+`recordShareTransaction`, so it inherits the authorized-capital check for
+free -- but issuing stock without posting the cash paid for it left Common
+Stock where it was while the register's issued count climbed, and v1.30's
+tie-out immediately began reporting a difference that nothing could close.
+So an exercise now also posts its own capital contribution, and the
+reconciliation survives it.
+
+Naming a cash account is optional (a historical exercise may already have
+its own entry, or predate the books), but it is the **default** in the UI
+rather than the opt-out: skipping it is what breaks the tie-out, and a
+default that quietly does that is wrong most of the time. If the register
+then refuses the issuance -- past the authorized ceiling, say -- the
+contribution is voided rather than left on the books as cash raised
+against shares that will never exist. An RSU has no strike price and so no
+cash to post; the expense side of one is ASC 718 stock compensation, which
+Rekono doesn't compute and won't guess at.
+
 ## v1.30
 
 The share register: who owns how much of the company.

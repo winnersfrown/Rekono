@@ -1554,6 +1554,52 @@
           </table>
           <p class="hint" id="cap-reconcile"></p>
 
+          <h3 class="cap-section">Fully diluted</h3>
+          <p class="hint">Issued shares plus every unexercised award plus everything still unallocated in a plan. The last term belongs to nobody and dilutes everybody, which is exactly why a term sheet argues about it.</p>
+          <p class="hint" id="fd-summary"></p>
+          <table>
+            <thead><tr><th>Holder</th><th>Shares</th><th>Awards</th><th>Fully diluted</th><th>% diluted</th><th>% outstanding</th></tr></thead>
+            <tbody id="fd-body"></tbody>
+          </table>
+
+          <h3 class="cap-section">Option pool</h3>
+          <table>
+            <thead><tr><th>Plan</th><th>Class</th><th>Reserved</th><th>Granted</th><th>Exercised</th><th>Outstanding</th><th>Available</th></tr></thead>
+            <tbody id="plans-body"></tbody>
+          </table>
+
+          <div class="panel">
+            <h3>Grant an award</h3>
+            <form id="award-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Plan<select id="aw-plan"></select></label>
+                <label>Type<select id="aw-type">
+                  <option value="option">Stock option</option>
+                  <option value="rsu">RSU</option>
+                  <option value="warrant">Warrant</option>
+                </select></label>
+                <label>Grantee<select id="aw-holder"></select></label>
+                <label>Grant date<input type="date" id="aw-date" required /></label>
+                <label>Shares<input type="number" id="aw-shares" min="1" step="1" required /></label>
+                <label id="aw-strike-field">Strike price<input type="number" id="aw-strike" min="0" step="0.0001" placeholder="Optional" /></label>
+                <label>Vesting start<input type="date" id="aw-vest-start" placeholder="Grant date" /></label>
+                <label>Vesting months<input type="number" id="aw-vest-months" min="0" max="240" step="1" value="48" /></label>
+                <label>Cliff months<input type="number" id="aw-cliff" min="0" max="240" step="1" value="12" /></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="aw-hint"></p>
+                <button type="submit" class="line-item-submit">Grant</button>
+              </div>
+              <div id="award-status" class="hint"></div>
+            </form>
+          </div>
+
+          <h3 class="cap-section">Awards</h3>
+          <table>
+            <thead><tr><th>Grant date</th><th>Grantee</th><th>Type</th><th>Granted</th><th>Vested</th><th>Exercised</th><th>Exercisable</th><th></th></tr></thead>
+            <tbody id="awards-body"></tbody>
+          </table>
+
           <div class="panel">
             <h3>Record a share movement</h3>
             <form id="share-txn-form" class="line-item-form">
@@ -1586,7 +1632,7 @@
             <tbody id="share-txns-body"></tbody>
           </table>
 
-          <div class="two-col">
+          <div class="panel-grid">
             <div class="panel">
               <h3>Share classes</h3>
               <p class="hint">Par value is fixed in the certificate of incorporation and can't be changed here once set — every issuance already posted split par from premium using it.</p>
@@ -1601,6 +1647,24 @@
                   <button type="submit" class="line-item-submit">Add class</button>
                 </div>
                 <div id="share-class-status" class="hint"></div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h3>Equity plans</h3>
+              <p class="hint">A board-authorized reserve. Nothing is issued when a plan is created or when a grant is made from it — only exercising turns a promise into stock.</p>
+              <form id="plan-form" class="line-item-form">
+                <div class="line-item-fields">
+                  <label>Name<input type="text" id="pl-name" maxlength="128" placeholder="2026 Stock Plan" required /></label>
+                  <label>Class<select id="pl-class"></select></label>
+                  <label>Reserved<input type="number" id="pl-reserved" min="1" step="1" required /></label>
+                  <label>Adopted<input type="date" id="pl-adopted" required /></label>
+                </div>
+                <div class="line-item-footer">
+                  <p class="hint"></p>
+                  <button type="submit" class="line-item-submit">Add plan</button>
+                </div>
+                <div id="plan-status" class="hint"></div>
               </form>
             </div>
 
@@ -2019,6 +2083,29 @@
         <div class="confirm-modal-actions">
           <button type="button" id="payment-modal-cancel" class="modal-btn-cancel">Cancel</button>
           <button type="submit">Record payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Exercising is a partial action far more often than an all-or-nothing
+       one (someone exercises what has vested and leaves the rest), and the
+       date matters: vesting is evaluated at it. Both need to be asked for
+       properly rather than assumed. -->
+  <div id="exercise-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Exercise award</h2>
+      <p id="exercise-modal-message"></p>
+      <form id="exercise-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Shares<input type="number" id="exercise-modal-shares" step="1" min="1" required /></label>
+          <label>Date<input type="date" id="exercise-modal-date" required /></label>
+          <label id="exercise-modal-account-field">Cash received into<select id="exercise-modal-account"></select></label>
+        </div>
+        <p id="exercise-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="exercise-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Exercise</button>
         </div>
       </form>
     </div>

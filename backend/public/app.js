@@ -5204,8 +5204,12 @@ let capHolders = [];
 let capFunding = [];
 
 async function loadCapTable() {
-  await Promise.all([loadCapClasses(), loadCapHolders(), loadCapFunding()]);
-  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions()]);
+  // Classes and holders first: the plan and award forms build their
+  // dropdowns from both, so loading them in parallel would race.
+  // loadEquityAccounts is the equity tab's, reused here because exercising
+  // posts a contribution and needs the same list of cash accounts.
+  await Promise.all([loadCapClasses(), loadCapHolders(), loadCapFunding(), loadEquityAccounts()]);
+  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions(), loadEquityPlans(), loadAwards(), loadFullyDiluted()]);
 }
 
 function holderOptions(holders) {
@@ -5350,6 +5354,7 @@ document.getElementById("cap-asof-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadCapPositions();
   loadCapCounts();
+  loadFullyDiluted();
 });
 
 document.getElementById("share-class-form").addEventListener("submit", async (e) => {
@@ -5376,6 +5381,8 @@ document.getElementById("share-class-form").addEventListener("submit", async (e)
   document.getElementById("sc-authorized").value = "";
   await loadCapClasses();
   loadCapCounts();
+  // The plan form picks its class from the same list.
+  loadEquityPlans();
 });
 
 document.getElementById("shareholder-form").addEventListener("submit", async (e) => {
@@ -5398,6 +5405,8 @@ document.getElementById("shareholder-form").addEventListener("submit", async (e)
   document.getElementById("shh-name").value = "";
   document.getElementById("shh-email").value = "";
   await loadCapHolders();
+  // The award form's grantee list comes from the same holders.
+  loadEquityPlans();
 });
 
 document.getElementById("share-txn-form").addEventListener("submit", async (e) => {
@@ -5484,6 +5493,319 @@ async function loadShareTransactions() {
     })
   );
 }
+
+// ---- Option pool and fully-diluted ownership ----
+// Equity promised but not issued, and the denominator that falls out of
+// it. See equityAwards.js.
+
+const AWARD_TYPE_LABELS = { option: "Option", rsu: "RSU", warrant: "Warrant" };
+
+const AWARD_HINTS = {
+  option: "The right to buy shares at the strike price once vested. Nothing is issued until it's exercised.",
+  rsu: "Settles into shares on vesting rather than being bought, so it has no strike price.",
+  warrant: "The same instrument as an option, granted to an investor or a lender rather than an employee. Dilutes identically.",
+};
+
+let capPlans = [];
+let exerciseModalResolve = null;
+
+// Asks for the share count and the date. The date is not a formality --
+// vesting is evaluated at it, and the API refuses one in the future for
+// exactly that reason, so defaulting to today and letting it be backdated
+// is the right shape.
+function exerciseDialog(exercisable, { strike = null } = {}) {
+  const proceeds = strike ? exercisable * strike : 0;
+  document.getElementById("exercise-modal-message").textContent = strike
+    ? `Up to ${exercisable.toLocaleString()} shares are exercisable today, at ${fmtMoney(strike)} a share — ${fmtMoney(proceeds)} in total.`
+    : `Up to ${exercisable.toLocaleString()} shares are exercisable today. This award has no strike price, so no cash changes hands.`;
+
+  // Only an award with a strike price brings money in. An RSU settles for
+  // services, and the expense side of that is ASC 718 stock compensation,
+  // which Rekono doesn't compute -- so there's nothing to post and nothing
+  // to ask for.
+  //
+  // A real cash account is the default and "don't post" is the deliberate
+  // opt-out, not the other way round: skipping the posting is what breaks
+  // the register's tie-out to the ledger, and a default that quietly does
+  // that is a default that is wrong most of the time.
+  const accountField = document.getElementById("exercise-modal-account-field");
+  accountField.style.display = strike ? "" : "none";
+  document.getElementById("exercise-modal-account").innerHTML =
+    eqAccounts.map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`).join("") +
+    `<option value="">Don't post to the ledger</option>`;
+  document.getElementById("exercise-modal-shares").value = String(exercisable);
+  document.getElementById("exercise-modal-shares").max = String(exercisable);
+  document.getElementById("exercise-modal-date").value = new Date().toISOString().slice(0, 10);
+  const errorEl = document.getElementById("exercise-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("exercise-modal").style.display = "flex";
+  document.getElementById("exercise-modal-shares").focus();
+
+  return new Promise((resolve) => {
+    exerciseModalResolve = resolve;
+  });
+}
+
+function closeExerciseModal(result) {
+  document.getElementById("exercise-modal").style.display = "none";
+  if (exerciseModalResolve) {
+    exerciseModalResolve(result);
+    exerciseModalResolve = null;
+  }
+}
+
+document.getElementById("exercise-modal-cancel").addEventListener("click", () => closeExerciseModal(null));
+document.getElementById("exercise-modal").addEventListener("click", (e) => {
+  if (e.target.id === "exercise-modal") closeExerciseModal(null);
+});
+
+document.getElementById("exercise-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const shares = Number(document.getElementById("exercise-modal-shares").value);
+  const errorEl = document.getElementById("exercise-modal-error");
+  if (!Number.isInteger(shares) || shares <= 0) {
+    errorEl.textContent = "Enter a whole number of shares above zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  const account = document.getElementById("exercise-modal-account").value;
+  closeExerciseModal({
+    shares,
+    event_date: document.getElementById("exercise-modal-date").value,
+    ...(account ? { cash_account_id: account } : {}),
+  });
+});
+
+function updateAwardForm() {
+  const type = document.getElementById("aw-type").value;
+  // An RSU has nothing to pay, and the API refuses a strike price on one
+  // rather than quietly storing a number that means nothing.
+  document.getElementById("aw-strike-field").style.display = type === "rsu" ? "none" : "";
+  document.getElementById("aw-hint").textContent = AWARD_HINTS[type] || "";
+}
+
+document.getElementById("aw-type").addEventListener("change", updateAwardForm);
+
+async function loadEquityPlans() {
+  const data = await (await apiFetch("/api/equity-plans")).json();
+  capPlans = data.items;
+
+  document.getElementById("pl-class").innerHTML = capClasses
+    .filter((c) => c.active)
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join("");
+  document.getElementById("aw-plan").innerHTML = capPlans
+    .filter((p) => p.active)
+    .map((p) => `<option value="${p.id}">${escapeHtml(p.name)} (${p.available.toLocaleString()} left)</option>`)
+    .join("");
+  document.getElementById("aw-holder").innerHTML = capHolders
+    .filter((h) => h.active)
+    .map((h) => `<option value="${h.id}">${escapeHtml(h.name)}</option>`)
+    .join("");
+
+  const body = document.getElementById("plans-body");
+  body.innerHTML = capPlans.length
+    ? capPlans
+        .map(
+          (p) => `
+    <tr>
+      <td>${escapeHtml(p.name)}</td>
+      <td>${escapeHtml(p.share_class_name || "—")}</td>
+      <td>${p.reserved.toLocaleString()}</td>
+      <td>${p.granted.toLocaleString()}</td>
+      <td>${p.exercised.toLocaleString()}</td>
+      <td>${p.outstanding.toLocaleString()}</td>
+      <td>${p.available.toLocaleString()}</td>
+    </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="7" class="table-empty-row">No option pool yet.</td></tr>`;
+
+  updateAwardForm();
+}
+
+async function loadFullyDiluted() {
+  const asOf = document.getElementById("cap-asof").value;
+  const data = await (await apiFetch(`/api/cap-table/fully-diluted${asOf ? `?as_of=${asOf}` : ""}`)).json();
+
+  document.getElementById("fd-summary").textContent = data.fully_diluted_shares
+    ? `${data.fully_diluted_shares.toLocaleString()} shares fully diluted — ${data.outstanding_shares.toLocaleString()} issued, ` +
+      `${data.award_shares.toLocaleString()} promised in awards, ${data.unallocated_pool_shares.toLocaleString()} unallocated.`
+    : "";
+
+  const body = document.getElementById("fd-body");
+  if (!data.holders.length && !data.unallocated_pool_shares) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">Nothing issued or promised yet.</td></tr>`;
+    return;
+  }
+
+  const rows = data.holders.map(
+    (h) => `
+    <tr>
+      <td>${escapeHtml(h.shareholder_name)}</td>
+      <td>${h.shares.toLocaleString()}</td>
+      <td>${h.award_shares.toLocaleString()}</td>
+      <td>${h.fully_diluted_shares.toLocaleString()}</td>
+      <td>${h.percent.toFixed(2)}%</td>
+      <td>${h.outstanding_percent.toFixed(2)}%</td>
+    </tr>`
+  );
+
+  // Its own row rather than folded into a holder, because it is held by
+  // nobody. Dropping it would make every percentage above look better
+  // than the one an investor will compute.
+  if (data.unallocated_pool_shares > 0) {
+    rows.push(`
+    <tr>
+      <td><em>Unallocated pool</em></td>
+      <td>0</td>
+      <td>${data.unallocated_pool_shares.toLocaleString()}</td>
+      <td>${data.unallocated_pool_shares.toLocaleString()}</td>
+      <td>${data.unallocated_pool_percent.toFixed(2)}%</td>
+      <td>—</td>
+    </tr>`);
+  }
+  body.innerHTML = rows.join("");
+}
+
+async function loadAwards() {
+  const data = await (await apiFetch("/api/equity-awards")).json();
+  const body = document.getElementById("awards-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No awards granted yet.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = data.items
+    .map(
+      (a) => `
+    <tr>
+      <td>${a.grant_date}</td>
+      <td>${escapeHtml(a.shareholder_name || "—")}</td>
+      <td>${escapeHtml(AWARD_TYPE_LABELS[a.type] || a.type)}</td>
+      <td>${a.shares.toLocaleString()}</td>
+      <td>${(a.vested ?? 0).toLocaleString()}</td>
+      <td>${(a.exercised ?? 0).toLocaleString()}</td>
+      <td>${(a.exercisable ?? 0).toLocaleString()}</td>
+      <td>
+        ${a.exercisable ? `<button type="button" class="aw-exercise-btn linklike" data-id="${a.id}" data-max="${a.exercisable}" data-strike="${a.strike_price ?? ""}">Exercise</button>` : ""}
+        ${a.outstanding ? `<button type="button" class="aw-cancel-btn linklike" data-id="${a.id}" data-shares="${a.outstanding}">Cancel</button>` : ""}
+      </td>
+    </tr>`
+    )
+    .join("");
+
+  body.querySelectorAll(".aw-exercise-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const result = await exerciseDialog(Number(btn.dataset.max), { strike: btn.dataset.strike ? Number(btn.dataset.strike) : null });
+      if (!result) return;
+      const res = await apiFetch(`/api/equity-awards/${btn.dataset.id}/exercise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      if (!res.ok) {
+        const parsed = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't exercise that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      refreshCapPool();
+    })
+  );
+
+  body.querySelectorAll(".aw-cancel-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const shares = Number(btn.dataset.shares);
+      const confirmed = await confirmDialog(
+        "Cancel this award?",
+        `All ${shares.toLocaleString()} shares still outstanding on it go back to the plan and can be granted again. Anything already exercised is real stock and is unaffected.`,
+        { confirmLabel: "Cancel award", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/equity-awards/${btn.dataset.id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_date: new Date().toISOString().slice(0, 10) }),
+      });
+      if (!res.ok) {
+        const parsed = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't cancel that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      refreshCapPool();
+    })
+  );
+}
+
+// Exercising touches the register, the pool and both cap tables at once,
+// which is the whole point of routing it through one call server-side.
+function refreshCapPool() {
+  loadCapPositions();
+  loadCapCounts();
+  loadShareTransactions();
+  loadEquityPlans();
+  loadAwards();
+  loadFullyDiluted();
+}
+
+document.getElementById("plan-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("plan-status");
+  const res = await apiFetch("/api/equity-plans", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("pl-name").value,
+      share_class_id: document.getElementById("pl-class").value,
+      reserved_shares: Number(document.getElementById("pl-reserved").value) || 0,
+      adopted_date: document.getElementById("pl-adopted").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Added ${parsed.name}.`;
+  document.getElementById("pl-name").value = "";
+  document.getElementById("pl-reserved").value = "";
+  await loadEquityPlans();
+  loadFullyDiluted();
+});
+
+document.getElementById("award-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("award-status");
+  const type = document.getElementById("aw-type").value;
+  const strike = document.getElementById("aw-strike").value;
+  const vestStart = document.getElementById("aw-vest-start").value;
+
+  const res = await apiFetch("/api/equity-awards", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      equity_plan_id: document.getElementById("aw-plan").value,
+      shareholder_id: document.getElementById("aw-holder").value,
+      type,
+      grant_date: document.getElementById("aw-date").value,
+      shares: Number(document.getElementById("aw-shares").value) || 0,
+      ...(type === "rsu" || strike === "" ? {} : { strike_price: Number(strike) }),
+      ...(vestStart ? { vesting_start_date: vestStart } : {}),
+      vesting_months: Number(document.getElementById("aw-vest-months").value),
+      cliff_months: Number(document.getElementById("aw-cliff").value),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Granted ${parsed.shares.toLocaleString()} shares.`;
+  document.getElementById("aw-shares").value = "";
+  document.getElementById("aw-strike").value = "";
+  refreshCapPool();
+});
 
 // ---- Adjusting entries and year-end close ----
 // The entries a close actually consists of. See recurringEntries.js and
