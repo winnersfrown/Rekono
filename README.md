@@ -216,6 +216,10 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
 | `DELETE /api/invoices/:id/payments/:paymentId` | Unapplies a payment, reversing its journal entry |
 | `GET /api/reports/ap-aging` | What you owe vendors, bucketed the same way as AR aging, grouped by vendor |
+| `GET /api/vendors` | The org's vendors, each with its other known spellings, bill count, and outstanding balance |
+| `POST /api/vendors` | `{name, email?, payment_terms_days?}` -- add a vendor by hand. Rejects a name that normalizes onto an existing one |
+| `PATCH /api/vendors/:id` | Rename, re-term, or deactivate a vendor |
+| `POST /api/vendors/:id/merge` | `{into_vendor_id}` -- folds this vendor into another: bills move, the spelling becomes an alias, the row disappears |
 | `POST /api/invoices/upload` | Upload one or more PDF/images (each queues its own extraction and its own document-cap check). Rejected with `402` + `plan_cap_reached` once the org's plan document cap for the current month is hit |
 | `GET /api/invoices` | Paginated invoice list: `?page=`/`?page_size=` (default 100, max 500), `?status=` filter, `?q=` case-insensitive search against vendor name and invoice number, `?sort=`/`?order=` (allowlisted sort fields: `created_at`, `total`, `vendor_name`, `overall_confidence`). Returns `{items, total, page, page_size}` |
 | `GET /api/invoices/:id` | Full invoice detail incl. line items, confidence, match results |
@@ -501,6 +505,18 @@ Invoice numbers are sequential per org (`INV-0001`), derived from the highest ex
 
 Building this surfaced a bug in v1.21's cash flow classifier. It bucketed by account *type* alone, so collecting a receivable (an asset) read as **investing** and paying down a payable (a liability) read as **financing**. Both are plainly operating activities — investing means buying and selling long-term assets, financing means raising and returning capital, and neither describes collecting what you're owed or settling what you owe. `financialStatements.js` now special-cases the `accounts_receivable`/`accounts_payable` subtypes, with tests pinning both directions.
 
+### Vendors and merging
+
+AP aging used to group by normalizing the extracted vendor name. That handles `"Acme Inc."` vs `"  ACME Inc. "` and nothing else — the moment the same company's name arrives genuinely differently (`"Acme Inc"` one month, `"Acme Incorporated"` the next, which OCR and a change of letterhead both produce), the report shows one vendor as two, and every collections decision made off it is wrong. No cleverer normalizer fixes that, because nothing can know those two strings are one company.
+
+`Vendor` is the AP counterpart to `Customer`: a stable identity with payment terms and an email, created automatically the first time a bill naming it is approved. **At approval, not at extraction** — OCR noise on a document nobody approves shouldn't litter the vendor list. `Invoice.vendorName` is deliberately left exactly as extracted; overwriting it with a canonical name would destroy the record of what the document actually said, which is the one thing an audit needs to check. `Invoice.vendorId` is the resolved identity alongside it.
+
+**Merging is what the table exists for.** `POST /api/vendors/:id/merge` moves every bill to the surviving vendor, carries the remembered expense-account categorization across, and writes the merged-away spelling as an alias so the next bill carrying it resolves on its own rather than recreating the duplicate. It is presentational only — regrouping never moves a cent, and a test pins that AP aging still reconciles to the balance sheet afterwards.
+
+`computeApAging` resolves identity **at read time** through vendors and aliases rather than trusting a stored column. Two things fall out of that: a merge regroups history immediately with nothing rewritten, and bills approved before vendors existed (no `vendorId` at all) still group by name instead of vanishing. No backfill and no migration were needed.
+
+**The normalizer** (`normalizeVendorName`, shared by `vendorAlias.js` and `vendorExpenseAccount.js` so a key written by one and read by another folds identically) draws its line at what carries no information: case, surrounding and repeated whitespace, trailing punctuation. Anything that could conceivably distinguish two companies stays out — no stripping of `Inc`/`Ltd`, no edit-distance matching, no dropping internal punctuation. The costs are asymmetric: a missed fold is one visible merge click, while a wrong one silently combines two real companies and is nearly impossible to notice.
+
 ### Accounts payable: paying bills
 
 `accountsPayable.js` is the mirror of `accountsReceivable.js`, and closes the asymmetry AR made obvious. Approving a vendor bill has posted **Debit expense / Credit Accounts Payable** since v1.20, but nothing relieved that payable — AP only ever grew, and the balance sheet showed every bill the org had ever approved as still owed. Recording a payment posts **Debit Accounts Payable / Credit the account the money left from**.
@@ -511,7 +527,7 @@ Building this surfaced a bug in v1.21's cash flow classifier. It bucketed by acc
 
 **You can only relieve a payable that exists.** Approving is what credits AP, and that posting can be skipped (a bill approved into a closed period — see `postInvoiceApproval`), so an `approved` status alone isn't proof it landed. Debiting AP for a bill that never credited it drives the balance negative against nothing, so it's refused — recoverably, since re-approving re-runs the idempotent posting.
 
-**AP aging** buckets outstanding balances by days past due, grouped by vendor. Vendor names are normalized for grouping only (trimmed and case-folded, first spelling kept for display) — a weaker key than AR's real `Customer` table, which is exactly the argument `Customer.js` makes for AR having one.
+**AP aging** buckets outstanding balances by days past due, grouped by the resolved `Vendor` (see above).
 
 One subtlety worth knowing: the aging report and the payments endpoints both use `Invoice`'s `withSamples` scope rather than its default. The Review Queue deliberately shows the seeded sample invoice and lets it be approved like any other, and approving it posts to Accounts Payable for real — so filtering it out of aging alone would leave the report disagreeing with the balance sheet by exactly the sample's amount.
 
@@ -531,7 +547,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Production job queue**: swap the in-process queue (`src/jobs.js`) for BullMQ/Redis or SQS once throughput needs it. The `enqueue()` call site is the only integration point.
 - **Cloud OCR**: swap Tesseract for AWS Textract or Google Document AI behind `ocr.extractText` for better accuracy on messy scans.
 - **Accounting software integrations**: QuickBooks Online Phase 1 (Sandbox OAuth connect + manual one-way Bill push + per-invoice AI expense-account categorization + AI-assisted bank reconciliation, see above) is done. Still ahead: Production access (Intuit app-assessment review), push-on-approve automation instead of a manual button, bulk push, and Xero/NetSuite support.
-- **Vendors as a real table**: AP has no `Vendor` model, so AP aging groups by a normalized vendor name. That's the weaker key `Customer.js` argues against for AR, and giving vendors payment terms and a stable identity is the fix.
+- **Vendor payment terms on new bills**: `Vendor.paymentTermsDays` is stored but nothing reads it yet — a bill that arrives without a due date could inherit it the way a customer invoice already does.
 - **Revenue recognition**: deferred-revenue schedules for subscription/SaaS businesses (ASC 606) -- money coming in over time, not just the invoice-approval auto-posting this repo has today for money going out.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **AI-driven close automation**: `routes/close.js`'s month-end close is currently a checklist/attestation with no ledger tie-in -- closing a period producing an actual trial-balance snapshot, and auto-suggesting/posting recurring entries (rent, depreciation, accruals), is future work.

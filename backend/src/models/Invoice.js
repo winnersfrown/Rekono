@@ -23,7 +23,16 @@ export const Invoice = sequelize.define(
     status: { type: DataTypes.ENUM(...INVOICE_STATUSES), allowNull: false, defaultValue: "queued" },
     errorMessage: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
 
+    // What the document said. Kept verbatim even once a Vendor is resolved
+    // for it -- overwriting the extracted text with a canonical name would
+    // destroy the record of what was actually on the invoice, which is the
+    // one thing an audit needs to be able to check.
     vendorName: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
+    // The resolved vendor identity, set when a bill is approved (see
+    // vendors.js). Nullable: bills approved before vendors existed have
+    // none, and AP aging resolves those by name at read time rather than
+    // requiring a backfill.
+    vendorId: { type: DataTypes.STRING(32), allowNull: true },
     invoiceNumber: { type: DataTypes.STRING(256), allowNull: false, defaultValue: "" },
     invoiceDate: { type: DataTypes.DATEONLY, allowNull: true },
     dueDate: { type: DataTypes.DATEONLY, allowNull: true },

@@ -14,6 +14,7 @@
 
 import { LedgerError, centsToDollars, dollarsToCents, postJournalEntry, voidJournalEntry } from "./ledger.js";
 import { Account, BillPayment, Invoice, JournalEntry } from "./models/index.js";
+import { buildVendorResolver } from "./vendors.js";
 
 // Only an approved bill is a payable -- that's the status whose approval
 // posted to Accounts Payable in the first place.
@@ -159,13 +160,16 @@ function daysBetween(fromIso, toIso) {
 // Only approved bills count -- anything still in review isn't a payable
 // yet, and nothing else has posted to Accounts Payable.
 //
-// Grouped by vendor *name* rather than a vendor table, because the AP side
-// has no Vendor model (unlike AR's Customer). Names are normalized for
-// grouping only -- trimmed and case-folded, so "Acme Inc." and "ACME
-// Inc." land in one row -- with the first spelling seen kept for display.
-// It's a weaker key than a real foreign key, which is exactly the argument
-// Customer.js makes for AR having one; noted here as the known limitation
-// rather than papered over.
+// Grouped by resolved vendor identity (see vendors.js), not by normalizing
+// the extracted name. Normalization handled "Acme Inc." vs "  ACME Inc. "
+// and nothing else -- the moment the same vendor's name arrived genuinely
+// differently ("Acme Inc" one month, "Acme Incorporated" the next), this
+// report showed one vendor as two and every collections decision made off
+// it was wrong.
+//
+// Resolution happens at read time through vendors and aliases, so merging
+// two vendors regroups history immediately with no invoice rewritten, and
+// bills approved before vendors existed still group by name.
 export async function computeApAging(orgId, { asOf = null } = {}) {
   const asOfDate = asOf || todayIso();
 
@@ -177,9 +181,10 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
   // would leave this report disagreeing with the balance sheet by exactly
   // the sample's amount -- and an aging report that doesn't tie to the
   // ledger is worse than no aging report.
-  const invoices = await Invoice.scope("withSamples").findAll({
-    where: { orgId, status: PAYABLE_INVOICE_STATUS },
-  });
+  const [invoices, resolveVendor] = await Promise.all([
+    Invoice.scope("withSamples").findAll({ where: { orgId, status: PAYABLE_INVOICE_STATUS } }),
+    buildVendorResolver(orgId),
+  ]);
 
   const byVendor = new Map();
   const totals = Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, 0]));
@@ -198,16 +203,16 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
     const daysPastDue = invoice.dueDate ? daysBetween(invoice.dueDate, asOfDate) : 0;
     const bucket = AGING_BUCKETS.find((b) => daysPastDue >= b.min && daysPastDue <= b.max);
 
-    const displayName = (invoice.vendorName || "").trim() || "(unknown vendor)";
-    const key = displayName.toLowerCase();
-    if (!byVendor.has(key)) {
-      byVendor.set(key, {
-        vendor_name: displayName,
+    const vendor = resolveVendor(invoice);
+    if (!byVendor.has(vendor.key)) {
+      byVendor.set(vendor.key, {
+        vendor_id: vendor.vendorId,
+        vendor_name: vendor.name,
         ...Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, 0])),
         total: 0,
       });
     }
-    const row = byVendor.get(key);
+    const row = byVendor.get(vendor.key);
     row[bucket.key] += outstandingCents;
     row.total += outstandingCents;
     totals[bucket.key] += outstandingCents;

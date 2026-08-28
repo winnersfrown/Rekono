@@ -17,6 +17,16 @@ export const VendorAlias = sequelize.define(
     // match -- no per-query normalization, no dialect-specific case-folding.
     rawVendorName: { type: DataTypes.STRING(512), allowNull: false },
     canonicalVendorName: { type: DataTypes.STRING(512), allowNull: false },
+    // The Vendor this spelling resolves to, when one is known. Nullable
+    // because the original use for this table was purely string-to-string
+    // (correct the extracted text, keep the corrected spelling), and every
+    // alias written before vendors existed has no entity to point at.
+    //
+    // Merging two vendors writes rows here with this set, which is what
+    // makes a merge retroactive: AP aging resolves identity through these
+    // aliases at read time, so historical invoices regroup immediately
+    // without rewriting a single one of them.
+    vendorId: { type: DataTypes.STRING(32), allowNull: true },
   },
   {
     tableName: "vendor_aliases",

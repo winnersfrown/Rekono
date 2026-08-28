@@ -4,10 +4,7 @@
 // vendorAlias.js, kept as its own module for the same reason: one place
 // both call sites agree on, rather than two copies that could drift apart.
 import { VendorExpenseAccount } from "./models/index.js";
-
-function normalize(name) {
-  return (name || "").trim().toLowerCase();
-}
+import { normalizeVendorName as normalize } from "./vendors.js";
 
 // Most recent correction wins for a given vendor, same reasoning as
 // rememberVendorCorrection -- which account a vendor's invoices belong
