@@ -16,6 +16,8 @@ matter most, and the order to look in:
 | Deferred revenue, ASC 606 | `revenueRecognition.js` |
 | Adjusting entries (depreciation, accruals) | `recurringEntries.js` |
 | Year-end closing entries | `yearEndClose.js` |
+| Equity events, statement of stockholders' equity | `equity.js`, `stockholdersEquity.js` |
+| Cap table, shares outstanding | `shareRegister.js` |
 | Row-level security policy list | `rls.js` |
 
 Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
@@ -47,6 +49,15 @@ These are settled decisions. Don't re-litigate them without a reason.
 - **`Invoice` has a `defaultScope` hiding sample data.** Anything that must
   reconcile to the ledger needs `.scope("withSamples")` — an approved
   sample invoice posts to AP for real.
+- **Par value is carried in millionths of a dollar.** $0.0001 (the Delaware
+  default) and $0.001 both round to zero cents. Multiply by the share
+  count first, round once.
+- **The share register is not the ledger.** Positions are replayed in date
+  order rather than summed, and a wrong entry is deleted rather than
+  voided — it's a claim about who owns what, not about money that moved.
+  It ties to the ledger in exactly one place: Common Stock ÷ par = shares
+  *issued* (not outstanding — the cost method leaves Common Stock alone on
+  a buyback).
 
 ## Adding a feature
 
@@ -151,20 +162,19 @@ instead. If you're working outside that sandbox, tagging as well is welcome
 
 ## Shipping a change
 
-The working branch is `claude/rekono-invoice-ai-kdpqd4`. This sequence is
-needed nearly every time — the first push is rejected and the first merge
-attempt 405s, both expected:
+The working branch is `claude/rekono-invoice-ai-kdpqd4`, which is long-lived
+and still carries the previous release's commits. Rebase onto `main`
+**before** opening the PR — doing it after is what produces the
+"405 Pull Request has merge conflicts" on the first merge attempt:
 
 ```bash
 git fetch origin main -q && git reset --hard origin/main -q   # start clean
 # ... work, then:
 git add -A && git commit -F <message-file>
-git fetch origin <branch> -q && git rebase origin/<branch>
-git push -u origin <branch>
-# merge attempt returns "405 Pull Request has merge conflicts":
-git fetch origin main -q && git rebase origin/main
-git push --force-with-lease origin <branch>
-# merge again -- succeeds
+git fetch origin main <branch> -q
+git rebase origin/main                    # before the PR, not after
+git push --force-with-lease -u origin <branch>
+# open the PR, then merge -- succeeds first time
 ```
 
 Squash-merge, with the commit title `v1.X: <subject> (#<pr>)`.

@@ -4,6 +4,82 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.30
+
+The share register: who owns how much of the company.
+
+v1.29 gave an equity transaction a share count, which was enough to split
+par from premium on an issuance and no more. A count on a transaction
+can't answer the questions a register exists for -- how many shares are
+outstanding, who holds them, what percentage each holder owns, whether the
+charter's authorized limit is used up. Those are *positions*, and positions
+need their own ledger.
+
+So this is a second ledger beside the financial one, denominated in shares
+instead of dollars. It is deliberately not derived from the journal: a
+transfer between two shareholders moves no company money and posts nothing
+at all, and it is still the most common event in a real register.
+Deriving positions from dollars would miss it entirely.
+
+- **Four kinds of movement**: issue, transfer, repurchase, reissue. `shares`
+  is always positive and direction is carried by which ends name a
+  shareholder, not by a signed quantity -- a signed quantity makes "who
+  lost these shares" unanswerable for a transfer, which is exactly what a
+  register exists to answer.
+- **Issued never comes back down.** Shares bought back are still issued,
+  just no longer outstanding, which is why treasury shares keep consuming
+  authorized capital and why a reissue is its own type rather than a second
+  issuance. Outstanding is issued minus treasury and is never stored.
+- **Issuing past the authorized ceiling is refused**, not warned about --
+  it's void as a matter of corporate law, not untidy data. A class with no
+  stated ceiling reports null rather than zero remaining.
+- **Positions are replayed in date order, not summed.** This is the part
+  worth the code. A transfer dated last March can look perfectly valid
+  against today's balances and still be impossible -- the holder may not
+  have owned the shares yet in March, or may have sold them in April. Only
+  a replay sees either case, and both have tests.
+- **Share classes and shareholders are their own records**, deactivated
+  rather than deleted, for the same reason Customer and Vendor are: a
+  position has to stay attributable to somebody forever. Par value can't be
+  edited after the fact, because every issuance already posted split par
+  from premium using it.
+
+**The tie-out.** Common Stock is credited with par value on every issuance,
+so its balance divided by par is the number of shares issued -- and the
+register knows that number independently. `GET
+/api/share-register/reconciliation` compares the two. Issued, not
+outstanding, is the right side of that equation: the cost method debits
+Treasury Stock on a buyback and leaves Common Stock exactly where it was.
+
+Where they disagree, the endpoint also names the equity transactions that
+record shares with no movement on the register, which turns "you are off by
+$100" into a list to go fix. Where the equation doesn't apply -- no-par
+stock, where `equity.js` puts full proceeds into Common Stock, or nothing
+issued yet -- it says so in words rather than reporting a difference of
+zero, since "doesn't apply" and "reconciles" otherwise look identical.
+
+A share movement can name the equity transaction that funded it, and that
+link is checked rather than decorative: the equity transaction has to be
+the type that pays for that kind of movement, its share count has to
+agree, it can't be voided, and it can't already be claimed by another
+movement. A transfer has no link at all, because no company money moves.
+
+Unlike everything on the ledger side, a wrong share movement is **deleted
+rather than voided**, and the deletion is refused if a later movement
+depends on it. A journal entry is a claim about money that moved and has to
+be corrected by a second entry saying so; a register entry is a claim about
+who owns what, and a wrong one leaves the wrong name on the cap table. The
+funding equity transaction keeps its own immutable journal entry either
+way -- that's where the dollars live.
+
+Two things the browser found that the tests could not. `input[type=number]`
+was missing from the app-wide input styling, so every numeric field in the
+app rendered as the browser's default pale rectangle next to dark rounded
+text fields; four of them in one row on the cap table made it impossible to
+miss. And share counts in refusal messages were ungrouped -- "short by
+91750000" is a different reading experience from "short by 91,750,000" at
+the moment someone is checking a number against a certificate.
+
 ## v1.29
 
 Stockholders' equity: the owner-facing side of the balance sheet, and the

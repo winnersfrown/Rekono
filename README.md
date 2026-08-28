@@ -230,6 +230,15 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/equity/transactions` | `{type, transaction_date, amount, cash_account_id?, shares?, par_value?, cost_basis?}` |
 | `POST /api/equity/transactions/:id/void` | Reverses the posting; the record is kept |
 | `GET /api/statements/stockholders-equity` | The roll-forward over `?from=`/`?to=`, tying to the balance sheet at both ends |
+| `GET`/`POST /api/share-classes` | Classes of stock. `{name, par_value, authorized_shares?}` -- par in dollars per share, null authorized means no stated ceiling |
+| `PATCH /api/share-classes/:id` | Rename, change the authorized ceiling, deactivate. Par value is deliberately not editable |
+| `GET /api/share-classes/counts` | Authorized, issued, treasury, outstanding and unissued per class, at `?as_of=` |
+| `GET`/`POST /api/shareholders` | Holders of record. `PATCH /:id` renames or deactivates |
+| `GET /api/share-transactions` | Share movements, newest first. `?type=`/`?share_class_id=` filter |
+| `POST /api/share-transactions` | `{type, share_class_id, transaction_date, shares, from_shareholder_id?, to_shareholder_id?, price_per_share?, equity_transaction_id?}` |
+| `DELETE /api/share-transactions/:id` | Removes a movement. Refused if a later one depends on it |
+| `GET /api/cap-table` | Every holder, their position in each class, and what share of the company that is, at `?as_of=` |
+| `GET /api/share-register/reconciliation` | Common Stock divided by par against the shares the register says were issued, plus the equity transactions no movement claims |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -551,6 +560,23 @@ Six typed events: contribution, distribution, dividend declared, dividend paid, 
 
 **The statement ties by construction.** Beginning and ending totals come straight from `computeBalanceSheet` at the two dates, so it can't disagree with the balance sheet beside it. Movements are attributed from the typed transactions plus net income; anything left over lands on an explicit `other` line. Equity is reachable by a plain journal entry, so a hand-posted credit to Owner's Equity is always possible — a statement that swallowed it would be wrong, and one that refused to balance would be useless, so it gets named instead.
 
+### The share register
+
+An equity transaction carries a share count, which is enough to split par from premium and no more. A count on a transaction can't say how many shares are outstanding, who holds them, what percentage each holder owns, or whether the charter's authorized limit is used up. Those are *positions*, and positions need their own ledger.
+
+`shareRegister.js` is that second ledger, denominated in shares rather than dollars. It is deliberately not derived from the journal: a transfer between two shareholders moves no company money and posts nothing at all, and it is still the most common event in a real register.
+
+Four kinds of movement — issue, transfer, repurchase, reissue. `shares` is always positive and direction is carried by which ends name a shareholder, not by a signed quantity, because a signed quantity makes "who lost these shares" unanswerable for a transfer.
+
+- **Issued never comes back down.** Shares bought back are still issued, just no longer outstanding — which is why treasury shares keep consuming authorized capital, and why a reissue is its own type rather than a second issuance. Outstanding is issued minus treasury and is never stored.
+- **Issuing past the authorized ceiling is refused**, not flagged. It's void as a matter of corporate law, not untidy data.
+- **Positions are replayed in date order, not summed.** A transfer dated last March can look valid against today's balances and still be impossible — the holder may not have owned the shares yet in March, or may have sold them in April. Only a replay sees either case.
+- **A wrong movement is deleted, not voided** — the one place in this app where that's right. A journal entry is a claim about money that moved and has to be corrected by a second entry saying so; a register entry is a claim about who owns what, and a wrong one leaves the wrong name on the cap table. The deletion is refused if a later movement depends on it, and the funding equity transaction keeps its own immutable journal entry.
+
+**The tie-out to the general ledger.** Common Stock is credited with par value on every issuance, so its balance divided by par is the number of shares issued — and the register knows that number independently. `GET /api/share-register/reconciliation` compares them, and names the equity transactions recording shares that no movement claims, so a discrepancy comes with a list to go fix. *Issued*, not outstanding, is the right side of that equation: the cost method debits Treasury Stock on a buyback and leaves Common Stock untouched.
+
+Where the equation doesn't apply — no-par stock, where the full proceeds land in Common Stock, or nothing issued yet — it says so in words. "Doesn't apply" and "reconciles" both look like a difference of zero and mean completely different things.
+
 ### Adjusting entries and the year-end close
 
 Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
@@ -626,7 +652,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
-- **Share register**: equity transactions record a share count, but nothing tracks shares outstanding, cap-table positions, or who holds what. That's the natural next step for the equity side.
+- **Option pool and fully-diluted ownership**: the share register (above) tracks issued and outstanding shares. Options, warrants and convertible notes are the other half of a real cap table, and the number founders actually negotiate against is the fully-diluted one.
 - **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
 - **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)
