@@ -30,6 +30,7 @@ import { CustomerInvoice } from "./CustomerInvoice.js";
 import { CustomerInvoiceLine } from "./CustomerInvoiceLine.js";
 import { CustomerPayment } from "./CustomerPayment.js";
 import { BillPayment } from "./BillPayment.js";
+import { Vendor } from "./Vendor.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -120,6 +121,12 @@ CustomerPayment.belongsTo(Account, { foreignKey: "depositAccountId", as: "deposi
 Invoice.hasMany(BillPayment, { foreignKey: "invoiceId", as: "billPayments", onDelete: "CASCADE", hooks: true });
 BillPayment.belongsTo(Invoice, { foreignKey: "invoiceId" });
 BillPayment.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+
+// A vendor's bills outlive any edit to the vendor. No cascade delete:
+// merging repoints the bills first and only then removes the losing
+// vendor, and a vendor nobody merged away is deactivated, not deleted.
+Vendor.hasMany(Invoice, { foreignKey: "vendorId", as: "bills" });
+Invoice.belongsTo(Vendor, { foreignKey: "vendorId", as: "vendor" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -248,4 +255,5 @@ export {
   CustomerInvoiceLine,
   CustomerPayment,
   BillPayment,
+  Vendor,
 };

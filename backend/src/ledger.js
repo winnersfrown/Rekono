@@ -15,6 +15,7 @@ import { Op, fn, col, where as sequelizeWhere } from "sequelize";
 import { Account, AuditLog, JournalEntry, JournalLine } from "./models/index.js";
 import { EXPENSE_CATEGORIES } from "./models/ExpenseReceipt.js";
 import { isPeriodClosed, periodMonthFor } from "./fiscalYear.js";
+import { attachVendorToInvoice } from "./vendors.js";
 
 export class LedgerError extends Error {
   constructor(message, status = 422) {
@@ -287,6 +288,16 @@ async function resolveExpenseAccount(invoice) {
 // or the invoice has no usable total -- approving an invoice must never
 // fail because of the ledger.
 export async function postInvoiceApproval(invoice) {
+  // Resolve the bill's vendor identity here rather than at each of the
+  // four call sites that can approve one (the detail route, the bulk
+  // action, the quick-review flow, and pipeline.js's auto-approve) --
+  // same argument period locking makes for living in the ledger: one
+  // place, so no approval path can quietly skip it. Runs before the
+  // already-posted check because identity isn't accounting: a bill
+  // approved before vendors existed should still get one if it's
+  // re-approved.
+  await attachVendorToInvoice(invoice.orgId, invoice);
+
   const alreadyPosted = await JournalEntry.findOne({
     where: { orgId: invoice.orgId, sourceType: "invoice", sourceId: invoice.id, status: "posted" },
   });

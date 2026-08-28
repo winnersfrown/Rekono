@@ -343,6 +343,10 @@
                 <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <div class="topnav-menu" data-menu-for="payables" hidden>
+          <button class="tab-btn" data-tab="vendors">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>
+            Vendors
+          </button>
           <button class="tab-btn" data-tab="billpayments">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/></svg>
             Bill Payments
@@ -1208,6 +1212,25 @@
           </table>
         </section>
 
+        <section id="tab-vendors" class="tab-panel">
+          <h1>Vendors</h1>
+          <p class="hint">Who you buy from. A vendor is created automatically the first time you approve a bill naming them -- merge two here when the same company arrived under different spellings.</p>
+          <div class="panel">
+            <h3>Add a vendor</h3>
+            <form id="vendor-create-form">
+              <label>Name<input type="text" id="vendor-create-name" maxlength="256" required /></label>
+              <label>Email<input type="email" id="vendor-create-email" maxlength="320" placeholder="Optional" /></label>
+              <label>Net terms (days)<input type="number" id="vendor-create-terms" min="0" max="365" value="30" /></label>
+              <button type="submit">Add vendor</button>
+            </form>
+            <div id="vendor-create-status" class="hint"></div>
+          </div>
+          <table>
+            <thead><tr><th>Name</th><th>Also known as</th><th>Terms</th><th>Bills</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
+            <tbody id="vendors-body"></tbody>
+          </table>
+        </section>
+
         <section id="tab-billpayments" class="tab-panel">
           <h1>Bill Payments</h1>
           <p class="hint">Approved bills and what's still owed on them. Recording a payment here is what clears the payable off your books -- approving a bill only records that you owe it.</p>
@@ -1768,6 +1791,28 @@
         <div class="confirm-modal-actions">
           <button type="button" id="payment-modal-cancel" class="modal-btn-cancel">Cancel</button>
           <button type="submit">Record payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Merging is the one thing the vendor table exists for, so it gets a
+       real dialog: which vendor survives is a decision with consequences
+       (its name is the one every report will show from then on), not
+       something to infer from click order. -->
+  <div id="merge-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Merge vendors</h2>
+      <p id="merge-modal-message"></p>
+      <form id="merge-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label><span id="merge-modal-target-label">Merge into</span><select id="merge-modal-target" required></select></label>
+        </div>
+        <p class="hint">Every bill moves to the vendor you pick, and the merged-away spelling is remembered so future bills carrying it land there too. Nothing about the money changes.</p>
+        <p id="merge-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="merge-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Merge</button>
         </div>
       </form>
     </div>

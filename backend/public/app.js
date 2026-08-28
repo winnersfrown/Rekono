@@ -232,6 +232,7 @@ function switchTab(name) {
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
+  if (name === "vendors") loadVendors();
   if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
   if (name === "apaging") loadApAging();
 }
@@ -5058,6 +5059,138 @@ function renderApAging(data) {
 document.getElementById("ap-aging-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadApAging();
+});
+
+// ---- Vendors ----
+// Who the org buys from. Created automatically when a bill naming them is
+// approved (see vendors.js), so this tab is mostly about the one thing
+// automatic resolution can't do: deciding that two differently-spelled
+// names are the same company.
+
+let vendorList = [];
+
+async function loadVendors() {
+  const data = await (await apiFetch("/api/vendors")).json();
+  vendorList = data.items;
+  renderVendors(data.items);
+}
+
+function renderVendors(items) {
+  const body = document.getElementById("vendors-body");
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No vendors yet — approve a bill, or add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = items
+    .map(
+      (v) => `
+    <tr>
+      <td>${escapeHtml(v.name)}</td>
+      <td class="hint">${v.aliases.length ? escapeHtml(v.aliases.join(", ")) : "—"}</td>
+      <td>Net ${v.payment_terms_days}</td>
+      <td>${v.bill_count}</td>
+      <td>${fmtMoney(v.amount_outstanding)}</td>
+      <td>${v.active ? "Active" : "Inactive"}</td>
+      <td>
+        ${items.length > 1 ? `<button type="button" class="vendor-merge-btn" data-id="${v.id}" data-name="${escapeHtml(v.name)}">Merge</button>` : ""}
+        ${v.active ? `<button type="button" class="vendor-deactivate-btn linklike" data-id="${v.id}">Deactivate</button>` : ""}
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".vendor-merge-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const targetId = await mergeDialog(btn.dataset.id, btn.dataset.name);
+      if (!targetId) return;
+      const res = await apiFetch(`/api/vendors/${btn.dataset.id}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ into_vendor_id: targetId }),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't merge those vendors", parsed.detail || "Something went wrong.");
+        return;
+      }
+      loadVendors();
+    })
+  );
+
+  body.querySelectorAll(".vendor-deactivate-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Deactivate this vendor?", "Their past bills stay exactly as they are; you just won't be able to pick them for new ones.", {
+        confirmLabel: "Deactivate",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/vendors/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: false }),
+      });
+      loadVendors();
+    })
+  );
+}
+
+document.getElementById("vendor-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("vendor-create-status");
+  const res = await apiFetch("/api/vendors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("vendor-create-name").value,
+      email: document.getElementById("vendor-create-email").value,
+      payment_terms_days: Number(document.getElementById("vendor-create-terms").value) || 30,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = "";
+  e.target.reset();
+  document.getElementById("vendor-create-terms").value = "30";
+  loadVendors();
+});
+
+// Resolves to the id of the vendor to merge into, or null if dismissed.
+let mergeModalResolve = null;
+
+function mergeDialog(loserId, loserName) {
+  const options = vendorList.filter((v) => v.id !== loserId);
+  document.getElementById("merge-modal-message").textContent =
+    `"${loserName}" and its bills will move to the vendor you pick, and this row will disappear.`;
+  document.getElementById("merge-modal-target").innerHTML = options
+    .map((v) => `<option value="${v.id}">${escapeHtml(v.name)}</option>`)
+    .join("");
+  const errorEl = document.getElementById("merge-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("merge-modal").style.display = "flex";
+
+  return new Promise((resolve) => {
+    mergeModalResolve = resolve;
+  });
+}
+
+function closeMergeModal(result) {
+  document.getElementById("merge-modal").style.display = "none";
+  if (mergeModalResolve) {
+    mergeModalResolve(result);
+    mergeModalResolve = null;
+  }
+}
+
+document.getElementById("merge-modal-cancel").addEventListener("click", () => closeMergeModal(null));
+
+document.getElementById("merge-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  closeMergeModal(document.getElementById("merge-modal-target").value || null);
 });
 
 // ---- Init ----

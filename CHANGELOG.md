@@ -4,6 +4,59 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.25
+
+Vendors are a real table. AP aging used to group by normalizing the
+extracted vendor name, which handles "Acme Inc." vs "  ACME Inc. " and
+nothing else -- the moment the same company's name arrived genuinely
+differently ("Acme Inc" one month, "Acme Incorporated" the next, which OCR
+and a change of letterhead both produce), the report showed one vendor as
+two and every collections decision made off it was wrong. No cleverer
+normalizer fixes that, because nothing can know those two strings are one
+company. The fix is a stable identity plus a way for a human to say so.
+
+- **`Vendor`** is the AP counterpart to `Customer`, carrying payment terms,
+  an email, and an identity that survives however the name is spelled next
+  time. Created automatically the first time a bill naming it is approved
+  -- at approval rather than at extraction, so OCR noise on a document
+  nobody approves doesn't litter the vendor list.
+- **`Invoice.vendorName` is untouched.** It's what the document said, and
+  overwriting it with a canonical name would destroy the one thing an audit
+  needs to be able to check. `Invoice.vendorId` is the resolved identity
+  alongside it.
+- **Merging is the point.** `POST /api/vendors/:id/merge` moves every bill
+  across, carries the remembered expense-account categorization with it,
+  and records the merged-away spelling as an alias so the next bill
+  carrying it resolves on its own instead of recreating the duplicate. It
+  is presentational only -- regrouping never moves a cent, and there's a
+  test pinning that AP aging still reconciles to the balance sheet
+  afterwards.
+- **Retroactive by construction.** AP aging resolves identity at read time
+  through vendors and aliases rather than reading a stored column, so a
+  merge regroups history immediately with no invoice rewritten -- and bills
+  approved before this release, which have no `vendorId` at all, still
+  group by name rather than vanishing. No backfill, no migration.
+- **New Vendors tab** under Payables, listing each vendor with its other
+  known spellings, bill count, and outstanding balance -- the number that
+  tells you whether a suspected duplicate is worth merging.
+
+**One normalizer, shared.** `vendorAlias.js` and `vendorExpenseAccount.js`
+each had their own copy of trim-and-lowercase, with comments explaining
+they were separate modules precisely so the two couldn't drift. Now that
+the `Vendor` table is keyed off the same fold, all three import one
+implementation from `vendors.js`.
+
+It also folds slightly more than before: repeated internal whitespace and
+trailing punctuation, so "Acme Inc" and "ACME INC." are one vendor without
+anyone merging them. The line is drawn at what carries no information --
+case, whitespace, trailing punctuation. Anything that could conceivably
+distinguish two companies (dropping "Inc"/"Ltd", edit-distance matching,
+internal punctuation) stays out, because the costs are asymmetric: a missed
+fold is one visible merge click, while a wrong one silently combines two
+real companies and is nearly impossible to notice. Aliases and expense
+accounts stored under the old fold whose keys ended in punctuation will
+miss once and be relearned on the next correction.
+
 ## v1.24
 
 Bill payments -- the other half of accounts payable, and the asymmetry
