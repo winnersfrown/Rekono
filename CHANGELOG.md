@@ -4,6 +4,48 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.28
+
+Moved what a session keeps re-deriving into `CLAUDE.md`, which loads
+automatically, from `README.md`, which has to be read.
+
+The two files had drifted into the wrong proportions: `CLAUDE.md` was 427
+tokens and carried only versioning and the test command, while `README.md`
+is 29k tokens and gets read in pieces on nearly every task. The fix is not
+more documentation -- it is putting the high-frequency facts in the file
+that is already free.
+
+What moved in is what actually got re-derived, not what seemed useful:
+
+- **The module map.** Which file owns the ledger, the statements, AR, AP,
+  vendors, revenue recognition, adjusting entries, closing entries.
+- **The settled accounting decisions** -- integer cents, immutable posted
+  entries, `postJournalEntry` as the only ledger write path, why statements
+  must not filter to `status: "posted"`, why derived and posted retained
+  earnings don't double-count, and the `withSamples` scope. These are the
+  ones where the code looks wrong and isn't, so re-deriving them costs a
+  full investigation each time.
+- **The feature-wiring checklist**: model, `models/index.js`, `rls.js`,
+  journal entry source, route, `app.js`, tests. Eight releases (v1.20
+  through v1.27) each re-derived this.
+- **The shipping sequence.** The first push is rejected and the first merge
+  attempt 405s, every time; writing down that both are expected saves
+  treating them as problems.
+- **Two traps that produced wrong conclusions rather than errors.** The
+  local server reads `DATABASE_URL`, not `REKONO_DB_URL` -- the wrong name
+  falls back to the default database, which is how a phantom "onboarding
+  seeds twice" bug got reported (it was two orgs sharing one file). And two
+  concurrent `jest` runs share one SQLite test database, so `resetDb` in
+  one drops tables the other is mid-query on; the failures read as real
+  bugs and aren't.
+- **A note to actually run the UI.** Several shipped fixes were invisible
+  to a passing suite and obvious on screen: a form spilling out of its
+  panel, a control pushed off the page, an aging report that didn't tie to
+  the balance sheet because tests never seed sample data.
+
+Net cost is about 1,940 tokens per session, roughly 0.2% of the context
+window, against work that repeatedly cost far more than that to redo.
+
 ## v1.27
 
 Adjusting entries and year-end closing entries -- the two things a close
