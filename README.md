@@ -248,6 +248,9 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/stock-compensation` | The ASC 718 expense schedule month by month through `?through=`, each month flagged posted or not |
 | `POST /api/stock-compensation/run` | `{through}` -- posts every unposted month. Debit Stock Compensation Expense / Credit APIC. Idempotent on the period month |
 | `GET /api/stock-compensation/awards` | Per-award total, recognized and unrecognized cost at `?as_of=` -- the disclosure audited financials carry |
+| `GET /api/income-tax/provision` | Previews the provision for the fiscal year containing `?as_of=` at `?rate_percent=`, without posting: pre-tax income, provision, already accrued, and what a run would post |
+| `POST /api/income-tax/provision` | `{as_of, rate_percent}` -- accrues the difference. Debit Income Tax Expense / Credit Income Taxes Payable. Cumulative-to-date, so re-running at the same rate posts nothing |
+| `POST /api/income-tax/payments` | `{amount, payment_date, cash_account_id}` -- settles the accrual. Overpaying what's accrued is refused |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -612,6 +615,17 @@ Rekono does not value an option — that needs Black-Scholes inputs and a 409A v
 - **Each month is the change in cumulative expense**, not a recomputed slice, which is what makes forfeiture fall out with no special case — the month of a cancellation the delta simply goes negative. Negative months post as a real credit to expense with the lines flipped, since the ledger has no signed values.
 - The entry is Debit Stock Compensation Expense / Credit APIC. Total equity is unchanged: the cost moves value from retained earnings to paid-in capital, which is what a non-cash equity-settled expense should do.
 
+### The income tax provision
+
+**This is not a tax calculation.** It multiplies pre-tax book income by an effective rate you provide. It knows nothing about entity type, multi-state apportionment, book-tax differences, deferred taxes, valuation allowances, credits or loss carryforwards — every one of which changes the real number. What it gives you is a provision accrued on the books, so the P&L isn't silently pre-tax and the balance sheet isn't missing the liability. Not a return, and not advice. There is deliberately no default rate.
+
+- **The base is pre-tax income, not net income.** A provision computed against net income feeds on itself: post the tax, income drops, the next run wants less tax, forever. `preTaxIncomeCents` excludes income tax expense from the expense side, and a test pins the consequence — a second run at the same rate posts nothing.
+- **A loss accrues no benefit.** Booking one asserts the loss will shelter future income (a deferred tax asset, only recognizable if you expect to use it, and one most companies at this stage fully reserve against). That judgment isn't the app's to make, so the provision floors at zero.
+- **Cumulative-to-date with true-ups**, the way a real provision behaves quarter to quarter. A quarter where income fell posts a negative increment, as a real credit to expense with the lines flipped.
+- Accruing moves no cash; paying is a separate event that settles the liability and touches neither the P&L nor equity, since the expense was recognized at accrual.
+
+The P&L presents it properly — revenue, operating expenses, **income before income taxes**, income tax expense, net income. Not cosmetic: burying tax in the expense total leaves the reader no way to check the number against the rate. Tax is identified by account subtype, not by name, so renaming the account can't break the arithmetic.
+
 ### Adjusting entries and the year-end close
 
 Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
@@ -689,7 +703,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
 - **Convertible notes and SAFEs**: options, RSUs and warrants dilute on a known share count and are handled (above). A note or SAFE converts at a price set by a future round, so its dilution isn't knowable until that round prices — modelling it means pro-forma scenarios, not a number to put on today's cap table.
 - **Option valuation and expected forfeitures**: expense recognition ships (above), but the grant-date fair value is supplied rather than computed — Black-Scholes needs volatility, risk-free rate and expected term. Rekono also recognizes forfeitures as they happen rather than estimating a forfeiture rate up front, which ASC 718 permits as a policy election but which understates early-period expense against companies that estimate.
-- **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
+- **Deferred taxes and the actual return**: the provision (above) accrues current tax at a rate you supply. Deferred taxes — book-tax timing differences, NOL carryforwards, valuation allowances — and anything resembling a filed return remain out of scope, and depend on entity type and multi-state apportionment that Rekono does not model.
 - **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)
 - **Vertical-specific extraction schemas and matching rules** once there's a design partner in a specific industry (property management, trucking, medical billing, etc.) — the generic schema here is the horizontal starting point.

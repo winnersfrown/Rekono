@@ -1442,9 +1442,49 @@
             <tfoot><tr><th colspan="2">Total expenses</th><th id="pnl-expenses-total"></th></tr></tfoot>
           </table>
 
+          <table style="margin-top: 1.5rem;">
+            <tbody>
+              <tr><th colspan="2">Income before income taxes</th><th id="pnl-pretax"></th></tr>
+              <tr><td colspan="2">Income tax expense</td><td id="pnl-tax"></td></tr>
+            </tbody>
+          </table>
+
           <div class="panel" style="margin-top: 1.5rem;">
             <h3>Net income</h3>
             <p class="kpi-value" id="pnl-net-income"></p>
+          </div>
+
+          <div class="panel">
+            <h3>Income tax provision</h3>
+            <p class="hint"><strong>This is not a tax calculation.</strong> It multiplies pre-tax book income by an effective rate you provide, so the P&amp;L isn't silently pre-tax and the balance sheet isn't missing the liability. It knows nothing about entity type, apportionment, book-tax differences, deferred taxes, credits or loss carryforwards, all of which change the real number. Use your accountant's rate, and treat the result as an accrual, not a return.</p>
+            <form id="tax-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>As of<input type="date" id="tax-as-of" required /></label>
+                <label>Effective rate %<input type="number" id="tax-rate" min="0" max="100" step="0.01" placeholder="21" required /></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="tax-preview"></p>
+                <button type="submit" class="line-item-submit">Accrue</button>
+              </div>
+              <div id="tax-status" class="hint"></div>
+            </form>
+          </div>
+
+          <div class="panel">
+            <h3>Pay accrued tax</h3>
+            <p class="hint">Settles Income Taxes Payable. The expense was already recognized when the provision was accrued, so this doesn't touch the P&amp;L.</p>
+            <form id="tax-pay-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Amount<input type="number" id="tax-pay-amount" min="0.01" step="0.01" required /></label>
+                <label>Date<input type="date" id="tax-pay-date" required /></label>
+                <label>Paid from<select id="tax-pay-account"></select></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="tax-payable"></p>
+                <button type="submit" class="line-item-submit">Record payment</button>
+              </div>
+              <div id="tax-pay-status" class="hint"></div>
+            </form>
           </div>
         </section>
 

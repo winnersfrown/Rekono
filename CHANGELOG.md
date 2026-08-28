@@ -4,6 +4,72 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.34
+
+The income tax provision, and a P&L that finally shows pre-tax income.
+
+The README has said for several releases that Rekono computes no tax, and
+that the defensible first step is booking a provision the user supplies
+rather than deriving one. This is that step, and the boundary is stated as
+plainly in the UI as it is in the code:
+
+> **This is not a tax calculation.** It multiplies pre-tax book income by
+> an effective rate you provide. It knows nothing about entity type,
+> apportionment, book-tax differences, deferred taxes, valuation
+> allowances, credits or loss carryforwards, all of which change the real
+> number. What it gives you is a provision accrued on the books, not a
+> return and not advice.
+
+Same stance v1.33 takes with grant-date fair value: book the number the
+user brings, refuse to invent one. There is deliberately no default rate,
+because a plausible-looking default is exactly the kind of invented number
+this feature exists to avoid.
+
+**The circularity.** A provision is a percentage of *pre-tax* income, so
+the base has to exclude income tax expense itself. Computed against net
+income it would feed on itself: post $10k of tax, income drops $10k, the
+next run wants less tax, and it oscillates forever. `preTaxIncomeCents` is
+the whole reason this module doesn't just call `computeProfitAndLoss`, and
+a test pins it -- a second run at the same rate must post nothing.
+
+**A loss accrues no benefit.** Booking one asserts the loss will shelter
+future income: a deferred tax asset, recognizable only if you believe
+you'll be profitable enough to use it, and one most companies at this stage
+offset with a full valuation allowance. That judgment is not the app's to
+make, so the provision floors at zero. Tax on profit, never a receivable on
+a loss.
+
+**Cumulative-to-date, with true-ups**, because that is how a real provision
+behaves quarter to quarter: you recompute the full-year expectation and
+post the difference. Raising the rate posts the increment. A quarter where
+income *fell* posts a negative increment, which is correct rather than an
+error to suppress -- and like the stock-comp reversal it posts as a genuine
+credit to expense with the lines flipped, since the ledger has no signed
+values.
+
+Accruing is Debit Income Tax Expense / Credit Income Taxes Payable and
+moves no cash. Paying is a separate event that settles the liability and
+touches neither the P&L nor equity, since the expense was recognized at
+accrual. Overpaying what's accrued is refused, as is paying Income Taxes
+Payable out of itself.
+
+**The P&L now presents tax properly** -- revenue, operating expenses,
+income before income taxes, income tax expense, net income. That is not
+cosmetic: a statement that buries tax inside the expense total gives the
+reader no way to check the number against the rate. Income tax is found by
+account subtype rather than by name, so renaming the account can't break
+the arithmetic. An org that has never booked a provision has zero tax, so
+`net_income` still equals `income_before_taxes` and nothing about the old
+shape moves.
+
+Running the UI caught two things again. The Preview button sat between the
+hint and the submit, crowding the footer's right edge where the floating
+assistant widget lives; previewing live on change is fewer controls and
+better anyway, since the point is to see what a rate produces before
+committing. And "accrued and unpaid" didn't say *as of when* -- a payment
+dated after the as-of date correctly doesn't count against it, which
+without the date on the label reads exactly like a bug.
+
 ## v1.33
 
 Stock compensation expense (ASC 718) -- the gap v1.31's own changelog

@@ -10,6 +10,7 @@ import { Account, JournalEntry, JournalLine, Organization } from "./models/index
 import { CLOSING_ENTRY_SOURCE } from "./yearEndClose.js";
 import { centsToDollars } from "./ledger.js";
 import { DEFAULT_FISCAL_YEAR_END_MONTH, dayBefore, fiscalYearFor } from "./fiscalYear.js";
+import { INCOME_TAX_EXPENSE_SUBTYPE } from "./incomeTax.js";
 
 // Which side of an account increases it. Assets and expenses are
 // debit-normal (a debit makes them bigger); liabilities, equity, and
@@ -108,15 +109,36 @@ export async function computeProfitAndLoss(orgId, { from = null, to = null } = {
   const totals = totalsByAccount(lines);
 
   const revenue = sectionFor(accounts, totals, "revenue");
-  const expenses = sectionFor(accounts, totals, "expense");
-  const netIncomeCents = revenue.totalCents - expenses.totalCents;
+  const allExpenses = sectionFor(accounts, totals, "expense");
+
+  // Income tax is split out of operating expenses and shown on its own
+  // line below pre-tax income, which is how every real income statement
+  // presents it. It is not cosmetic: a provision is a percentage of
+  // *pre-tax* income (see incomeTax.js), so a statement that buries tax
+  // inside the expense total gives the reader no way to check the number
+  // against the rate.
+  //
+  // Found by account subtype rather than by name, since an org can rename
+  // its accounts and the arithmetic must not depend on the label.
+  const taxAccountIds = new Set(accounts.filter((a) => a.subtype === INCOME_TAX_EXPENSE_SUBTYPE).map((a) => a.id));
+  const taxRows = allExpenses.rows.filter((r) => taxAccountIds.has(r.account_id));
+  const operatingRows = allExpenses.rows.filter((r) => !taxAccountIds.has(r.account_id));
+  const taxCents = Math.round(taxRows.reduce((sum, r) => sum + r.amount * 100, 0));
+  const operatingCents = allExpenses.totalCents - taxCents;
+
+  const preTaxCents = revenue.totalCents - operatingCents;
 
   return {
     from,
     to,
     revenue: { accounts: revenue.rows, total: centsToDollars(revenue.totalCents) },
-    expenses: { accounts: expenses.rows, total: centsToDollars(expenses.totalCents) },
-    net_income: centsToDollars(netIncomeCents),
+    expenses: { accounts: operatingRows, total: centsToDollars(operatingCents) },
+    income_before_taxes: centsToDollars(preTaxCents),
+    income_tax_expense: centsToDollars(taxCents),
+    // Unchanged in meaning: revenue minus every expense including tax. An
+    // org that has never booked a provision has taxCents === 0, so this
+    // equals income_before_taxes and nothing about the old shape moves.
+    net_income: centsToDollars(preTaxCents - taxCents),
   };
 }
 
