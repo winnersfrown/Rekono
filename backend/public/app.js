@@ -230,6 +230,7 @@ function switchTab(name) {
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
+  if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
@@ -5165,6 +5166,321 @@ async function loadEquityTransactions() {
       }
       loadEquityStatement();
       loadEquityTransactions();
+    })
+  );
+}
+
+// ---- Cap table ----
+// The share register: positions in shares rather than dollars. See
+// shareRegister.js.
+
+// Which ends of a movement name a shareholder, and which one the money
+// (if any) came through. Mirrors shareRegister.js's MOVEMENT table -- the
+// form hides fields the API would refuse rather than letting someone fill
+// in a "from" on an issuance and find out on submit.
+const SH_SHAPE = {
+  issue: { from: false, to: true, funding: "contribution" },
+  transfer: { from: true, to: true, funding: null },
+  repurchase: { from: true, to: false, funding: "treasury_purchase" },
+  reissue: { from: false, to: true, funding: "treasury_reissue" },
+};
+
+const SH_TYPE_LABELS = {
+  issue: "Issue",
+  transfer: "Transfer",
+  repurchase: "Repurchase",
+  reissue: "Reissue",
+};
+
+const SH_HINTS = {
+  issue: "New shares out of the company's authorized capital. Raises both issued and outstanding.",
+  transfer: "One shareholder to another. Nothing about the company changes -- no money moves through it, and the totals stay put.",
+  repurchase: "Buying shares back into treasury. Outstanding falls; issued does not, so these shares keep using up authorized capital.",
+  reissue: "Selling treasury shares back out. Outstanding rises again, and no new authorized capital is consumed.",
+};
+
+let capClasses = [];
+let capHolders = [];
+let capFunding = [];
+
+async function loadCapTable() {
+  await Promise.all([loadCapClasses(), loadCapHolders(), loadCapFunding()]);
+  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions()]);
+}
+
+function holderOptions(holders) {
+  return holders.map((h) => `<option value="${h.id}">${escapeHtml(h.name)}</option>`).join("");
+}
+
+async function loadCapClasses() {
+  const data = await (await apiFetch("/api/share-classes")).json();
+  capClasses = data.items;
+  document.getElementById("sh-class").innerHTML = capClasses
+    .filter((c) => c.active)
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join("");
+}
+
+async function loadCapHolders() {
+  const data = await (await apiFetch("/api/shareholders")).json();
+  capHolders = data.items;
+  // A deactivated holder can still give shares up -- selling out is how
+  // someone stops being a shareholder -- but can't be handed more, so they
+  // stay on the "from" list and come off the "to" list.
+  document.getElementById("sh-from").innerHTML = holderOptions(capHolders);
+  document.getElementById("sh-to").innerHTML = holderOptions(capHolders.filter((h) => h.active));
+}
+
+// Only equity transactions that aren't already spoken for -- the API
+// refuses a second claim on one, so offering it here would be a trap.
+async function loadCapFunding() {
+  const data = await (await apiFetch("/api/share-register/reconciliation")).json();
+  capFunding = data.unlinked_equity_transactions || [];
+  updateShareForm();
+}
+
+function updateShareForm() {
+  const type = document.getElementById("sh-type").value;
+  const shape = SH_SHAPE[type];
+  document.getElementById("sh-from-field").style.display = shape.from ? "" : "none";
+  document.getElementById("sh-to-field").style.display = shape.to ? "" : "none";
+  document.getElementById("sh-hint").textContent = SH_HINTS[type] || "";
+
+  const field = document.getElementById("sh-equity-field");
+  const matching = shape.funding ? capFunding.filter((t) => t.type === shape.funding) : [];
+  // Hidden rather than shown empty: a transfer has nothing to link to at
+  // all, and an empty dropdown reads like something failed to load.
+  field.style.display = matching.length ? "" : "none";
+  document.getElementById("sh-equity").innerHTML =
+    `<option value="">Not linked</option>` +
+    matching
+      .map((t) => `<option value="${t.id}">${t.transaction_date} — ${fmtMoney(t.amount)}, ${t.shares.toLocaleString()} shares</option>`)
+      .join("");
+}
+
+document.getElementById("sh-type").addEventListener("change", updateShareForm);
+
+async function loadCapPositions() {
+  const asOf = document.getElementById("cap-asof").value;
+  const data = await (await apiFetch(`/api/cap-table${asOf ? `?as_of=${asOf}` : ""}`)).json();
+  const body = document.getElementById("cap-table-body");
+
+  document.getElementById("cap-summary").textContent = data.total_outstanding
+    ? `${data.total_outstanding.toLocaleString()} shares outstanding across ${data.holders.length} holder${data.holders.length === 1 ? "" : "s"}.`
+    : "";
+
+  if (!data.holders.length) {
+    body.innerHTML = `<tr><td colspan="5" class="table-empty-row">Nobody holds shares yet. Add a share class and a shareholder below, then issue.</td></tr>`;
+    return;
+  }
+
+  // One row per position, with the holder's name and company-wide
+  // percentage spanning their rows -- a holder of two classes is one
+  // person, and repeating their name down the table implies two.
+  body.innerHTML = data.holders
+    .map((h) =>
+      h.positions
+        .map(
+          (p, i) => `
+    <tr>
+      ${i === 0 ? `<td rowspan="${h.positions.length}">${escapeHtml(h.shareholder_name)}</td>` : ""}
+      <td>${escapeHtml(p.share_class_name)}</td>
+      <td>${p.shares.toLocaleString()}</td>
+      <td>${p.percent.toFixed(2)}%</td>
+      ${i === 0 ? `<td rowspan="${h.positions.length}">${h.percent.toFixed(2)}%</td>` : ""}
+    </tr>`
+        )
+        .join("")
+    )
+    .join("");
+}
+
+async function loadCapCounts() {
+  const asOf = document.getElementById("cap-asof").value;
+  const [counts, reconciliation] = await Promise.all([
+    (await apiFetch(`/api/share-classes/counts${asOf ? `?as_of=${asOf}` : ""}`)).json(),
+    (await apiFetch(`/api/share-register/reconciliation${asOf ? `?as_of=${asOf}` : ""}`)).json(),
+  ]);
+
+  const body = document.getElementById("cap-classes-body");
+  body.innerHTML = counts.items.length
+    ? counts.items
+        .map(
+          (c) => `
+    <tr>
+      <td>${escapeHtml(c.name)}</td>
+      <td>${c.par_value ? `$${c.par_value}` : "No par"}</td>
+      <td>${c.authorized === null ? "No limit" : c.authorized.toLocaleString()}</td>
+      <td>${c.issued.toLocaleString()}</td>
+      <td>${c.treasury.toLocaleString()}</td>
+      <td>${c.outstanding.toLocaleString()}</td>
+      <td>${c.available === null ? "—" : c.available.toLocaleString()}</td>
+    </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="7" class="table-empty-row">No share classes yet.</td></tr>`;
+
+  // The tie-out to the general ledger. Said in full rather than as a
+  // green tick, because "doesn't apply" and "reconciles" both look like
+  // a difference of zero and mean completely different things.
+  const el = document.getElementById("cap-reconcile");
+  // Mentioned even when the numbers tie, because a treasury purchase or
+  // reissue moves shares without touching Common Stock -- one of those
+  // going unrecorded on the register leaves the tie-out passing and the
+  // cap table wrong, which is the worst of both.
+  const stray = reconciliation.unlinked_equity_transactions.length;
+  const strayNote = stray
+    ? ` ${stray} equity transaction${stray === 1 ? "" : "s"} record${stray === 1 ? "s" : ""} shares with no movement on the register.`
+    : "";
+
+  if (!reconciliation.applicable) {
+    el.textContent = (reconciliation.reason || "") + strayNote;
+  } else if (reconciliation.reconciles) {
+    el.textContent =
+      `Common Stock of ${fmtMoney(reconciliation.ledger_common_stock)} matches the par value of every share this register says was issued.` + strayNote;
+  } else {
+    el.textContent =
+      `Common Stock is ${fmtMoney(reconciliation.ledger_common_stock)} but this register accounts for ${fmtMoney(reconciliation.register_par_value)} of par — ` +
+      `a difference of ${fmtMoney(reconciliation.difference)}.` +
+      strayNote;
+  }
+}
+
+document.getElementById("cap-asof-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadCapPositions();
+  loadCapCounts();
+});
+
+document.getElementById("share-class-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("share-class-status");
+  const authorized = document.getElementById("sc-authorized").value;
+  const res = await apiFetch("/api/share-classes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("sc-name").value,
+      par_value: Number(document.getElementById("sc-par").value) || 0,
+      // Null, not zero: no stated ceiling is not a ceiling of nothing.
+      authorized_shares: authorized === "" ? null : Number(authorized),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Added ${parsed.name}.`;
+  document.getElementById("sc-name").value = "";
+  document.getElementById("sc-authorized").value = "";
+  await loadCapClasses();
+  loadCapCounts();
+});
+
+document.getElementById("shareholder-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("shareholder-status");
+  const res = await apiFetch("/api/shareholders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("shh-name").value,
+      email: document.getElementById("shh-email").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Added ${parsed.name}.`;
+  document.getElementById("shh-name").value = "";
+  document.getElementById("shh-email").value = "";
+  await loadCapHolders();
+});
+
+document.getElementById("share-txn-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("share-txn-status");
+  const type = document.getElementById("sh-type").value;
+  const shape = SH_SHAPE[type];
+  const price = document.getElementById("sh-price").value;
+  const funding = document.getElementById("sh-equity").value;
+
+  const res = await apiFetch("/api/share-transactions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type,
+      share_class_id: document.getElementById("sh-class").value,
+      transaction_date: document.getElementById("sh-date").value,
+      shares: Number(document.getElementById("sh-shares").value) || 0,
+      ...(shape.from ? { from_shareholder_id: document.getElementById("sh-from").value } : {}),
+      ...(shape.to ? { to_shareholder_id: document.getElementById("sh-to").value } : {}),
+      ...(price === "" ? {} : { price_per_share: Number(price) }),
+      ...(funding ? { equity_transaction_id: funding } : {}),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Recorded ${SH_TYPE_LABELS[type].toLowerCase()} of ${parsed.shares.toLocaleString()} shares.`;
+  document.getElementById("sh-shares").value = "";
+  document.getElementById("sh-price").value = "";
+  loadCapPositions();
+  loadCapCounts();
+  loadShareTransactions();
+  loadCapFunding();
+});
+
+async function loadShareTransactions() {
+  const data = await (await apiFetch("/api/share-transactions")).json();
+  const body = document.getElementById("share-txns-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No share movements yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (t) => `
+    <tr>
+      <td>${t.transaction_date}</td>
+      <td>${escapeHtml(SH_TYPE_LABELS[t.type] || t.type)}</td>
+      <td>${escapeHtml(t.share_class_name || "—")}</td>
+      <td>${t.shares.toLocaleString()}</td>
+      <td>${escapeHtml(t.from_shareholder_name || "Company")}</td>
+      <td>${escapeHtml(t.to_shareholder_name || "Company")}</td>
+      <td><button type="button" class="sh-delete-btn linklike" data-id="${t.id}">Remove</button></td>
+    </tr>`
+    )
+    .join("");
+
+  body.querySelectorAll(".sh-delete-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      // Removed outright rather than voided, unlike everything on the
+      // ledger side. A journal entry is a claim about money that moved and
+      // has to be corrected by a second entry saying so; a register entry
+      // is a claim about who owns what, and a wrong one leaves the wrong
+      // name on the cap table.
+      const confirmed = await confirmDialog(
+        "Remove this share movement?",
+        "The register is a record of ownership, so a wrong entry is removed rather than reversed. Any equity transaction that funded it keeps its journal entry.",
+        { confirmLabel: "Remove", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/share-transactions/${btn.dataset.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const parsed = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't remove that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      loadCapPositions();
+      loadCapCounts();
+      loadShareTransactions();
+      loadCapFunding();
     })
   );
 }

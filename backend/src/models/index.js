@@ -34,6 +34,7 @@ import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
 import { EquityTransaction } from "./EquityTransaction.js";
+import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -150,6 +151,18 @@ RecurringEntryLine.belongsTo(Account, { foreignKey: "accountId" });
 // an account is not offered, and an equity transaction outlives any
 // edit to one.
 EquityTransaction.belongsTo(Account, { foreignKey: "cashAccountId", as: "cashAccount" });
+
+// The share register. No cascade deletes anywhere in it: a class or a
+// holder with transactions against it is deactivated, never removed, for
+// the same reason Customer and Vendor are -- a position has to stay
+// attributable to somebody forever.
+ShareTransaction.belongsTo(ShareClass, { foreignKey: "shareClassId", as: "shareClass" });
+ShareClass.hasMany(ShareTransaction, { foreignKey: "shareClassId", as: "transactions" });
+ShareTransaction.belongsTo(Shareholder, { foreignKey: "fromShareholderId", as: "fromShareholder" });
+ShareTransaction.belongsTo(Shareholder, { foreignKey: "toShareholderId", as: "toShareholder" });
+// The one link between shares and dollars. Nullable, because a transfer
+// between two shareholders moves no company money at all.
+ShareTransaction.belongsTo(EquityTransaction, { foreignKey: "equityTransactionId", as: "equityTransaction" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -283,4 +296,7 @@ export {
   RecurringEntry,
   RecurringEntryLine,
   EquityTransaction,
+  ShareClass,
+  Shareholder,
+  ShareTransaction,
 };

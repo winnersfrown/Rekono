@@ -400,6 +400,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-8H4v8"/><path d="M1 21h22"/><path d="M12 3L2 9h20z"/><path d="M9 13v8M15 13v8"/></svg>
             Stockholders' Equity
           </button>
+          <button class="tab-btn" data-tab="captable">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg>
+            Cap Table
+          </button>
               </div>
             </div>
 
@@ -1527,6 +1531,95 @@
             <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Account</th><th>Memo</th><th></th></tr></thead>
             <tbody id="equity-transactions-body"></tbody>
           </table>
+        </section>
+
+        <section id="tab-captable" class="tab-panel">
+          <h1>Cap Table</h1>
+          <p class="hint">Who owns how much of the company. A second ledger, kept in shares rather than dollars — a transfer between two shareholders moves no company money and so never touches the general ledger, but it changes who owns what.</p>
+
+          <form id="cap-asof-form" class="statement-period">
+            <label>As of<input type="date" id="cap-asof" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <p class="hint" id="cap-summary"></p>
+          <table>
+            <thead><tr><th>Shareholder</th><th>Class</th><th>Shares</th><th>% of class</th><th>% of company</th></tr></thead>
+            <tbody id="cap-table-body"></tbody>
+          </table>
+
+          <h3 class="cap-section">Shares by class</h3>
+          <table>
+            <thead><tr><th>Class</th><th>Par value</th><th>Authorized</th><th>Issued</th><th>Treasury</th><th>Outstanding</th><th>Unissued</th></tr></thead>
+            <tbody id="cap-classes-body"></tbody>
+          </table>
+          <p class="hint" id="cap-reconcile"></p>
+
+          <div class="panel">
+            <h3>Record a share movement</h3>
+            <form id="share-txn-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Type<select id="sh-type">
+                  <option value="issue">Issue new shares</option>
+                  <option value="transfer">Transfer between shareholders</option>
+                  <option value="repurchase">Repurchase into treasury</option>
+                  <option value="reissue">Reissue from treasury</option>
+                </select></label>
+                <label>Class<select id="sh-class"></select></label>
+                <label>Date<input type="date" id="sh-date" required /></label>
+                <label>Shares<input type="number" id="sh-shares" min="1" step="1" required /></label>
+                <label id="sh-from-field">From<select id="sh-from"></select></label>
+                <label id="sh-to-field">To<select id="sh-to"></select></label>
+                <label>Price per share<input type="number" id="sh-price" min="0" step="0.0001" placeholder="Optional" /></label>
+                <label id="sh-equity-field">Paid for by<select id="sh-equity"></select></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="sh-hint"></p>
+                <button type="submit" class="line-item-submit">Record</button>
+              </div>
+              <div id="share-txn-status" class="hint"></div>
+            </form>
+          </div>
+
+          <h3 class="cap-section">Share movements</h3>
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Class</th><th>Shares</th><th>From</th><th>To</th><th></th></tr></thead>
+            <tbody id="share-txns-body"></tbody>
+          </table>
+
+          <div class="two-col">
+            <div class="panel">
+              <h3>Share classes</h3>
+              <p class="hint">Par value is fixed in the certificate of incorporation and can't be changed here once set — every issuance already posted split par from premium using it.</p>
+              <form id="share-class-form" class="line-item-form">
+                <div class="line-item-fields">
+                  <label>Name<input type="text" id="sc-name" maxlength="128" placeholder="Common" required /></label>
+                  <label>Par value<input type="number" id="sc-par" min="0" step="0.0001" value="0.0001" /></label>
+                  <label>Authorized<input type="number" id="sc-authorized" min="1" step="1" placeholder="No limit" /></label>
+                </div>
+                <div class="line-item-footer">
+                  <p class="hint">Leave Authorized empty if the charter states no ceiling.</p>
+                  <button type="submit" class="line-item-submit">Add class</button>
+                </div>
+                <div id="share-class-status" class="hint"></div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h3>Shareholders</h3>
+              <p class="hint">Kept as their own records rather than names typed onto each movement, so the cap table groups reliably.</p>
+              <form id="shareholder-form" class="line-item-form">
+                <div class="line-item-fields">
+                  <label>Name<input type="text" id="shh-name" maxlength="256" required /></label>
+                  <label>Email<input type="email" id="shh-email" maxlength="320" placeholder="Optional" /></label>
+                </div>
+                <div class="line-item-footer">
+                  <p class="hint"></p>
+                  <button type="submit" class="line-item-submit">Add shareholder</button>
+                </div>
+                <div id="shareholder-status" class="hint"></div>
+              </form>
+            </div>
+          </div>
         </section>
 
         <section id="tab-cashflow" class="tab-panel">
