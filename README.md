@@ -250,6 +250,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/stock-compensation/awards` | Per-award total, recognized and unrecognized cost at `?as_of=` -- the disclosure audited financials carry |
 | `GET /api/income-tax/provision` | Previews the provision for the fiscal year containing `?as_of=` at `?rate_percent=`, without posting: pre-tax income, provision, already accrued, and what a run would post |
 | `POST /api/income-tax/provision` | `{as_of, rate_percent}` -- accrues the difference. Debit Income Tax Expense / Credit Income Taxes Payable. Cumulative-to-date, so re-running at the same rate posts nothing |
+| `GET /api/close/suggestions` | Ledger-derived suggestions for `?period_month=`: an expense that posts every month and didn't, and fixed assets with nothing depreciating them |
 | `POST /api/income-tax/payments` | `{amount, payment_date, cash_account_id}` -- settles the accrual. Overpaying what's accrued is refused |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
@@ -615,6 +616,21 @@ Rekono does not value an option — that needs Black-Scholes inputs and a 409A v
 - **Each month is the change in cumulative expense**, not a recomputed slice, which is what makes forfeiture fall out with no special case — the month of a cancellation the delta simply goes negative. Negative months post as a real credit to expense with the lines flipped, since the ledger has no signed values.
 - The entry is Debit Stock Compensation Expense / Credit APIC. Total equity is unchanged: the cost moves value from retained earnings to paid-in capital, which is what a non-cash equity-settled expense should do.
 
+### Close automation
+
+The close checklist asks document-workflow questions — are the invoices reviewed, is anything still extracting, is approved spend matched. All of those look at the queue. None looks at the **ledger**, so the failure that actually matters at month-end went unnoticed: the month where rent simply never got posted.
+
+Two suggestions, derived from the books rather than from anything configured:
+
+- **An expense that posts every month and didn't.** Three of the last four months is the bar — not four of four (an expense that skipped one month is still plainly monthly), not two (a coincidence).
+- **A fixed asset with nothing depreciating it**, reported with the straight-line arithmetic already done.
+
+Expenses only: a revenue account with nothing in it is a slow month, not an omission, and assets and liabilities move irregularly by nature. The expected amount is the **median** of prior months, so one double payment doesn't misstate it. An expense already due on a recurring template is skipped, since the recurring-entries preview surfaces and can post that one — reporting it twice would send someone chasing one problem across two screens.
+
+Depreciation is posed as a question, not an assertion: land is never depreciated, an asset bought this month may not be in service, and a deposit in an asset account isn't a fixed asset. Cash and receivables are never suggested.
+
+Nothing here posts anything or blocks a close. A close is a human attestation and there are legitimate reasons to sign off with a known exception; the job is making sure the exception is one somebody saw. The close banner says so explicitly rather than claiming everything checks out while suggestions sit below it.
+
 ### The income tax provision
 
 **This is not a tax calculation.** It multiplies pre-tax book income by an effective rate you provide. It knows nothing about entity type, multi-state apportionment, book-tax differences, deferred taxes, valuation allowances, credits or loss carryforwards — every one of which changes the real number. What it gives you is a provision accrued on the books, so the P&L isn't silently pre-tax and the balance sheet isn't missing the liability. Not a return, and not advice. There is deliberately no default rate.
@@ -700,7 +716,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Vendor payment terms on new bills**: `Vendor.paymentTermsDays` is stored but nothing reads it yet — a bill that arrives without a due date could inherit it the way a customer invoice already does.
 - **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
-- **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
+- **A stored trial-balance snapshot at close**: close automation (above) now suggests what a month is missing, but a close still records no frozen picture of the numbers it signed off on, so re-closing a reopened period leaves no diff to inspect.
 - **Convertible notes and SAFEs**: options, RSUs and warrants dilute on a known share count and are handled (above). A note or SAFE converts at a price set by a future round, so its dilution isn't knowable until that round prices — modelling it means pro-forma scenarios, not a number to put on today's cap table.
 - **Option valuation and expected forfeitures**: expense recognition ships (above), but the grant-date fair value is supplied rather than computed — Black-Scholes needs volatility, risk-free rate and expected term. Rekono also recognizes forfeitures as they happen rather than estimating a forfeiture rate up front, which ASC 718 permits as a policy election but which understates early-period expense against companies that estimate.
 - **Deferred taxes and the actual return**: the provision (above) accrues current tax at a rate you supply. Deferred taxes — book-tax timing differences, NOL carryforwards, valuation allowances — and anything resembling a filed return remain out of scope, and depend on entity type and multi-state apportionment that Rekono does not model.

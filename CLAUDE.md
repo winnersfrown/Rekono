@@ -21,6 +21,7 @@ matter most, and the order to look in:
 | Option pool, vesting, fully diluted | `equityAwards.js` |
 | Stock compensation expense (ASC 718) | `stockCompensation.js` |
 | Income tax provision | `incomeTax.js` |
+| Close suggestions (missing entries) | `closeAutomation.js` |
 | Row-level security policy list | `rls.js` |
 
 Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
@@ -82,6 +83,12 @@ These are settled decisions. Don't re-litigate them without a reason.
   a wrong number here flows into reported net income. Book what the user
   brings; refuse to guess — and don't offer a default, since a
   plausible-looking default is the same invention wearing a hat.
+- **Close checks look at the queue; close suggestions look at the ledger.**
+  `readinessChecks` in routes/close.js answers document-workflow questions;
+  `closeAutomation.js` answers "what did the books not do this month".
+  Neither blocks a close -- a close is a human attestation -- but the
+  banner must not claim everything checks out while suggestions sit below
+  it, which is exactly the bug v1.35 shipped a fix for.
 - **The tax provision's base is pre-tax income**, which is why
   `incomeTax.js` computes its own income figure instead of calling
   `computeProfitAndLoss`. Against net income it would feed on itself. The
