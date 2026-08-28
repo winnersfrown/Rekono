@@ -245,6 +245,9 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `POST /api/equity-awards/:id/exercise` | `{shares, event_date, cash_account_id?, equity_transaction_id?}` -- issues the shares onto the register and posts the strike money as a capital contribution |
 | `POST /api/equity-awards/:id/cancel` | `{event_date, shares?}` -- forfeiture. Omit `shares` to cancel everything still outstanding |
 | `GET /api/cap-table/fully-diluted` | Issued shares plus unexercised awards plus the unallocated pool, per holder, at `?as_of=` |
+| `GET /api/stock-compensation` | The ASC 718 expense schedule month by month through `?through=`, each month flagged posted or not |
+| `POST /api/stock-compensation/run` | `{through}` -- posts every unposted month. Debit Stock Compensation Expense / Credit APIC. Idempotent on the period month |
+| `GET /api/stock-compensation/awards` | Per-award total, recognized and unrecognized cost at `?as_of=` -- the disclosure audited financials carry |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -598,6 +601,17 @@ The middle one is what people leave out and what gets negotiated. An unallocated
 
 An RSU has no strike price and so no cash to post. The expense side of one is ASC 718 stock compensation — grant-date fair value recognized over the vesting period — which Rekono does not compute.
 
+### Stock compensation expense (ASC 718)
+
+The option pool tracks what a grant does to *ownership*. This is what it does to the *income statement*: a grant is compensation paid in equity rather than cash, and it is an expense in the period the employee earns it even though no cash moves.
+
+Rekono does not value an option — that needs Black-Scholes inputs and a 409A valuation of the underlying, and a wrong number flows straight into reported net income. The grant-date fair value per share is supplied, the same stance the income tax provision takes below. An award with no fair value on file is never expensed, which is how grants predating this feature stay out of the P&L.
+
+- **Recognition is not the vesting curve.** Under a 12-month cliff nothing vests for a year, but service is rendered the whole time, so a year of expense is recognized. `vestedShares` answers "how many shares could they exercise"; recognition asks "how much service has been rendered". Reusing the vesting curve would defer a year of real cost and then dump it in one month.
+- **Forfeiture reverses expense, on the unvested part only.** Shares already vested keep their cost — that service was rendered whatever happened after. Whether a share had vested is asked of `vestedShares` rather than approximated: someone leaving at five months against a twelve-month cliff has vested nothing, so the entire grant forfeits.
+- **Each month is the change in cumulative expense**, not a recomputed slice, which is what makes forfeiture fall out with no special case — the month of a cancellation the delta simply goes negative. Negative months post as a real credit to expense with the lines flipped, since the ledger has no signed values.
+- The entry is Debit Stock Compensation Expense / Credit APIC. Total equity is unchanged: the cost moves value from retained earnings to paid-in capital, which is what a non-cash equity-settled expense should do.
+
 ### Adjusting entries and the year-end close
 
 Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
@@ -674,7 +688,7 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
 - **Convertible notes and SAFEs**: options, RSUs and warrants dilute on a known share count and are handled (above). A note or SAFE converts at a price set by a future round, so its dilution isn't knowable until that round prices — modelling it means pro-forma scenarios, not a number to put on today's cap table.
-- **Stock compensation expense (ASC 718)**: grants are tracked as dilution but no compensation expense is recognized. Doing it properly needs a grant-date fair value (Black-Scholes or a 409A input), expense recognized over the vesting period, and forfeiture estimates.
+- **Option valuation and expected forfeitures**: expense recognition ships (above), but the grant-date fair value is supplied rather than computed — Black-Scholes needs volatility, risk-free rate and expected term. Rekono also recognizes forfeitures as they happen rather than estimating a forfeiture rate up front, which ASC 718 permits as a policy election but which understates early-period expense against companies that estimate.
 - **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
 - **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)

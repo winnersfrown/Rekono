@@ -19,6 +19,7 @@ matter most, and the order to look in:
 | Equity events, statement of stockholders' equity | `equity.js`, `stockholdersEquity.js` |
 | Cap table, shares outstanding | `shareRegister.js` |
 | Option pool, vesting, fully diluted | `equityAwards.js` |
+| Stock compensation expense (ASC 718) | `stockCompensation.js` |
 | Row-level security policy list | `rls.js` |
 
 Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
@@ -70,6 +71,15 @@ These are settled decisions. Don't re-litigate them without a reason.
 - **Fully diluted includes the unallocated pool.** It belongs to nobody
   and dilutes everybody. Leaving it out produces percentages that look
   better than the ones an investor will compute.
+- **Expense recognition is not the vesting curve.** Service accrues through
+  a cliff even though nothing vests during one, so `stockCompensation.js`
+  has its own `servedFraction` and does *not* reuse `vestedShares` for
+  timing. It does use `vestedShares` for forfeiture, where the cliff is
+  exactly what decides whether expense reverses.
+- **Fair values and tax rates are supplied, never derived.** Valuing an
+  option or computing a tax provision needs inputs Rekono doesn't have, and
+  a wrong number here flows into reported net income. Book what the user
+  brings; refuse to guess.
 
 ## Adding a feature
 

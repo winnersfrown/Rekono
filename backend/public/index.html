@@ -1582,6 +1582,7 @@
                 <label>Grant date<input type="date" id="aw-date" required /></label>
                 <label>Shares<input type="number" id="aw-shares" min="1" step="1" required /></label>
                 <label id="aw-strike-field">Strike price<input type="number" id="aw-strike" min="0" step="0.0001" placeholder="Optional" /></label>
+                <label>Grant-date fair value<input type="number" id="aw-fv" min="0" step="0.0001" placeholder="Optional" /></label>
                 <label>Vesting start<input type="date" id="aw-vest-start" placeholder="Grant date" /></label>
                 <label>Vesting months<input type="number" id="aw-vest-months" min="0" max="240" step="1" value="48" /></label>
                 <label>Cliff months<input type="number" id="aw-cliff" min="0" max="240" step="1" value="12" /></label>
@@ -1630,6 +1631,24 @@
           <table>
             <thead><tr><th>Date</th><th>Type</th><th>Class</th><th>Shares</th><th>From</th><th>To</th><th></th></tr></thead>
             <tbody id="share-txns-body"></tbody>
+          </table>
+
+          <h3 class="cap-section">Stock compensation</h3>
+          <p class="hint">What equity awards cost the income statement under ASC 718. Rekono doesn't value an option -- give a grant-date fair value from your 409A and it recognizes that cost over the service period. Expense accrues through a cliff even though nothing vests during one.</p>
+          <form id="sc-run-form" class="statement-period">
+            <label>Through<input type="month" id="sc-through" /></label>
+            <button type="submit">Post expense</button>
+          </form>
+          <p class="hint" id="sc-status"></p>
+          <table>
+            <thead><tr><th>Month</th><th>Expense</th><th>Status</th></tr></thead>
+            <tbody id="sc-schedule-body"></tbody>
+          </table>
+
+          <h3 class="cap-section">Unrecognized compensation cost</h3>
+          <table>
+            <thead><tr><th>Grant date</th><th>Shares</th><th>Fair value</th><th>Total cost</th><th>Recognized</th><th>Unrecognized</th><th>Service rendered</th></tr></thead>
+            <tbody id="sc-awards-body"></tbody>
           </table>
 
           <div class="panel-grid">

@@ -141,6 +141,9 @@ const awardSchema = z.object({
   grant_date: z.string().regex(ISO_DATE),
   shares: z.number().int().positive(),
   strike_price: z.number().min(0).nullable().optional(),
+  // Grant-date fair value per share, for ASC 718 expense. Supplied from a
+  // 409A/Black-Scholes model, never derived here -- see stockCompensation.js.
+  grant_date_fair_value: z.number().min(0).nullable().optional(),
   vesting_start_date: z.string().regex(ISO_DATE).optional(),
   vesting_months: z.number().int().min(0).max(240).optional(),
   cliff_months: z.number().int().min(0).max(240).optional(),
@@ -190,6 +193,8 @@ router.post("/api/equity-awards", requireAuth, requireActivePlan, async (req, re
       // Millionths of a dollar -- a sub-cent strike is ordinary at the
       // seed stage, same reasoning as par value.
       strikePriceMicros: d.strike_price === undefined || d.strike_price === null ? null : Math.round(d.strike_price * 1000000),
+      grantDateFairValueMicros:
+        d.grant_date_fair_value === undefined || d.grant_date_fair_value === null ? null : Math.round(d.grant_date_fair_value * 1000000),
       vestingStartDate: d.vesting_start_date,
       vestingMonths: d.vesting_months,
       cliffMonths: d.cliff_months,

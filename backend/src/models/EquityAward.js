@@ -70,6 +70,22 @@ export const EquityAward = sequelize.define(
     // advisor.
     cliffMonths: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 12 },
 
+    // What one share of this award was worth on the grant date, for ASC
+    // 718 compensation expense (see stockCompensation.js). Supplied, never
+    // derived: valuing an option needs Black-Scholes inputs and a 409A
+    // valuation of the underlying, and a wrong number flows straight into
+    // reported net income.
+    //
+    // Millionths of a dollar for the third time in this codebase, and for
+    // the same reason as par value and strike -- an early-stage common
+    // share is routinely worth a fraction of a cent.
+    //
+    // Null means "don't recognize expense for this award", which is the
+    // right default: every award granted before this release has no fair
+    // value on file, and inventing one retroactively would post
+    // compensation cost nobody agreed to.
+    grantDateFairValueMicros: { type: DataTypes.INTEGER, allowNull: true },
+
     memo: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
   },
   {

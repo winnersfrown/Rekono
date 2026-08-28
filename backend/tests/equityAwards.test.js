@@ -70,6 +70,29 @@ describe("vesting arithmetic", () => {
     expect(summary.unvested).toBe(0);
   });
 
+  // Found by seeding a realistic pool and looking at the awards table: a
+  // forfeited award kept reporting a rising vested count, because the raw
+  // curve only knows the date and knows nothing about the cancellation.
+  test("a forfeited award stops accruing vested shares", () => {
+    const events = [{ type: "cancel", eventDate: "2026-06-01", shares: 48000 }];
+    const summary = summarizeAward(grant, events, "2028-01-01");
+    expect(summary.outstanding).toBe(0);
+    expect(summary.vested).toBe(0);
+    expect(summary.exercisable).toBe(0);
+  });
+
+  test("shares exercised before a forfeiture still count as vested", () => {
+    const events = [
+      { type: "exercise", eventDate: "2027-01-01", shares: 10000 },
+      { type: "cancel", eventDate: "2027-02-01", shares: 38000 },
+    ];
+    const summary = summarizeAward(grant, events, "2028-01-01");
+    expect(summary.exercised).toBe(10000);
+    // The 10,000 already turned into stock, so they stay counted.
+    expect(summary.vested).toBe(10000);
+    expect(summary.outstanding).toBe(0);
+  });
+
   test("events dated after the as-of date don't count yet", () => {
     const events = [{ type: "exercise", eventDate: "2028-01-01", shares: 1000 }];
     expect(summarizeAward(grant, events, "2027-06-01").exercised).toBe(0);

@@ -99,8 +99,13 @@ export function summarizeAward(award, events, asOf = today()) {
     else if (e.type === "cancel") cancelled += e.shares;
   }
 
-  const vested = vestedShares(award, asOf);
   const live = award.shares - exercised - cancelled;
+  // Capped at what survives cancellation. Without the cap a forfeited
+  // award goes on reporting a *rising* vested count forever -- the date
+  // keeps advancing and the raw curve knows nothing about the
+  // cancellation -- which reads as though someone who left two years ago
+  // is still earning equity.
+  const vested = Math.min(vestedShares(award, asOf), live + exercised);
   return {
     granted: award.shares,
     exercised,
@@ -228,6 +233,7 @@ export async function recordAwardGrant(orgId, input) {
     grantDate,
     shares,
     strikePriceMicros: strike,
+    grantDateFairValueMicros: input.grantDateFairValueMicros ?? null,
     // Vesting normally starts on the grant date, and starts earlier when a
     // grant is approved after someone's start date -- which is common
     // enough that defaulting to the grant date and allowing an override is
@@ -465,6 +471,7 @@ export function serializeAward({ award, summary }, { holdersById = null, plansBy
     type: award.type,
     grant_date: award.grantDate,
     strike_price: award.strikePriceMicros === null ? null : award.strikePriceMicros / 1000000,
+    grant_date_fair_value: award.grantDateFairValueMicros === null ? null : award.grantDateFairValueMicros / 1000000,
     vesting_start_date: award.vestingStartDate,
     vesting_months: award.vestingMonths,
     cliff_months: award.cliffMonths,
