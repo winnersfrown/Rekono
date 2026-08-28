@@ -35,6 +35,7 @@ import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
 import { EquityTransaction } from "./EquityTransaction.js";
 import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
+import { AwardEvent, EquityAward, EquityPlan } from "./EquityAward.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -163,6 +164,21 @@ ShareTransaction.belongsTo(Shareholder, { foreignKey: "toShareholderId", as: "to
 // The one link between shares and dollars. Nullable, because a transfer
 // between two shareholders moves no company money at all.
 ShareTransaction.belongsTo(EquityTransaction, { foreignKey: "equityTransactionId", as: "equityTransaction" });
+
+// The option pool. A plan reserves shares of a class; an award promises
+// some of them to a person; an event is what later happened to the award.
+// Only an exercise reaches the register, which is why AwardEvent is the
+// only one of the three with a link to a ShareTransaction.
+EquityPlan.belongsTo(ShareClass, { foreignKey: "shareClassId", as: "shareClass" });
+EquityPlan.hasMany(EquityAward, { foreignKey: "equityPlanId", as: "awards" });
+EquityAward.belongsTo(EquityPlan, { foreignKey: "equityPlanId", as: "plan" });
+EquityAward.belongsTo(Shareholder, { foreignKey: "shareholderId", as: "shareholder" });
+// An award's events die with it. Unlike a share movement, an award that
+// was entered by mistake and never exercised has left no trace on the
+// register, so there is nothing for its events to outlive.
+EquityAward.hasMany(AwardEvent, { foreignKey: "equityAwardId", as: "events", onDelete: "CASCADE", hooks: true });
+AwardEvent.belongsTo(EquityAward, { foreignKey: "equityAwardId" });
+AwardEvent.belongsTo(ShareTransaction, { foreignKey: "shareTransactionId", as: "shareTransaction" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -299,4 +315,7 @@ export {
   ShareClass,
   Shareholder,
   ShareTransaction,
+  EquityPlan,
+  EquityAward,
+  AwardEvent,
 };

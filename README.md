@@ -239,6 +239,12 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `DELETE /api/share-transactions/:id` | Removes a movement. Refused if a later one depends on it |
 | `GET /api/cap-table` | Every holder, their position in each class, and what share of the company that is, at `?as_of=` |
 | `GET /api/share-register/reconciliation` | Common Stock divided by par against the shares the register says were issued, plus the equity transactions no movement claims |
+| `GET`/`POST /api/equity-plans` | Option pools with reserved, granted, exercised and available counts at `?as_of=`. `{name, share_class_id, reserved_shares, adopted_date}` |
+| `PATCH /api/equity-plans/:id` | Rename, raise the reserve (a board amendment), or close the plan. The share class is deliberately not editable |
+| `GET`/`POST /api/equity-awards` | Grants with vested/exercised/exercisable computed at `?as_of=`. `{equity_plan_id, shareholder_id, type, grant_date, shares, strike_price?, vesting_start_date?, vesting_months?, cliff_months?}` |
+| `POST /api/equity-awards/:id/exercise` | `{shares, event_date, cash_account_id?, equity_transaction_id?}` -- issues the shares onto the register and posts the strike money as a capital contribution |
+| `POST /api/equity-awards/:id/cancel` | `{event_date, shares?}` -- forfeiture. Omit `shares` to cancel everything still outstanding |
+| `GET /api/cap-table/fully-diluted` | Issued shares plus unexercised awards plus the unallocated pool, per holder, at `?as_of=` |
 | `GET /api/bills` | Approved vendor bills with amount paid and outstanding on each, soonest due first. `?outstanding=false` includes fully paid ones |
 | `GET /api/invoices/:id/payments` | Payments recorded against one bill, with its total, paid, and outstanding |
 | `POST /api/invoices/:id/payments` | `{amount, payment_date, payment_account_id}` -- records money paid out. Posts Debit Accounts Payable / Credit the payment account. Overpayment, and paying from AP or AR, are all refused |
@@ -577,6 +583,21 @@ Four kinds of movement — issue, transfer, repurchase, reissue. `shares` is alw
 
 Where the equation doesn't apply — no-par stock, where the full proceeds land in Common Stock, or nothing issued yet — it says so in words. "Doesn't apply" and "reconciles" both look like a difference of zero and mean completely different things.
 
+### The option pool and fully-diluted ownership
+
+The register answers "who owns what" in issued shares, which is the wrong denominator for almost every question a founder or investor asks — a company with a 15% option pool does not own the percentages its register shows. Three things sit between the two numbers: granted awards not yet exercised, the unallocated reserve nobody has been promised, and exercised awards that are already real stock.
+
+The middle one is what people leave out and what gets negotiated. An unallocated pool dilutes the existing holders and nobody else, which is the whole substance of the "pool shuffle" argument in a priced round, so it is counted and gets its own row rather than being assigned to a person.
+
+- **A plan is a board reserve, not stock.** Nothing moves in the register when a plan is created or a grant is made from it. Shares become real only on exercise — that is why outstanding and fully diluted differ at all.
+- **Vesting is computed, never stored.** Months are counted by anniversary with the same clamping the recurring-entry schedule uses (a start on the 31st has its February anniversary on the 28th), and the rounding remainder lands on the final month, so a grant finishes at exactly the number of shares it was for.
+- **Cancelled shares return to the pool; exercised ones don't** — those left it permanently when they became real stock and are counted by the register from then on.
+- **Events can't be dated in the future.** Every gate is evaluated at the event's own date, so without this a barely-started grant could be exercised in full by typing a date four years out. The register has no equivalent rule because a transfer has no time-based gate to bypass.
+
+**Exercising posts to both other ledgers.** It issues stock through `recordShareTransaction` (inheriting the authorized-capital check) *and* posts the strike money as a capital contribution. Without that second half, Common Stock stays put while the register's issued count climbs and the tie-out reports a difference nothing can close. Naming a cash account is optional but is the default in the UI, since skipping it is what breaks the tie-out. If the register then refuses the issuance, the contribution is voided rather than left as cash raised against shares that will never exist.
+
+An RSU has no strike price and so no cash to post. The expense side of one is ASC 718 stock compensation — grant-date fair value recognized over the vesting period — which Rekono does not compute.
+
 ### Adjusting entries and the year-end close
 
 Closing a month used to lock the period and tick a checklist while posting nothing — so the "closed" books were missing exactly the depreciation and accruals a close exists to record. `recurringEntries.js` and `yearEndClose.js` are the two halves that were missing.
@@ -652,7 +673,8 @@ Deliberately not built yet, to keep the MVP demoable and honest about what's rea
 - **Usage-based and milestone revenue**: recognition is straight-line over a service period today. Consumption billing and percentage-of-completion are the other two ASC 606 patterns a subscription business eventually needs.
 - **Live bank feeds** (Plaid) replacing `routes/transactions.js`'s manual CSV import, so bank activity posts to the ledger automatically instead of needing a periodic upload.
 - **Close automation**: recurring entries and closing entries now post for real, but nothing yet *suggests* them -- inferring a depreciation schedule from an approved asset invoice, or noticing a month with rent missing, is the remaining AI-shaped piece. A close producing a stored trial-balance snapshot is also still open.
-- **Option pool and fully-diluted ownership**: the share register (above) tracks issued and outstanding shares. Options, warrants and convertible notes are the other half of a real cap table, and the number founders actually negotiate against is the fully-diluted one.
+- **Convertible notes and SAFEs**: options, RSUs and warrants dilute on a known share count and are handled (above). A note or SAFE converts at a price set by a future round, so its dilution isn't knowable until that round prices — modelling it means pro-forma scenarios, not a number to put on today's cap table.
+- **Stock compensation expense (ASC 718)**: grants are tracked as dilution but no compensation expense is recognized. Doing it properly needs a grant-date fair value (Black-Scholes or a 409A input), expense recognized over the vesting period, and forfeiture estimates.
 - **Income tax provision**: no federal or state tax is calculated or accrued. Computing this correctly depends on entity type, multi-state apportionment, book-tax differences and NOLs -- a wrong number here is worse than none, so the defensible first step is booking a provision the user supplies rather than deriving one.
 - **Payroll**: Rekono records payroll journal entries but computes no withholding. Full payroll (withholding tables, FICA, SUTA/FUTA, multi-state, filings) is a product in its own right; integrating with one is the realistic path.
 - **Dashboard**: exceptions queue and reconciliation status, once there's enough volume for those views to matter. (AR and AP aging both shipped, above.)

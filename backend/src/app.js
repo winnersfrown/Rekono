@@ -37,6 +37,7 @@ import revenueRoutes from "./routes/revenue.js";
 import adjustmentsRoutes from "./routes/adjustments.js";
 import equityRoutes from "./routes/equity.js";
 import shareRegisterRoutes from "./routes/shareRegister.js";
+import equityAwardRoutes from "./routes/equityAwards.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -236,6 +237,7 @@ app.use(revenueRoutes);
 app.use(adjustmentsRoutes);
 app.use(equityRoutes);
 app.use(shareRegisterRoutes);
+app.use(equityAwardRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));

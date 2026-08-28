@@ -18,6 +18,7 @@ matter most, and the order to look in:
 | Year-end closing entries | `yearEndClose.js` |
 | Equity events, statement of stockholders' equity | `equity.js`, `stockholdersEquity.js` |
 | Cap table, shares outstanding | `shareRegister.js` |
+| Option pool, vesting, fully diluted | `equityAwards.js` |
 | Row-level security policy list | `rls.js` |
 
 Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
@@ -58,6 +59,17 @@ These are settled decisions. Don't re-litigate them without a reason.
   It ties to the ledger in exactly one place: Common Stock ÷ par = shares
   *issued* (not outstanding — the cost method leaves Common Stock alone on
   a buyback).
+- **Granting an option issues nothing; exercising issues everything.** An
+  exercise is the only award event that reaches the other two ledgers, and
+  it reaches both — shares onto the register, strike money onto the P&L
+  side as a capital contribution. Skip the second half and the register's
+  tie-out breaks with no way to close it.
+- **Vesting is computed, never stored** (`vestedShares`). Same argument as
+  recurring entries: a row for a month that hasn't happened is a claim
+  about the future.
+- **Fully diluted includes the unallocated pool.** It belongs to nobody
+  and dilutes everybody. Leaving it out produces percentages that look
+  better than the ones an investor will compute.
 
 ## Adding a feature
 
