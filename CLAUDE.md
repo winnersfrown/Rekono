@@ -20,6 +20,7 @@ matter most, and the order to look in:
 | Cap table, shares outstanding | `shareRegister.js` |
 | Option pool, vesting, fully diluted | `equityAwards.js` |
 | Stock compensation expense (ASC 718) | `stockCompensation.js` |
+| Income tax provision | `incomeTax.js` |
 | Row-level security policy list | `rls.js` |
 
 Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
@@ -79,7 +80,13 @@ These are settled decisions. Don't re-litigate them without a reason.
 - **Fair values and tax rates are supplied, never derived.** Valuing an
   option or computing a tax provision needs inputs Rekono doesn't have, and
   a wrong number here flows into reported net income. Book what the user
-  brings; refuse to guess.
+  brings; refuse to guess — and don't offer a default, since a
+  plausible-looking default is the same invention wearing a hat.
+- **The tax provision's base is pre-tax income**, which is why
+  `incomeTax.js` computes its own income figure instead of calling
+  `computeProfitAndLoss`. Against net income it would feed on itself. The
+  P&L splits income tax out by *subtype* for the same reason, so renaming
+  the account can't break the arithmetic.
 
 ## Adding a feature
 
