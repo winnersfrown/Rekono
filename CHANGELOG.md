@@ -4,6 +4,79 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.33
+
+Stock compensation expense (ASC 718) -- the gap v1.31's own changelog
+named and declined to fill.
+
+v1.31 tracks what an option grant does to *ownership*. This is what it does
+to the *income statement*, and they are not the same thing: a grant is
+compensation paid in equity instead of cash, and it is an expense in the
+period the employee earns it even though no cash ever moves.
+
+Rekono still does not value an option. That needs Black-Scholes inputs and
+a 409A valuation of the underlying, and a wrong number flows straight into
+reported net income. The grant-date fair value per share is **supplied**,
+exactly the way the README says an income tax provision would be: booking
+a number the user brings is defensible, deriving one is not. An award with
+no fair value on file is never expensed, which is how every grant made
+before this release stays out of the P&L.
+
+**Expense recognition is not the vesting curve.** This is the thing worth
+reading twice. Under a 12-month cliff nothing *vests* for a year -- but the
+employee renders service the whole time, so a year of expense is
+recognized. `vestedShares` answers "how many shares could they exercise",
+and during a cliff the answer is zero; recognition asks "how much service
+has been rendered", and the answer is twelve months' worth. Reusing the
+vesting curve would defer a year of real compensation cost and then dump it
+in one month.
+
+**Forfeiture reverses expense, but only on the unvested part.** When an
+award is cancelled before it vests, ASC 718-10-35-3 requires the cost
+already recognized against those shares to come back off -- the company
+never received the service it was paying for. Shares that had already
+vested keep their expense: that service was rendered whatever happened
+afterwards. Whether a share had vested is asked of `vestedShares` rather
+than approximated straight-line, and those answers differ exactly where it
+matters: an employee who leaves at five months against a twelve-month cliff
+has vested *nothing*, so the whole grant forfeits and every cent reverses.
+A straight-line approximation would say a tenth had vested and would strand
+that expense on the P&L forever. That was a real bug, caught by a test.
+
+Mechanically each month's charge is the *change* in cumulative expense
+rather than a recomputed slice, which is what makes forfeiture fall out
+without a special case: the month an award is cancelled, cumulative expense
+drops and the delta comes out negative. A negative month posts as a genuine
+credit to expense with the lines flipped, since the ledger requires every
+line to be a debit or a credit and never a signed value. Runs are
+idempotent on the period month, the same way revenue recognition is.
+
+The entry is Debit Stock Compensation Expense / Credit Additional Paid-In
+Capital. No cash moves, and the two sides cancel within equity -- the cost
+moves value from retained earnings to paid-in capital and total equity is
+unchanged, which is exactly what a non-cash equity-settled expense should
+do.
+
+Two things running the UI caught that the tests did not:
+
+- **A forfeited award reported a rising vested count forever.**
+  `summarizeAward` computed vested purely from the date, so an employee who
+  left two years ago went on visibly earning equity. Capped at what
+  survives cancellation, with tests.
+- **The expense schedule was unbounded** -- one row per month since the
+  first grant, so a four-year plan is 48 near-identical rows and the months
+  still needing to be posted get buried under three years of "Posted".
+  Everything unposted is now always shown, the posted tail is capped, and
+  the count of folded-away months is stated.
+
+Also corrects v1.32, which claimed the ruflo plugin path "writes nothing
+into the repo". It doesn't write at install time, but it writes the moment
+its hooks fire or any `ruflo` command runs -- `.claude-flow/` at the root, a
+proven-config pair under `.claude/`, and a `.claude/security-scans/`
+directory created inside whatever tree `ruflo security scan` is pointed at,
+which in our case was `backend/src/`. All of it is local tooling state that
+regenerates on demand, so it is gitignored rather than committed.
+
 ## v1.32
 
 Installs ruflo (github.com/ruvnet/ruflo) from the SessionStart hook, so it

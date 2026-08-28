@@ -21,3 +21,17 @@ website/dist/
 # See .claude/skills/playwright-cli/NOTICE.md for the config to recreate.
 .playwright-cli/
 .playwright/
+
+# ruflo (see .claude/hooks/session-start.sh). Contrary to what v1.32 said,
+# the plugin path does write into the repo -- not at install time, but the
+# moment its hooks fire or a `ruflo` command runs. Three separate paths:
+# .claude-flow/ at the root, a proven-config pair under .claude/, and a
+# .claude/security-scans/ directory created inside whatever tree you point
+# `ruflo security scan` at (backend/src/, in our case). All of it is local
+# tooling state -- policy weights, scan output -- that is regenerated on
+# demand and means nothing to another checkout, so none of it belongs in
+# git. Ignored rather than deleted so the tooling keeps working.
+.claude-flow/
+.claude/proven-config.json
+.claude/.proven-config-version
+**/.claude/security-scans/

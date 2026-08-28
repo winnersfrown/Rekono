@@ -18,6 +18,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "recurring_entry", // an adjusting entry posted from a recurring template
   "closing_entry", // year-end: revenue and expense zeroed into retained earnings
   "equity_transaction", // owner capital in, distributions out, treasury stock
+  "stock_compensation", // ASC 718: a month of an equity award's cost was earned
   "void",
 ];
 

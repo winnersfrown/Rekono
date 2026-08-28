@@ -5209,7 +5209,7 @@ async function loadCapTable() {
   // loadEquityAccounts is the equity tab's, reused here because exercising
   // posts a contribution and needs the same list of cash accounts.
   await Promise.all([loadCapClasses(), loadCapHolders(), loadCapFunding(), loadEquityAccounts()]);
-  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions(), loadEquityPlans(), loadAwards(), loadFullyDiluted()]);
+  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions(), loadEquityPlans(), loadAwards(), loadFullyDiluted(), loadStockComp()]);
 }
 
 function holderOptions(holders) {
@@ -5747,6 +5747,8 @@ function refreshCapPool() {
   loadEquityPlans();
   loadAwards();
   loadFullyDiluted();
+  // A grant, an exercise or a forfeiture all move the ASC 718 schedule.
+  loadStockComp();
 }
 
 document.getElementById("plan-form").addEventListener("submit", async (e) => {
@@ -5780,6 +5782,7 @@ document.getElementById("award-form").addEventListener("submit", async (e) => {
   const type = document.getElementById("aw-type").value;
   const strike = document.getElementById("aw-strike").value;
   const vestStart = document.getElementById("aw-vest-start").value;
+  const fairValue = document.getElementById("aw-fv").value;
 
   const res = await apiFetch("/api/equity-awards", {
     method: "POST",
@@ -5791,6 +5794,9 @@ document.getElementById("award-form").addEventListener("submit", async (e) => {
       grant_date: document.getElementById("aw-date").value,
       shares: Number(document.getElementById("aw-shares").value) || 0,
       ...(type === "rsu" || strike === "" ? {} : { strike_price: Number(strike) }),
+      // Optional, and null means "don't expense this award" rather than
+      // "worth nothing" -- see EquityAward.grantDateFairValueMicros.
+      ...(fairValue === "" ? {} : { grant_date_fair_value: Number(fairValue) }),
       ...(vestStart ? { vesting_start_date: vestStart } : {}),
       vesting_months: Number(document.getElementById("aw-vest-months").value),
       cliff_months: Number(document.getElementById("aw-cliff").value),
@@ -5804,7 +5810,95 @@ document.getElementById("award-form").addEventListener("submit", async (e) => {
   statusEl.textContent = `Granted ${parsed.shares.toLocaleString()} shares.`;
   document.getElementById("aw-shares").value = "";
   document.getElementById("aw-strike").value = "";
+  document.getElementById("aw-fv").value = "";
   refreshCapPool();
+});
+
+// ---- Stock compensation (ASC 718) ----
+// What an equity award costs the income statement. See
+// stockCompensation.js.
+
+async function loadStockComp() {
+  const through = document.getElementById("sc-through");
+  if (!through.value) through.value = new Date().toISOString().slice(0, 7);
+
+  const [schedule, awards] = await Promise.all([
+    (await apiFetch(`/api/stock-compensation?through=${through.value}`)).json(),
+    (await apiFetch("/api/stock-compensation/awards")).json(),
+  ]);
+
+  // The schedule runs from the first grant to today and only ever gets
+  // longer -- a four-year grant is 48 near-identical rows, and burying the
+  // months that still need posting under three years of "Posted $2,500"
+  // is how someone misses them. Everything unposted is always shown; the
+  // posted tail is capped, with a count of what's folded away.
+  const body = document.getElementById("sc-schedule-body");
+  const POSTED_SHOWN = 12;
+  const unposted = schedule.months.filter((m) => !m.posted);
+  const posted = schedule.months.filter((m) => m.posted);
+  const shownPosted = posted.slice(-POSTED_SHOWN);
+  const hidden = posted.length - shownPosted.length;
+
+  const row = (m) => `
+    <tr>
+      <td>${m.period_month}</td>
+      <td>${fmtMoney(m.amount)}</td>
+      <td>${m.posted ? "Posted" : "To post"}</td>
+    </tr>`;
+
+  body.innerHTML = schedule.months.length
+    ? (hidden > 0
+        ? `<tr><td colspan="3" class="table-empty-row">${hidden} earlier month${hidden === 1 ? "" : "s"} already posted, not shown.</td></tr>`
+        : "") +
+      shownPosted.map(row).join("") +
+      unposted.map(row).join("")
+    : `<tr><td colspan="3" class="table-empty-row">No awards carry a grant-date fair value, so there's nothing to expense.</td></tr>`;
+
+  document.getElementById("sc-status").textContent = schedule.total
+    ? `${fmtMoney(schedule.total)} not yet posted through ${through.value}.`
+    : schedule.months.length
+    ? `Everything through ${through.value} is posted.`
+    : "";
+
+  const awardsBody = document.getElementById("sc-awards-body");
+  awardsBody.innerHTML = awards.items.length
+    ? awards.items
+        .map(
+          (a) => `
+    <tr>
+      <td>${a.grant_date}</td>
+      <td>${a.shares.toLocaleString()}</td>
+      <td>${fmtMoney(a.grant_date_fair_value)}</td>
+      <td>${fmtMoney(a.total_cost)}</td>
+      <td>${fmtMoney(a.recognized_cost)}</td>
+      <td>${fmtMoney(a.unrecognized_cost)}</td>
+      <td>${a.served_percent.toFixed(1)}%</td>
+    </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="7" class="table-empty-row">No awards with a fair value on file.</td></tr>`;
+}
+
+document.getElementById("sc-run-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("sc-status");
+  const through = document.getElementById("sc-through").value;
+  if (!through) return;
+
+  const res = await apiFetch("/api/stock-compensation/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ through }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = parsed.entries.length
+    ? `Posted ${parsed.entries.length} month${parsed.entries.length === 1 ? "" : "s"}, ${fmtMoney(parsed.total)} in total.`
+    : "Nothing new to post.";
+  loadStockComp();
 });
 
 // ---- Adjusting entries and year-end close ----
