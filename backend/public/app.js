@@ -226,7 +226,7 @@ function switchTab(name) {
   if (name === "chartofaccounts") loadAccounts();
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
   if (name === "trialbalance") loadTrialBalance();
-  if (name === "profitandloss") loadProfitAndLoss();
+  if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
@@ -4466,6 +4466,9 @@ function renderProfitAndLoss(data) {
   document.getElementById("pnl-expenses-body").innerHTML = statementAccountRows(data.expenses.accounts);
   document.getElementById("pnl-expenses-total").textContent = fmtMoney(data.expenses.total);
 
+  document.getElementById("pnl-pretax").textContent = fmtMoney(data.income_before_taxes);
+  document.getElementById("pnl-tax").textContent = fmtMoney(data.income_tax_expense);
+
   const netIncomeEl = document.getElementById("pnl-net-income");
   netIncomeEl.textContent = fmtMoney(data.net_income);
   // A loss is the one number on this page worth calling out in color --
@@ -4476,6 +4479,108 @@ function renderProfitAndLoss(data) {
 document.getElementById("pnl-period-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadProfitAndLoss();
+});
+
+// ---- Income tax provision ----
+// See incomeTax.js. The rate is always the user's -- there is deliberately
+// no default, because a plausible-looking default is exactly the kind of
+// invented number this feature exists to avoid.
+
+let taxAccounts = [];
+
+async function loadIncomeTax() {
+  const asOf = document.getElementById("tax-as-of");
+  if (!asOf.value) asOf.value = new Date().toISOString().slice(0, 10);
+  const payDate = document.getElementById("tax-pay-date");
+  if (!payDate.value) payDate.value = new Date().toISOString().slice(0, 10);
+
+  const data = await (await apiFetch("/api/accounts?active=true")).json();
+  // Cash can leave a bank account or go onto a credit line, same rule the
+  // equity tab uses. Income Taxes Payable is excluded by the API, and
+  // excluded here too so it never appears as an option.
+  taxAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type) && a.subtype !== "income_taxes_payable");
+  document.getElementById("tax-pay-account").innerHTML = taxAccounts
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+}
+
+async function previewIncomeTax() {
+  const asOf = document.getElementById("tax-as-of").value;
+  const rate = document.getElementById("tax-rate").value;
+  const el = document.getElementById("tax-preview");
+  if (!asOf || rate === "") {
+    el.textContent = "Enter a date and a rate.";
+    return null;
+  }
+
+  const res = await apiFetch(`/api/income-tax/provision?as_of=${asOf}&rate_percent=${rate}`);
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    el.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return null;
+  }
+
+  el.textContent =
+    `${parsed.fiscal_year}: ${fmtMoney(parsed.pre_tax_income)} pre-tax, so ${fmtMoney(parsed.provision)} at ${parsed.rate_percent}%. ` +
+    (parsed.already_posted ? `${fmtMoney(parsed.already_posted)} already accrued, ` : "") +
+    (parsed.to_post === 0 ? "nothing to post." : `${fmtMoney(parsed.to_post)} to post.`);
+  document.getElementById("tax-payable").textContent = parsed.payable
+    ? `${fmtMoney(parsed.payable)} accrued and unpaid as of ${asOf}.`
+    : `Nothing accrued and unpaid as of ${asOf}.`;
+  return parsed;
+}
+
+// Previewed live rather than behind a button: the whole point is to see
+// what a rate produces before committing to it, and a button between the
+// hint and the submit was both an extra step and a control crowding the
+// footer's right edge, where the floating assistant widget sits.
+document.getElementById("tax-rate").addEventListener("change", previewIncomeTax);
+document.getElementById("tax-as-of").addEventListener("change", previewIncomeTax);
+
+document.getElementById("tax-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("tax-status");
+  const res = await apiFetch("/api/income-tax/provision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      as_of: document.getElementById("tax-as-of").value,
+      rate_percent: Number(document.getElementById("tax-rate").value),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = parsed.journal_entry_id
+    ? `Accrued ${fmtMoney(parsed.to_post)} for ${parsed.fiscal_year}.`
+    : `Nothing to post -- ${parsed.fiscal_year} is already accrued at that rate.`;
+  loadProfitAndLoss();
+  previewIncomeTax();
+});
+
+document.getElementById("tax-pay-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("tax-pay-status");
+  const res = await apiFetch("/api/income-tax/payments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount: Number(document.getElementById("tax-pay-amount").value) || 0,
+      payment_date: document.getElementById("tax-pay-date").value,
+      cash_account_id: document.getElementById("tax-pay-account").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Paid ${fmtMoney(parsed.amount)}. ${fmtMoney(parsed.payable)} still accrued overall.`;
+  document.getElementById("tax-pay-amount").value = "";
+  loadProfitAndLoss();
+  previewIncomeTax();
 });
 
 async function loadBalanceSheet() {
