@@ -4,6 +4,65 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.35
+
+Close automation: noticing what a close is missing.
+
+The close checklist Rekono already had asks document-workflow questions --
+are the invoices reviewed, is anything still extracting, is approved spend
+matched. Every one of those looks at the queue. **None of them looks at the
+ledger**, so the failure that actually matters at month-end went unnoticed:
+the month where rent simply never got posted. That is the gap the README
+has called "the remaining AI-shaped piece" for several releases.
+
+Two suggestions, both derived from what the books already say rather than
+from anything the user had to configure:
+
+- **An expense that posts every month and didn't.** Three of the last four
+  months is the bar. Not four of four: an expense that skipped one month
+  earlier in the window is still plainly monthly, and demanding a perfect
+  run would silence exactly the accounts most worth watching. Not two of
+  four either -- that is a coincidence, not a pattern.
+- **A fixed asset with nothing depreciating it.** Reported with the
+  arithmetic already done, so accepting it is one step rather than a
+  spreadsheet.
+
+Details that matter more than they look:
+
+- **Expenses only.** A revenue account with nothing in it is a slow month,
+  which is a business fact and not a bookkeeping omission. Assets and
+  liabilities move irregularly by nature. Rent, payroll, software,
+  insurance -- the things that recur and get forgotten -- are all expenses.
+- **The median, not the mean.** A double payment in one month would drag a
+  mean and misstate what you should expect; the median is the whole reason
+  to collect the amounts rather than just count the months.
+- **No double-reporting.** An expense already due on a recurring template
+  is surfaced by the recurring-entries preview, which can also *post* it.
+  Reporting the same rent through two mechanisms would have someone
+  chasing one problem across two screens.
+- **Depreciation is a question, not an assertion.** Land is never
+  depreciated, an asset bought this month may not be in service, and a
+  deposit in an asset account isn't a fixed asset at all. Cash and
+  receivables are never suggested; an asset a recurring template already
+  posts against is left alone.
+- **Nothing posts and nothing blocks.** `routes/close.js` is right that a
+  close is a human attestation and there are legitimate reasons to sign off
+  with a known exception. The job is making sure the exception is one
+  somebody saw.
+
+The last point is what running the UI caught, and it was the real find of
+this release. The close banner's "Everything checks out" state is computed
+from the readiness checks alone, so it sat directly above a list saying
+rent was missing and equipment wasn't depreciated. That is precisely how
+somebody signs off on a month with a hole in it. The banner now reads
+"Checks all pass, with suggestions below" and names the count, while
+staying non-blocking.
+
+Also caught before it shipped: the missing-expense suggestion linked to a
+`journal` tab, which does not exist -- the tab is `journalentries`. A dead
+button, found by checking the link target against the actual tab list
+rather than trusting the string.
+
 ## v1.34
 
 The income tax provision, and a P&L that finally shows pre-tax income.
