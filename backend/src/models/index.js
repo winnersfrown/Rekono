@@ -32,6 +32,7 @@ import { CustomerPayment } from "./CustomerPayment.js";
 import { BillPayment } from "./BillPayment.js";
 import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
+import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -136,6 +137,13 @@ Invoice.belongsTo(Vendor, { foreignKey: "vendorId", as: "vendor" });
 CustomerInvoiceLine.hasMany(RevenueScheduleEntry, { foreignKey: "customerInvoiceLineId", as: "revenueSchedule", onDelete: "CASCADE", hooks: true });
 RevenueScheduleEntry.belongsTo(CustomerInvoiceLine, { foreignKey: "customerInvoiceLineId" });
 RevenueScheduleEntry.belongsTo(Account, { foreignKey: "revenueAccountId", as: "revenueAccount" });
+
+// A template's lines die with it. Entries it already posted are real
+// journal entries and are untouched -- deleting the template stops
+// future postings, it does not un-post history.
+RecurringEntry.hasMany(RecurringEntryLine, { foreignKey: "recurringEntryId", as: "lines", onDelete: "CASCADE", hooks: true });
+RecurringEntryLine.belongsTo(RecurringEntry, { foreignKey: "recurringEntryId" });
+RecurringEntryLine.belongsTo(Account, { foreignKey: "accountId" });
 
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
@@ -266,4 +274,6 @@ export {
   BillPayment,
   Vendor,
   RevenueScheduleEntry,
+  RecurringEntry,
+  RecurringEntryLine,
 };

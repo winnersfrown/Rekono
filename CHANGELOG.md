@@ -4,6 +4,75 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.27
+
+Adjusting entries and year-end closing entries -- the two things a close
+actually consists of, and the pair Rekono was missing. Closing a month
+locked the period and ticked a checklist, but posted nothing: the "closed"
+books were missing exactly the depreciation and accruals a close exists to
+record.
+
+- **Recurring entries** are a template plus a schedule (monthly, quarterly,
+  annually): depreciation, prepaid amortization, accrued interest, accrued
+  wages, rent. Deliberately not a queue of future-dated entries -- an entry
+  that exists before its period would show up in a trial balance run today,
+  and books containing next quarter's depreciation are wrong in a way
+  nobody notices until an audit.
+- **A period nobody ran stays due.** Due dates derive from the start date
+  and frequency rather than from "last one plus an interval", so a skipped
+  month is posted late rather than lost. A template that hits a closed
+  period stops there rather than posting over the gap: books with April and
+  June but no May are harder to spot than a template that visibly stopped.
+- **Templates must balance at creation**, not at posting time. An
+  unbalanced template is a trap -- it looks saved, then fails silently
+  every month with an error nobody is watching for.
+- **A month starting on the 31st clamps** to the 30th in April and the 28th
+  (or 29th) in February rather than rolling into the next month, because an
+  adjusting entry landing in the wrong period is the whole failure mode.
+- **Straight-line depreciation** gets a helper that turns cost, salvage and
+  useful life into the monthly amount and ends the template when the asset
+  is fully depreciated. Declining-balance and MACRS are deliberately absent:
+  they're a tax concept more than a bookkeeping one, and guessing which a
+  user wants is worse than making them say so.
+- **Year-end closing entries** zero revenue and expense into a Retained
+  Earnings account, so a fiscal year's books are formally shut. One entry
+  rather than the textbook Income Summary three-step: that intermediate
+  account exists to make the arithmetic visible by hand, and in a system
+  that posts atomically it adds an account that is always zero and a second
+  entry that can only be a transcription of the first. Reversible.
+
+**Closing entries and derived retained earnings coexist without
+double-counting**, which is worth spelling out because it looks like it
+shouldn't. Rekono derives retained earnings from cumulative revenue minus
+expenses; a closing entry also credits a Retained Earnings *account*. They
+don't both count, because the closing entry debits every revenue account to
+zero -- so that year's contribution to the derivation becomes exactly zero
+at the same instant its net income lands in the account. The earnings move
+from the derived half of equity to the posted half and the total never
+changes. There's a test pinning it at $6,000 either way.
+
+The one thing that did need handling: a P&L over a closed year would
+otherwise include the closing entry and report zero revenue -- the report
+going blank precisely because the books were closed properly. The income
+statement now excludes closing entries; the balance sheet still counts
+them.
+
+**A closed year that picks up later activity is flagged.** Found by using
+it: a recurring run posted into a year that had already been closed, since
+period locking is a separate mechanism. Nothing breaks -- the balance sheet
+derives whatever the closing entry didn't capture, so the totals stay
+right -- but "closed" no longer means the accounts stand at zero. The
+year-end preview now says so and names the amount, rather than reporting
+the leftover as if it were the year's income.
+
+Detecting that also fixed a real bug in the first version, which filtered
+closing entries out by source when working out what was left to close.
+That reads as obviously correct and is wrong in three of four cases -- most
+seriously after a reopen, since `voidJournalEntry` posts its reversal with
+source `void`, so excluding only closing entries would have counted the
+reversal alone and doubled the balances. Counting current balances instead
+handles open, closed, stale and reopened years with no special cases.
+
 ## v1.26
 
 Revenue recognition (ASC 606) -- the thing a subscription business cannot

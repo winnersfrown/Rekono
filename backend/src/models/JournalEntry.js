@@ -15,6 +15,8 @@ export const JOURNAL_ENTRY_SOURCES = [
   "customer_invoice", // AR: an invoice was issued to a customer
   "customer_payment", // AR: a customer paid
   "revenue_recognition", // AR: a month of deferred revenue was earned
+  "recurring_entry", // an adjusting entry posted from a recurring template
+  "closing_entry", // year-end: revenue and expense zeroed into retained earnings
   "void",
 ];
 

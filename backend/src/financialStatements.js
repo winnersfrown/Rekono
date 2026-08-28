@@ -7,6 +7,7 @@
 
 import { Op } from "sequelize";
 import { Account, JournalEntry, JournalLine, Organization } from "./models/index.js";
+import { CLOSING_ENTRY_SOURCE } from "./yearEndClose.js";
 import { centsToDollars } from "./ledger.js";
 import { DEFAULT_FISCAL_YEAR_END_MONTH, dayBefore, fiscalYearFor } from "./fiscalYear.js";
 
@@ -25,7 +26,7 @@ function normalBalanceCents(type, debitCents, creditCents) {
 // the account it hits. `from` is optional -- the balance sheet is a
 // point-in-time snapshot of everything up to `to`, while the P&L and cash
 // flow cover a bounded period.
-async function loadLines(orgId, { from = null, to = null } = {}) {
+async function loadLines(orgId, { from = null, to = null, excludeSources = null } = {}) {
   // Deliberately NOT filtered to status: "posted". A voided entry keeps
   // its lines on the books and is always accompanied by a reversing entry
   // that cancels it (ledger.js's voidJournalEntry posts the reversal
@@ -43,6 +44,14 @@ async function loadLines(orgId, { from = null, to = null } = {}) {
   if (from && to) entryWhere.entryDate = { [Op.between]: [from, to] };
   else if (from) entryWhere.entryDate = { [Op.gte]: from };
   else if (to) entryWhere.entryDate = { [Op.lte]: to };
+  // The income statement excludes year-end closing entries; the balance
+  // sheet includes them. A closing entry debits every revenue account to
+  // zero, so a P&L that counted it would report no revenue for any year
+  // that had been formally closed -- the report would go blank precisely
+  // because the books were done properly. The balance sheet must count it,
+  // because that entry is what moved the earnings into the Retained
+  // Earnings account.
+  if (excludeSources?.length) entryWhere.source = { [Op.notIn]: excludeSources };
 
   const [accounts, entries] = await Promise.all([
     Account.findAll({ where: { orgId }, order: [["code", "ASC"], ["name", "ASC"]], raw: true }),
@@ -95,7 +104,7 @@ function sectionFor(accounts, totals, type) {
 // A period report, not a snapshot -- `from`/`to` bound it, and unlike the
 // balance sheet nothing carries in from before `from`.
 export async function computeProfitAndLoss(orgId, { from = null, to = null } = {}) {
-  const { accounts, lines } = await loadLines(orgId, { from, to });
+  const { accounts, lines } = await loadLines(orgId, { from, to, excludeSources: [CLOSING_ENTRY_SOURCE] });
   const totals = totalsByAccount(lines);
 
   const revenue = sectionFor(accounts, totals, "revenue");
@@ -154,6 +163,17 @@ export async function computeBalanceSheet(orgId, { asOf = null } = {}) {
   // the fiscal year still in progress. Prior years are the remainder --
   // computed by subtraction rather than by a third query, so the two can
   // never disagree about where the year boundary falls.
+  //
+  // A formally closed year (yearEndClose.js) drops out of this on its own
+  // and does not double-count, which is worth spelling out because it
+  // looks like it should: the closing entry debits every revenue account
+  // and credits every expense account by its balance, so that year's
+  // contribution to `cumulativeEarningsCents` becomes exactly zero at the
+  // same instant its net income lands in the Retained Earnings *account*
+  // and starts being counted by `equity.totalCents` instead. The earnings
+  // move from the derived half of this sum to the posted half; the total
+  // never changes. So `retained_earnings` below covers prior years that
+  // were never formally closed, and closed ones show as the account.
   const cumulativeEarningsCents =
     sectionFor(accounts, totals, "revenue").totalCents - sectionFor(accounts, totals, "expense").totalCents;
 

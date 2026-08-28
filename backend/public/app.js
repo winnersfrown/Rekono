@@ -233,6 +233,7 @@ function switchTab(name) {
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
   if (name === "revenue") loadDeferredRevenue();
+  if (name === "adjustments") { loadAdjustmentAccounts(); loadRecurringEntries(); loadYearEnd(); }
   if (name === "vendors") loadVendors();
   if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
   if (name === "apaging") loadApAging();
@@ -4988,6 +4989,259 @@ document.getElementById("rev-preview").addEventListener("click", async () => {
   statusEl.textContent = `Would recognize ${fmtMoney(data.total)} across ${data.periods.length} period${
     data.periods.length === 1 ? "" : "s"
   }: ${months}.`;
+});
+
+// ---- Adjusting entries and year-end close ----
+// The entries a close actually consists of. See recurringEntries.js and
+// yearEndClose.js.
+
+let recAccounts = [];
+
+async function loadAdjustmentAccounts() {
+  const data = await (await apiFetch("/api/accounts?active=true")).json();
+  recAccounts = data.items;
+  if (!document.getElementById("rec-lines-body").children.length) {
+    addRecurringLineRow();
+    addRecurringLineRow();
+  }
+}
+
+function recAccountOptions() {
+  return recAccounts
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+}
+
+function updateRecurringBalance() {
+  const rows = [...document.getElementById("rec-lines-body").querySelectorAll("tr")];
+  let debit = 0;
+  let credit = 0;
+  for (const r of rows) {
+    debit += Number(r.querySelector(".rec-debit").value) || 0;
+    credit += Number(r.querySelector(".rec-credit").value) || 0;
+  }
+  const el = document.getElementById("rec-balance-indicator");
+  el.textContent =
+    debit === credit && debit > 0
+      ? `Balanced: ${fmtMoney(debit)}`
+      : `Debits ${fmtMoney(debit)}, credits ${fmtMoney(credit)} -- must be equal.`;
+}
+
+function addRecurringLineRow() {
+  const body = document.getElementById("rec-lines-body");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><select class="rec-account" required>${recAccountOptions()}</select></td>
+    <td><input type="number" class="rec-debit" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="number" class="rec-credit" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><button type="button" class="rec-remove-line linklike">Remove</button></td>
+  `;
+  body.appendChild(row);
+  row.querySelectorAll(".rec-debit, .rec-credit").forEach((i) => i.addEventListener("input", updateRecurringBalance));
+  row.querySelector(".rec-remove-line").addEventListener("click", () => {
+    row.remove();
+    updateRecurringBalance();
+  });
+  updateRecurringBalance();
+}
+
+document.getElementById("rec-add-line").addEventListener("click", addRecurringLineRow);
+
+document.getElementById("recurring-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("recurring-status");
+  const rows = [...document.getElementById("rec-lines-body").querySelectorAll("tr")];
+  const endDate = document.getElementById("rec-end").value;
+
+  const res = await apiFetch("/api/recurring-entries", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("rec-name").value,
+      frequency: document.getElementById("rec-frequency").value,
+      start_date: document.getElementById("rec-start").value,
+      ...(endDate ? { end_date: endDate } : {}),
+      lines: rows.map((r) => {
+        const debit = Number(r.querySelector(".rec-debit").value) || 0;
+        const credit = Number(r.querySelector(".rec-credit").value) || 0;
+        return {
+          account_id: r.querySelector(".rec-account").value,
+          ...(debit ? { debit } : {}),
+          ...(credit ? { credit } : {}),
+        };
+      }),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Saved "${parsed.name}".`;
+  document.getElementById("rec-name").value = "";
+  document.getElementById("rec-lines-body").innerHTML = "";
+  addRecurringLineRow();
+  addRecurringLineRow();
+  loadRecurringEntries();
+});
+
+async function loadRecurringEntries() {
+  const data = await (await apiFetch("/api/recurring-entries")).json();
+  const body = document.getElementById("recurring-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No recurring entries yet — add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (t) => `
+    <tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td>${t.frequency}</td>
+      <td>${t.start_date}</td>
+      <td>${t.last_posted_date || "—"}</td>
+      <td>${t.next_due || "—"}</td>
+      <td>${t.active ? "Active" : "Paused"}</td>
+      <td>
+        <button type="button" class="rec-toggle-btn" data-id="${t.id}" data-active="${t.active}">${
+          t.active ? "Pause" : "Resume"
+        }</button>
+        <button type="button" class="rec-delete-btn linklike" data-id="${t.id}">Delete</button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".rec-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/recurring-entries/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      loadRecurringEntries();
+    })
+  );
+  body.querySelectorAll(".rec-delete-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Delete this recurring entry?", "Entries it already posted stay on the books — this only stops future ones.", {
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/recurring-entries/${btn.dataset.id}`, { method: "DELETE" });
+      loadRecurringEntries();
+    })
+  );
+}
+
+function recAsOf() {
+  const el = document.getElementById("rec-as-of");
+  if (!el.value) el.value = new Date().toISOString().slice(0, 10);
+  return el.value;
+}
+
+document.getElementById("rec-preview").addEventListener("click", async () => {
+  const data = await (await apiFetch(`/api/recurring-entries/pending?as_of=${recAsOf()}`)).json();
+  const el = document.getElementById("recurring-run-status");
+  el.textContent = data.occurrences
+    ? `Would post ${data.occurrences} entr${data.occurrences === 1 ? "y" : "ies"}: ${data.items
+        .map((i) => `${i.name} x${i.periods.length}`)
+        .join(", ")}.`
+    : "Nothing due through that date.";
+});
+
+document.getElementById("recurring-run-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const el = document.getElementById("recurring-run-status");
+  const res = await apiFetch("/api/recurring-entries/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ as_of: recAsOf() }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await alertDialog("Couldn't run those entries", parsed.detail || "Something went wrong.");
+    return;
+  }
+  const bits = [`Posted ${parsed.posted.length} entr${parsed.posted.length === 1 ? "y" : "ies"} (${fmtMoney(parsed.total)}).`];
+  // Skips are surfaced rather than swallowed -- a template that stopped
+  // because its period was closed is exactly what someone needs to know.
+  if (parsed.skipped.length) bits.push(`Skipped: ${parsed.skipped.map((s) => `${s.name} (${s.reason})`).join("; ")}`);
+  el.textContent = bits.join(" ");
+  loadRecurringEntries();
+});
+
+function yeDate() {
+  const el = document.getElementById("ye-date");
+  if (!el.value) el.value = new Date().toISOString().slice(0, 10);
+  return el.value;
+}
+
+async function loadYearEnd() {
+  const data = await (await apiFetch(`/api/close/year-end?date=${yeDate()}`)).json();
+  const el = document.getElementById("year-end-summary");
+  const fy = `${data.fiscal_year.label} (${data.fiscal_year.start} to ${data.fiscal_year.end})`;
+  if (data.needs_reclose) {
+    // Closed, then something landed in the year afterwards. The books are
+    // still right -- the balance sheet derives whatever the closing entry
+    // missed -- but the accounts no longer stand at zero.
+    el.textContent = `${fy} is closed, but ${fmtMoney(
+      data.unclosed_since_close
+    )} of activity has posted since. Your totals are still correct; reopen and close again to zero the accounts, ideally after locking the months in Month-End Close.`;
+  } else if (data.already_closed) {
+    el.textContent = `${fy} is closed.`;
+  } else {
+    el.textContent = `${fy}: revenue ${fmtMoney(data.revenue)}, expenses ${fmtMoney(
+      data.expenses
+    )}, net income ${fmtMoney(data.net_income)} across ${data.accounts} account${data.accounts === 1 ? "" : "s"}.`;
+  }
+}
+
+document.getElementById("year-end-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const confirmed = await confirmDialog(
+    "Close this fiscal year?",
+    "Revenue and expense accounts are zeroed into Retained Earnings, dated to the last day of the year. Your reports are unaffected — the P&L still shows the year, and total equity doesn't change. Reversible with Reopen.",
+    { confirmLabel: "Close year" }
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch("/api/close/year-end", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: yeDate() }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  const el = document.getElementById("year-end-status");
+  if (!res.ok) {
+    el.textContent = "";
+    await alertDialog("Couldn't close that year", parsed.detail || "Something went wrong.");
+    return;
+  }
+  el.textContent = `${parsed.fiscal_year.label} closed.`;
+  loadYearEnd();
+});
+
+document.getElementById("ye-reopen").addEventListener("click", async () => {
+  const confirmed = await confirmDialog("Reopen this fiscal year?", "The closing entry is reversed and the revenue and expense balances come back.", {
+    confirmLabel: "Reopen",
+  });
+  if (!confirmed) return;
+  const res = await apiFetch("/api/close/year-end/reopen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: yeDate() }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  const el = document.getElementById("year-end-status");
+  if (!res.ok) {
+    await alertDialog("Couldn't reopen that year", parsed.detail || "Something went wrong.");
+    return;
+  }
+  el.textContent = `${parsed.fiscal_year.label} reopened.`;
+  loadYearEnd();
 });
 
 document.getElementById("revenue-recognize-form").addEventListener("submit", async (e) => {
