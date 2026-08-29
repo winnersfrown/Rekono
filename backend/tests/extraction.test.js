@@ -108,3 +108,33 @@ test("heuristic extraction doesn't truncate a PO reference containing a slash", 
   const result = await extract(TITLED_INVOICE_TEXT);
   expect(result.fields.po_reference).toBe("2312/2019");
 });
+
+test("heuristic extraction finds a PO reference spelled out in full, not just abbreviated", async () => {
+  const spelledOut = SAMPLE_OCR_TEXT.replace("PO Number: PO-4421", "Purchase Order Number: PO-4421");
+  const result = await extract(spelledOut);
+  expect(result.fields.po_reference).toBe("PO-4421");
+});
+
+test("heuristic extraction accepts a bare 'Purchase Order:' label with no Number/# marker", async () => {
+  const spelledOut = SAMPLE_OCR_TEXT.replace("PO Number: PO-4421", "Purchase Order: PO-4421");
+  const result = await extract(spelledOut);
+  expect(result.fields.po_reference).toBe("PO-4421");
+});
+
+test("heuristic extraction doesn't mistake a vendor's PO Box address for a PO reference", async () => {
+  const withPoBox = SAMPLE_OCR_TEXT.replace(
+    "123 Main St, Springfield",
+    "PO Box 5000, Springfield"
+  ).replace("PO Number: PO-4421", "Order Ref: 4421");
+  const result = await extract(withPoBox);
+  expect(result.fields.po_reference).toBe("");
+});
+
+test("heuristic extraction doesn't mistake 'purchase order' in body text for a labelled reference", async () => {
+  const prose = SAMPLE_OCR_TEXT.replace(
+    "PO Number: PO-4421",
+    "Note: the purchase order was approved yesterday by finance."
+  );
+  const result = await extract(prose);
+  expect(result.fields.po_reference).toBe("");
+});

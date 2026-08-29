@@ -262,9 +262,22 @@ function extractHeuristic(ocrText) {
   // Character class includes "/" -- a common separator in real PO
   // references (e.g. "2312/2019", an order-number/year format), which the
   // previous class silently truncated at.
-  const poMatch = ocrText.match(/\bP\.?O\.?\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{2,})/i);
+  //
+  // Two alternatives: the abbreviation ("P.O."/"PO", marker optional --
+  // "PO: 4471" is already specific enough on its own) or the label spelled
+  // out in full ("Purchase Order"), which real invoices use just as often
+  // and which the abbreviation-only pattern used to miss entirely. The
+  // spelled-out form requires a `:`/`-` (a marker word like "Number" alone
+  // isn't enough without one either) -- "purchase order" alone is generic
+  // enough to show up in body prose ("the purchase order was approved..."),
+  // and nothing here should mistake that for a labelled value. `(?!\s*box)`
+  // keeps a vendor's own return address ("PO Box 5000") from matching the
+  // same shape as a real reference.
+  const poMatch = ocrText.match(
+    /\bP\.?O\.?(?!\s*box\b)\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{2,})|\bpurchase\s+order\s*(?:#|no\.?|number)?\s*[:\-]\s*([A-Za-z0-9\-\/]{2,})/i
+  );
   if (poMatch) {
-    fields.po_reference = poMatch[1];
+    fields.po_reference = poMatch[1] ?? poMatch[2];
     fieldConfidence.po_reference = HEURISTIC_FIELD_CONFIDENCE;
   }
 

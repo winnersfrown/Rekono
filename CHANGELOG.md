@@ -4,6 +4,58 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.44
+
+The heuristic PO-reference extractor recognized the abbreviation and
+nothing else.
+
+`PO Number: 4471` matched; `Purchase Order Number: 4471` -- spelled out in
+full, which real invoices do just as often -- silently came back empty.
+Only the no-LLM fallback path was affected (the LLM path already
+understands either phrasing from context), which is exactly the path a
+fresh local install with no API key, or CI, exercises by default.
+
+Added as a second alternative on the same regex rather than loosening the
+first: the spelled-out form still requires a `:`, `-`, `#`, "No.", or
+"Number" right after it, so "the purchase order was approved..." in body
+prose can't turn into a false match. `(?!\s*box)` came along for the same
+reason -- a vendor's own "PO Box 5000" return address matches the original
+pattern's shape exactly, and nothing was excluding it.
+
+## v1.43
+
+Early-payment discount terms on vendors, surfaced on AP Aging.
+
+A vendor offering "2/10 net 30" -- 2% off if paid within 10 days of the
+invoice, full amount due in 30 -- had nowhere to record that: `Vendor`
+carried net terms and nothing else. It now also carries
+`earlyPayDiscountPct` and `earlyPayDiscountDays`, and the AP Aging report
+computes, per vendor and in total, what's still available to save and the
+date the window closes -- money a controller would otherwise leave on the
+table simply because nothing was watching for it.
+
+- **Anchored to the invoice date, not the due date.** That's what the
+  terms actually count from. The two are deliberately independent: a bill
+  can be squarely "current" in the aging sense, due date weeks out, while
+  its discount window already closed.
+- **Computed off the outstanding balance, not the original total.** A
+  partial payment already made isn't eligible for a discount on money
+  that's already gone.
+- **Nullable columns, no default** -- same reasoning as every column added
+  to an existing table since this app's schema-drift incidents (see
+  `Invoice.quickbooksBillId`): a NOT NULL default fails to add against a
+  `vendors` table that already has rows, on Postgres's 23502. Null on
+  either field means no discount is offered; the aging computation treats
+  that exactly like an explicit zero, so there's nothing to keep in sync.
+- `buildVendorResolver` now carries a resolved vendor's own fields
+  alongside its identity instead of just `{key, vendorId, name}` -- the
+  first caller (AP Aging's discount calculation) that needed more than a
+  name, so re-querying `Vendor` a second time wasn't worth it.
+
+No new column on `Invoice`, no new journal entries: this is a read-time
+report enhancement over data the ledger already has, same shape as the
+rest of AP Aging.
+
 ## v1.42
 
 Point the OpenAI-dialect adapter at any endpoint, not just OpenRouter.
@@ -352,40 +404,6 @@ carried a `translateY(-1.5px)` lift paired with a shadow token v1.36
 neutralised, so what actually shipped was a button that moved on hover
 without lifting. Those are gone, along with the last two hardcoded radii
 and two shadow tokens nothing read any more.
-
-## v1.43
-
-Early-payment discount terms on vendors, surfaced on AP Aging.
-
-A vendor offering "2/10 net 30" -- 2% off if paid within 10 days of the
-invoice, full amount due in 30 -- had nowhere to record that: `Vendor`
-carried net terms and nothing else. It now also carries
-`earlyPayDiscountPct` and `earlyPayDiscountDays`, and the AP Aging report
-computes, per vendor and in total, what's still available to save and the
-date the window closes -- money a controller would otherwise leave on the
-table simply because nothing was watching for it.
-
-- **Anchored to the invoice date, not the due date.** That's what the
-  terms actually count from. The two are deliberately independent: a bill
-  can be squarely "current" in the aging sense, due date weeks out, while
-  its discount window already closed.
-- **Computed off the outstanding balance, not the original total.** A
-  partial payment already made isn't eligible for a discount on money
-  that's already gone.
-- **Nullable columns, no default** -- same reasoning as every column added
-  to an existing table since this app's schema-drift incidents (see
-  `Invoice.quickbooksBillId`): a NOT NULL default fails to add against a
-  `vendors` table that already has rows, on Postgres's 23502. Null on
-  either field means no discount is offered; the aging computation treats
-  that exactly like an explicit zero, so there's nothing to keep in sync.
-- `buildVendorResolver` now carries a resolved vendor's own fields
-  alongside its identity instead of just `{key, vendorId, name}` -- the
-  first caller (AP Aging's discount calculation) that needed more than a
-  name, so re-querying `Vendor` a second time wasn't worth it.
-
-No new column on `Invoice`, no new journal entries: this is a read-time
-report enhancement over data the ledger already has, same shape as the
-rest of AP Aging.
 
 ## v1.36
 
