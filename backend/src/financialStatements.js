@@ -8,7 +8,7 @@
 import { Op } from "sequelize";
 import { Account, JournalEntry, JournalLine, Organization } from "./models/index.js";
 import { CLOSING_ENTRY_SOURCE } from "./yearEndClose.js";
-import { centsToDollars } from "./ledger.js";
+import { COST_OF_REVENUE_SUBTYPE, centsToDollars } from "./ledger.js";
 import { DEFAULT_FISCAL_YEAR_END_MONTH, dayBefore, fiscalYearFor } from "./fiscalYear.js";
 import { INCOME_TAX_EXPENSE_SUBTYPE } from "./incomeTax.js";
 
@@ -101,9 +101,25 @@ function sectionFor(accounts, totals, type) {
   return { rows, totalCents };
 }
 
-// Profit & loss for a period: revenue earned minus expenses incurred.
-// A period report, not a snapshot -- `from`/`to` bound it, and unlike the
-// balance sheet nothing carries in from before `from`.
+// The income statement (profit & loss) for a period: revenue earned minus
+// expenses incurred. A period report, not a snapshot -- `from`/`to` bound
+// it, and unlike the balance sheet nothing carries in from before `from`.
+//
+// Multi-step, in the order a reader works down it:
+//
+//   Revenue
+//   less  Cost of revenue          <- subtype cost_of_revenue
+//   =     Gross profit
+//   less  Operating expenses
+//   =     Operating income
+//   less  Income tax expense       <- subtype income_tax_expense
+//   =     Net income
+//
+// Each subtotal answers a different question, which is the whole reason to
+// separate them: gross profit says whether the thing being sold makes money
+// at all, and operating income says whether the company around it does. A
+// single-step statement (revenue minus one lump of expenses) can't tell
+// those two failures apart.
 export async function computeProfitAndLoss(orgId, { from = null, to = null } = {}) {
   const { accounts, lines } = await loadLines(orgId, { from, to, excludeSources: [CLOSING_ENTRY_SOURCE] });
   const totals = totalsByAccount(lines);
@@ -111,33 +127,54 @@ export async function computeProfitAndLoss(orgId, { from = null, to = null } = {
   const revenue = sectionFor(accounts, totals, "revenue");
   const allExpenses = sectionFor(accounts, totals, "expense");
 
-  // Income tax is split out of operating expenses and shown on its own
-  // line below pre-tax income, which is how every real income statement
-  // presents it. It is not cosmetic: a provision is a percentage of
-  // *pre-tax* income (see incomeTax.js), so a statement that buries tax
-  // inside the expense total gives the reader no way to check the number
-  // against the rate.
+  // Both splits are found by account *subtype*, never by name, since an org
+  // can rename its accounts and the arithmetic must not depend on the label.
   //
-  // Found by account subtype rather than by name, since an org can rename
-  // its accounts and the arithmetic must not depend on the label.
-  const taxAccountIds = new Set(accounts.filter((a) => a.subtype === INCOME_TAX_EXPENSE_SUBTYPE).map((a) => a.id));
-  const taxRows = allExpenses.rows.filter((r) => taxAccountIds.has(r.account_id));
-  const operatingRows = allExpenses.rows.filter((r) => !taxAccountIds.has(r.account_id));
-  const taxCents = Math.round(taxRows.reduce((sum, r) => sum + r.amount * 100, 0));
-  const operatingCents = allExpenses.totalCents - taxCents;
+  // Income tax is separated for a reason beyond presentation: a provision is
+  // a percentage of *pre-tax* income (see incomeTax.js), so a statement that
+  // buried tax inside the expense total would give the reader no way to
+  // check the number against the rate.
+  const subtypeIds = (subtype) => new Set(accounts.filter((a) => a.subtype === subtype).map((a) => a.id));
+  const taxAccountIds = subtypeIds(INCOME_TAX_EXPENSE_SUBTYPE);
+  const cogsAccountIds = subtypeIds(COST_OF_REVENUE_SUBTYPE);
 
-  const preTaxCents = revenue.totalCents - operatingCents;
+  const centsOf = (rows) => Math.round(rows.reduce((sum, r) => sum + r.amount * 100, 0));
+
+  const taxRows = allExpenses.rows.filter((r) => taxAccountIds.has(r.account_id));
+  const cogsRows = allExpenses.rows.filter((r) => cogsAccountIds.has(r.account_id));
+  const operatingRows = allExpenses.rows.filter((r) => !taxAccountIds.has(r.account_id) && !cogsAccountIds.has(r.account_id));
+
+  const taxCents = centsOf(taxRows);
+  const cogsCents = centsOf(cogsRows);
+  // Derived by subtraction rather than by summing operatingRows so that the
+  // three parts always add back to the total the ledger reported, with no
+  // room for a rounding drift between them.
+  const operatingCents = allExpenses.totalCents - taxCents - cogsCents;
+
+  const grossProfitCents = revenue.totalCents - cogsCents;
+  const preTaxCents = grossProfitCents - operatingCents;
 
   return {
     from,
     to,
     revenue: { accounts: revenue.rows, total: centsToDollars(revenue.totalCents) },
+    cost_of_revenue: { accounts: cogsRows, total: centsToDollars(cogsCents) },
+    gross_profit: centsToDollars(grossProfitCents),
+    // Still named `expenses`, and still the same number for every org that
+    // has posted nothing to a cost_of_revenue account -- which is every org
+    // that existed before this subtype did. Same compatibility argument the
+    // tax split made: a new classification nobody has used yet cannot move
+    // an existing org's reported figures.
     expenses: { accounts: operatingRows, total: centsToDollars(operatingCents) },
+    // Equal to income_before_taxes today, and kept as its own key anyway:
+    // the moment a non-operating classification exists (interest, FX, a
+    // one-off gain) they diverge, and the tax provision is defined against
+    // pre-tax income specifically, not against operating income.
+    operating_income: centsToDollars(preTaxCents),
     income_before_taxes: centsToDollars(preTaxCents),
     income_tax_expense: centsToDollars(taxCents),
-    // Unchanged in meaning: revenue minus every expense including tax. An
-    // org that has never booked a provision has taxCents === 0, so this
-    // equals income_before_taxes and nothing about the old shape moves.
+    // Unchanged in meaning: revenue minus every expense including tax and
+    // cost of revenue.
     net_income: centsToDollars(preTaxCents - taxCents),
   };
 }
