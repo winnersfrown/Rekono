@@ -18,6 +18,8 @@ function serializeVendor(v, extra = {}) {
     name: v.name,
     email: v.email,
     payment_terms_days: v.paymentTermsDays,
+    early_pay_discount_pct: v.earlyPayDiscountPct,
+    early_pay_discount_days: v.earlyPayDiscountDays,
     notes: v.notes,
     active: v.active,
     auto_created: v.autoCreated,
@@ -78,6 +80,14 @@ const vendorSchema = z.object({
   name: z.string().min(1).max(256),
   email: z.string().email().or(z.literal("")).optional(),
   payment_terms_days: z.number().int().min(0).max(365).optional(),
+  // Both nullable (not just optional): omitting the key on a PATCH means
+  // "leave it alone", same as every other field here, but a vendor whose
+  // discount terms changed needs a way to actually clear them -- sending
+  // an explicit null is that escape hatch. computeApAging treats null and
+  // 0 identically, so there's no separate "no discount" sentinel to keep
+  // in sync with this.
+  early_pay_discount_pct: z.number().min(0).max(100).nullable().optional(),
+  early_pay_discount_days: z.number().int().min(0).max(365).nullable().optional(),
   notes: z.string().max(4096).optional(),
 });
 
@@ -101,6 +111,8 @@ router.post("/api/vendors", requireAuth, requireActivePlan, async (req, res, nex
       name: parsed.data.name.trim(),
       email: parsed.data.email || "",
       paymentTermsDays: parsed.data.payment_terms_days ?? 30,
+      earlyPayDiscountPct: parsed.data.early_pay_discount_pct ?? null,
+      earlyPayDiscountDays: parsed.data.early_pay_discount_days ?? null,
       notes: parsed.data.notes || "",
     });
 
@@ -130,6 +142,8 @@ router.patch("/api/vendors/:id", requireAuth, requireActivePlan, async (req, res
     if (parsed.data.name !== undefined) vendor.name = parsed.data.name.trim();
     if (parsed.data.email !== undefined) vendor.email = parsed.data.email;
     if (parsed.data.payment_terms_days !== undefined) vendor.paymentTermsDays = parsed.data.payment_terms_days;
+    if (parsed.data.early_pay_discount_pct !== undefined) vendor.earlyPayDiscountPct = parsed.data.early_pay_discount_pct;
+    if (parsed.data.early_pay_discount_days !== undefined) vendor.earlyPayDiscountDays = parsed.data.early_pay_discount_days;
     if (parsed.data.notes !== undefined) vendor.notes = parsed.data.notes;
     if (parsed.data.active !== undefined) vendor.active = parsed.data.active;
     // A vendor a human has edited is no longer just whatever OCR produced.

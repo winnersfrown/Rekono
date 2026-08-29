@@ -259,6 +259,11 @@ h1 { font-size: 1.7rem; line-height: 1.2; margin-bottom: 0.6rem; }
 
 .hint { color: var(--muted); font-size: 0.88rem; line-height: 1.6; margin-bottom: 1.75rem; max-width: 62ch; }
 
+/* AP aging: money left on the table if a bill's early-payment window
+   closes unused, so it gets --pos (gain) rather than sitting in --muted
+   like the rest of a vendor's row. */
+.ap-aging-discount { color: var(--pos); font-size: 0.8rem; margin-top: 2px; }
+
 /* Invite-accept page: the organization name is unverified text set by
    whoever created the invite, shown to a visitor with no account yet.
    Quoted and visually set apart from the surrounding chrome so it always

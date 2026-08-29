@@ -25,6 +25,17 @@ export const Vendor = sequelize.define(
     // without one. 30 is the near-universal default, same as Customer.
     paymentTermsDays: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 30 },
     notes: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    // Early-payment discount terms, e.g. "2/10 net 30" is
+    // earlyPayDiscountPct=2, earlyPayDiscountDays=10 (paymentTermsDays
+    // above carries the 30). Nullable with no default, same reasoning as
+    // every column added after this app's schema-drift incidents (see
+    // Invoice.quickbooksBillId) -- a NOT NULL default would fail to add
+    // against a vendors table that already has rows. Null on either means
+    // no discount is offered; computeApAging in accountsPayable.js treats
+    // that exactly the same as an explicit 0, so there's no need to
+    // special-case it beyond this column being absent.
+    earlyPayDiscountPct: { type: DataTypes.FLOAT, allowNull: true },
+    earlyPayDiscountDays: { type: DataTypes.INTEGER, allowNull: true },
     // Deactivated rather than deleted, same reasoning as Account.active and
     // Customer.active -- a vendor with historical bills has to stay
     // resolvable forever.

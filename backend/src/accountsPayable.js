@@ -156,6 +156,28 @@ function daysBetween(fromIso, toIso) {
   return Math.round((new Date(`${toIso}T00:00:00Z`) - new Date(`${fromIso}T00:00:00Z`)) / 86400000);
 }
 
+function addDaysIso(fromIso, days) {
+  const d = new Date(`${fromIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// What's still available to save by paying this one bill early, as of
+// asOfDate -- 0/null once the window's closed. Terms run from the invoice
+// date (what "10 days" in "2/10 net 30" actually counts from), which is
+// independent of the due date the aging bucket above is anchored to: a
+// vendor can offer 30-day terms with a 10-day discount window, so a bill
+// can be squarely "current" in the aging sense while its discount has
+// already lapsed.
+function earlyPayDiscount(vendor, invoice, outstandingCents, asOfDate) {
+  if (!vendor.earlyPayDiscountPct || !vendor.earlyPayDiscountDays || !invoice.invoiceDate) {
+    return { cents: 0, deadline: null };
+  }
+  const deadline = addDaysIso(invoice.invoiceDate, vendor.earlyPayDiscountDays);
+  if (asOfDate > deadline) return { cents: 0, deadline: null };
+  return { cents: Math.round(outstandingCents * (vendor.earlyPayDiscountPct / 100)), deadline };
+}
+
 // What the org owes, bucketed by how far past due, grouped by vendor.
 // Only approved bills count -- anything still in review isn't a payable
 // yet, and nothing else has posted to Accounts Payable.
@@ -189,6 +211,7 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
   const byVendor = new Map();
   const totals = Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, 0]));
   let grandTotalCents = 0;
+  let discountTotalCents = 0;
 
   for (const invoice of invoices) {
     const totalCents = invoiceTotalCents(invoice);
@@ -204,12 +227,16 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
     const bucket = AGING_BUCKETS.find((b) => daysPastDue >= b.min && daysPastDue <= b.max);
 
     const vendor = resolveVendor(invoice);
+    const discount = earlyPayDiscount(vendor, invoice, outstandingCents, asOfDate);
+
     if (!byVendor.has(vendor.key)) {
       byVendor.set(vendor.key, {
         vendor_id: vendor.vendorId,
         vendor_name: vendor.name,
         ...Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, 0])),
         total: 0,
+        discount_available: 0,
+        discount_deadline: null,
       });
     }
     const row = byVendor.get(vendor.key);
@@ -217,6 +244,17 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
     row.total += outstandingCents;
     totals[bucket.key] += outstandingCents;
     grandTotalCents += outstandingCents;
+
+    if (discount.cents > 0) {
+      row.discount_available += discount.cents;
+      // The soonest of this vendor's still-open windows -- if two bills'
+      // discounts expire on different days, that earlier date is the one
+      // that actually forces a decision.
+      if (!row.discount_deadline || discount.deadline < row.discount_deadline) {
+        row.discount_deadline = discount.deadline;
+      }
+      discountTotalCents += discount.cents;
+    }
   }
 
   return {
@@ -227,11 +265,13 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
         ...row,
         ...Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, centsToDollars(row[b.key])])),
         total: centsToDollars(row.total),
+        discount_available: centsToDollars(row.discount_available),
       }))
       .sort((a, b) => b.total - a.total),
     totals: {
       ...Object.fromEntries(AGING_BUCKETS.map((b) => [b.key, centsToDollars(totals[b.key])])),
       total: centsToDollars(grandTotalCents),
+      discount_available: centsToDollars(discountTotalCents),
     },
   };
 }

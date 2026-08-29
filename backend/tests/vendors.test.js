@@ -389,3 +389,69 @@ test("the shared normalizer keeps aliases and expense-account memory in step", a
   expect(found).not.toBeNull();
   expect(found.expenseAccountId).toBe(expenseAccount);
 });
+
+test("vendors can be created with early-payment discount terms, and they can be cleared", async () => {
+  const token = await signup(app, request);
+  const created = await request(app)
+    .post("/api/vendors")
+    .set(authHeader(token))
+    .send({ name: "Discount Co", early_pay_discount_pct: 2, early_pay_discount_days: 10 });
+  expect(created.status).toBe(201);
+  expect(created.body).toMatchObject({ early_pay_discount_pct: 2, early_pay_discount_days: 10 });
+
+  // Explicit null, not just omission, is what clears terms that no longer
+  // apply -- omitting the key on a PATCH means "leave it alone".
+  const cleared = await request(app)
+    .patch(`/api/vendors/${created.body.id}`)
+    .set(authHeader(token))
+    .send({ early_pay_discount_pct: null, early_pay_discount_days: null });
+  expect(cleared.body.early_pay_discount_pct).toBeNull();
+  expect(cleared.body.early_pay_discount_days).toBeNull();
+});
+
+test("AP aging surfaces an early-payment discount still inside its window", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await request(app)
+    .post("/api/vendors")
+    .set(authHeader(token))
+    .send({ name: "Acme Inc", early_pay_discount_pct: 2, early_pay_discount_days: 10 });
+  await makeApprovedBill(token, org, { vendorName: "Acme Inc", total: 1000, invoiceDate: "2026-06-01", dueDate: "2026-07-01" });
+
+  // Day 5 of a 10-day window, counted from the invoice date -- still open.
+  const res = await request(app).get("/api/reports/ap-aging?as_of=2026-06-06").set(authHeader(token));
+  expect(res.body.vendors[0].discount_available).toBe(20); // 2% of $1000
+  expect(res.body.vendors[0].discount_deadline).toBe("2026-06-11");
+  expect(res.body.totals.discount_available).toBe(20);
+});
+
+test("an early-payment discount disappears once its window has closed, even though the bill isn't due yet", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await request(app)
+    .post("/api/vendors")
+    .set(authHeader(token))
+    .send({ name: "Acme Inc", early_pay_discount_pct: 2, early_pay_discount_days: 10 });
+  await makeApprovedBill(token, org, { vendorName: "Acme Inc", total: 1000, invoiceDate: "2026-06-01", dueDate: "2026-07-01" });
+
+  // Day 15 -- past the 10-day discount window, but the due date is still
+  // two weeks out, so this bill is "current" in the aging bucket the whole
+  // time its discount is available and after it's gone. The two are
+  // deliberately independent.
+  const res = await request(app).get("/api/reports/ap-aging?as_of=2026-06-16").set(authHeader(token));
+  expect(res.body.vendors[0].discount_available).toBe(0);
+  expect(res.body.vendors[0].discount_deadline).toBeNull();
+  expect(res.body.totals.discount_available).toBe(0);
+  expect(res.body.vendors[0].current).toBe(1000);
+});
+
+test("a vendor with no discount terms configured reports no discount available", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await makeApprovedBill(token, org, { vendorName: "No Discount LLC", total: 500, invoiceDate: "2026-06-01" });
+
+  const res = await request(app).get("/api/reports/ap-aging?as_of=2026-06-02").set(authHeader(token));
+  expect(res.body.vendors[0].discount_available).toBe(0);
+  expect(res.body.vendors[0].discount_deadline).toBeNull();
+  expect(res.body.totals.discount_available).toBe(0);
+});
