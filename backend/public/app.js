@@ -590,6 +590,29 @@ function fieldConf(inv, name) {
   return (inv.field_confidence && inv.field_confidence[name]) ?? 0;
 }
 
+// "Tax (6.3% of subtotal)". The rate comes from the server, which derives
+// it rather than storing it; null means there was no subtotal to divide by,
+// and the label omits the parenthetical rather than claiming 0.0%.
+function rateSuffix(percent) {
+  return percent === null || percent === undefined ? "" : ` <span class="field-rate">(${percent}% of subtotal)</span>`;
+}
+
+// The long-tail charges between subtotal and total -- handling, surcharge,
+// deposit applied. Read-only on purpose: it is a labelled list, and a full
+// editor is more UI than the case warrants until somebody needs to correct
+// one. Shown because leaving these out is what made the totals look wrong.
+function otherChargesHtml(charges) {
+  if (!Array.isArray(charges) || !charges.length) return "";
+  const rows = charges
+    .map((c) => `<tr><td>${escapeHtml(c.label)}</td><td>${fmtMoney(c.amount)}</td></tr>`)
+    .join("");
+  return `
+    <table class="line-items-table">
+      <thead><tr><th>Other charges</th><th>Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderDetail(inv) {
   const el = document.getElementById("queue-detail");
 
@@ -644,6 +667,17 @@ function renderDetail(inv) {
   // flagged as a likely double-upload/double-pay risk (see pipeline.js's
   // findDuplicateInvoice), separate from and in addition to the cross-check
   // banner above.
+  // Whether the bill has been paid, from the payments actually recorded
+  // against it. Shown next to the cross-check because "is this correct" and
+  // "have we already paid it" are the two questions somebody opening an
+  // invoice is trying to answer, and the second one is how a bill gets paid
+  // twice when nobody can see the answer.
+  const paymentBanner = !inv.payment_status || inv.payment_status === "unpaid"
+    ? ""
+    : `<div class="cross-check ${inv.payment_status === "paid" ? "pass" : "processing"}">
+        ${inv.payment_status === "paid" ? "✓ Paid" : "◐ Partially paid"} — ${fmtMoney(inv.amount_paid)} of ${fmtMoney(inv.total)} across ${inv.payment_count} payment${inv.payment_count === 1 ? "" : "s"}.
+      </div>`;
+
   const sampleBanner = inv.is_sample_data
     ? `<div class="cross-check processing">This is a sample invoice we added so you'd have something to review right away — it doesn't count toward your plan's usage or show up in your dashboard totals or exports. Delete it whenever you're ready.</div>`
     : "";
@@ -666,6 +700,7 @@ function renderDetail(inv) {
     ${duplicateBanner}
     ${multiInvoiceBanner}
     ${statusBanner}
+    ${paymentBanner}
 
     <div class="detail-grid">
       <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="f-vendor_name" value="${escapeHtml(inv.vendor_name)}" /></div>
@@ -675,9 +710,14 @@ function renderDetail(inv) {
       <div class="field ${lowConf("po_reference")}"><label>PO Reference</label><input id="f-po_reference" value="${escapeHtml(inv.po_reference)}" /></div>
       <div class="field ${lowConf("currency")}"><label>Currency</label><input id="f-currency" value="${escapeHtml(inv.currency)}" /></div>
       <div class="field ${lowConf("subtotal")}"><label>Subtotal</label><input id="f-subtotal" value="${inv.subtotal ?? ""}" /></div>
-      <div class="field ${lowConf("tax")}"><label>Tax</label><input id="f-tax" value="${inv.tax ?? ""}" /></div>
+      <div class="field ${lowConf("shipping")}"><label>Shipping</label><input id="f-shipping" value="${inv.shipping ?? ""}" /></div>
+      <div class="field ${lowConf("discount")}"><label>Discount${rateSuffix(inv.discount_rate_percent)}</label><input id="f-discount" value="${inv.discount ?? ""}" /></div>
+      <div class="field ${lowConf("tax")}"><label>Tax${rateSuffix(inv.tax_rate_percent)}</label><input id="f-tax" value="${inv.tax ?? ""}" /></div>
+      <div class="field ${lowConf("payment_terms")}"><label>Terms</label><input id="f-payment_terms" value="${escapeHtml(inv.payment_terms || "")}" placeholder="2/10 n/30" /></div>
       <div class="field ${lowConf("total")}"><label>Total</label><input id="f-total" value="${inv.total ?? ""}" /></div>
     </div>
+
+    ${otherChargesHtml(inv.other_charges)}
 
     <table class="line-items-table">
       <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
@@ -839,7 +879,10 @@ async function saveCorrections(id) {
     po_reference: document.getElementById("f-po_reference").value,
     currency: document.getElementById("f-currency").value,
     subtotal: numOrNull(document.getElementById("f-subtotal").value),
+    shipping: numOrNull(document.getElementById("f-shipping").value),
+    discount: numOrNull(document.getElementById("f-discount").value),
     tax: numOrNull(document.getElementById("f-tax").value),
+    payment_terms: document.getElementById("f-payment_terms").value,
     total: numOrNull(document.getElementById("f-total").value),
     line_items: lineItems,
   };

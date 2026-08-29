@@ -49,6 +49,17 @@ export function score(result) {
   };
 }
 
+// Everything a vendor can put between the subtotal and the total, summed
+// with its sign: charges add, the discount subtracts. Exported because the
+// review UI recomputes the same figure live as a human edits the fields,
+// and two implementations of this arithmetic would eventually disagree
+// about whether an invoice reconciles.
+export function adjustmentsTotal(fields) {
+  const charges = Array.isArray(fields.other_charges) ? fields.other_charges : [];
+  const otherSum = charges.reduce((sum, c) => sum + (Number(c?.amount) || 0), 0);
+  return round2((Number(fields.shipping) || 0) + otherSum - Math.abs(Number(fields.discount) || 0));
+}
+
 function crossCheckTotal(result) {
   const total = result.fields.total;
   if (total === null || total === undefined) {
@@ -62,12 +73,19 @@ function crossCheckTotal(result) {
     const tax = result.fields.tax || 0;
 
     if (subtotal !== null && subtotal !== undefined) {
-      const expected = round2(subtotal + tax);
+      // Shipping, discount and any other charge between the subtotal and
+      // the total are part of this sum. They were not, until v1.39, and the
+      // omission meant every invoice carrying a shipping line was reported
+      // as a calculation error against a document that added up perfectly.
+      // The failure was in the checker, not the invoice.
+      const adjustments = adjustmentsTotal(result.fields);
+      const expected = round2(subtotal + adjustments + tax);
       if (Math.abs(expected - total) <= CROSS_CHECK_TOLERANCE_ABS) {
         if (Math.abs(lineSum - subtotal) <= CROSS_CHECK_TOLERANCE_ABS) {
+          const parts = adjustments === 0 ? "subtotal + tax" : "subtotal + charges - discount + tax";
           return {
             crossCheckPassed: true,
-            crossCheckDetail: `Line items (${lineSum}) match subtotal (${subtotal}); subtotal + tax matches total.`,
+            crossCheckDetail: `Line items (${lineSum}) match subtotal (${subtotal}); ${parts} matches total.`,
           };
         }
         return {
@@ -75,9 +93,15 @@ function crossCheckTotal(result) {
           crossCheckDetail: `Line items sum to ${lineSum} but subtotal is ${subtotal}.`,
         };
       }
+      // Names what was actually counted, so "the numbers don't add up" is
+      // debuggable from the review queue instead of requiring the document.
+      const breakdown =
+        adjustments === 0
+          ? `Subtotal (${subtotal}) + tax (${tax})`
+          : `Subtotal (${subtotal}) + adjustments (${adjustments}) + tax (${tax})`;
       return {
         crossCheckPassed: false,
-        crossCheckDetail: `Subtotal (${subtotal}) + tax (${tax}) = ${expected}, but total is ${total}.`,
+        crossCheckDetail: `${breakdown} = ${expected}, but total is ${total}.`,
       };
     }
 

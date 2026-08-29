@@ -24,7 +24,10 @@ export const FIELDS = [
   "po_reference",
   "currency",
   "subtotal",
+  "shipping",
+  "discount",
   "tax",
+  "payment_terms",
   "total",
 ];
 
@@ -50,8 +53,40 @@ const INVOICE_TOOL = {
       currency: { type: "string", description: "ISO currency code, e.g. USD" },
       subtotal: { type: "number" },
       subtotal_confidence: { type: "number" },
+      // Everything between the subtotal and the total. The model is told to
+      // account for all of it: a charge it leaves out doesn't vanish, it
+      // shows up as a failed cross-check on an invoice that was correct.
+      shipping: {
+        type: "number",
+        description: "Shipping, freight or delivery charge. 0 if absent.",
+      },
+      shipping_confidence: { type: "number" },
+      discount: {
+        type: "number",
+        description:
+          "Discount or credit applied, as a POSITIVE number to be subtracted (a $25 discount is 25, not -25). 0 if absent.",
+      },
+      discount_confidence: { type: "number" },
+      other_charges: {
+        type: "array",
+        description:
+          "Any other line between the subtotal and the total that is not shipping, discount or tax -- handling, service charge, surcharge, deposit applied, and so on. Signed: a credit is negative. Empty array if there are none.",
+        items: {
+          type: "object",
+          properties: {
+            label: { type: "string" },
+            amount: { type: "number" },
+          },
+          required: ["label", "amount"],
+        },
+      },
       tax: { type: "number" },
       tax_confidence: { type: "number" },
+      payment_terms: {
+        type: "string",
+        description: 'Payment terms exactly as printed, e.g. "2/10 n/30", "Net 30", "Due on receipt". Empty string if absent.',
+      },
+      payment_terms_confidence: { type: "number" },
       total: { type: "number" },
       total_confidence: { type: "number" },
       line_items: {
@@ -122,7 +157,13 @@ async function extractWithLlm(ocrText) {
     po_reference: data.po_reference || "",
     currency: data.currency || "USD",
     subtotal: cleanNumber(data.subtotal),
+    // Normalised to a positive magnitude here so the arithmetic downstream
+    // never has to guess at the sign a vendor happened to print.
+    shipping: cleanNumber(data.shipping),
+    discount: data.discount == null ? null : Math.abs(cleanNumber(data.discount) ?? 0),
+    other_charges: normalizeOtherCharges(data.other_charges),
     tax: cleanNumber(data.tax),
+    payment_terms: (data.payment_terms || "").toString().slice(0, 64),
     total: cleanNumber(data.total),
   };
 
@@ -263,6 +304,49 @@ function extractHeuristic(ocrText) {
     }
   }
 
+  // Shipping and discount, read the same way as tax and for the same
+  // reason: the amount is the last non-percentage figure on the line, so a
+  // "Discount 10% $45.00" line yields 45.00 rather than 10.
+  //
+  // Without these the heuristic path can extract an invoice it then fails
+  // its own cross-check on, which is the exact failure this release exists
+  // to remove -- there is no point fixing it only for the LLM path.
+  const amountOnLine = (index) => {
+    for (const ln of [lines[index], lines[index + 1]]) {
+      if (!ln) continue;
+      const amounts = [...ln.matchAll(/\$?\s*([\d,]+\.\d{2})(?!\s*%)(?!\d)/g)];
+      if (amounts.length) return parseFloat(amounts[amounts.length - 1][1].replace(/,/g, ""));
+    }
+    return null;
+  };
+
+  const shippingIndex = lines.findIndex((ln) => /\b(shipping|freight|delivery)\b/i.test(ln));
+  if (shippingIndex !== -1) {
+    const amount = amountOnLine(shippingIndex);
+    if (amount !== null) {
+      fields.shipping = amount;
+      fieldConfidence.shipping = HEURISTIC_FIELD_CONFIDENCE;
+    }
+  }
+
+  const discountIndex = lines.findIndex((ln) => /\b(discount|credit)\b/i.test(ln));
+  if (discountIndex !== -1) {
+    const amount = amountOnLine(discountIndex);
+    // Stored as a positive magnitude regardless of how it was printed --
+    // "-45.00" and "45.00" mean the same thing on a discount line.
+    if (amount !== null) {
+      fields.discount = Math.abs(amount);
+      fieldConfidence.discount = HEURISTIC_FIELD_CONFIDENCE;
+    }
+  }
+
+  // "2/10 n/30", "2/10 net 30", "Net 30", "Due on receipt".
+  const termsMatch = ocrText.match(/\b(\d{1,2}\s*\/\s*\d{1,2}\s*,?\s*n(?:et)?\s*\/?\s*\d{1,3}|net\s*\d{1,3}|due\s+on\s+receipt)\b/i);
+  if (termsMatch) {
+    fields.payment_terms = termsMatch[1].replace(/\s+/g, " ").trim().slice(0, 64);
+    fieldConfidence.payment_terms = HEURISTIC_FIELD_CONFIDENCE;
+  }
+
   const lineItemPattern =
     /^(.{3,80}?)\s+(\d+(?:\.\d+)?)\s*[x@]?\s*\$?([\d,]+\.\d{2})\s+\$?([\d,]+\.\d{2})$/;
   const lineItems = [];
@@ -280,6 +364,21 @@ function extractHeuristic(ocrText) {
   }
 
   const multiInvoice = detectMultipleInvoicesHeuristic(ocrText);
+
+  // FIELDS seeds every key with "", which is right for the text fields and
+  // wrong for the money ones: an unfound amount has to reach the FLOAT
+  // column as null, not as an empty string. subtotal/tax/total have always
+  // needed this; adding shipping and discount to FIELDS is what made it
+  // worth doing once, by name, instead of per field.
+  for (const key of ["subtotal", "shipping", "discount", "tax", "total"]) {
+    if (fields[key] === "") fields[key] = null;
+  }
+  // Not in FIELDS: it is a list, so it has no single confidence score of
+  // its own. The heuristic path never populates it -- reading an arbitrary
+  // labelled charge line is exactly the judgement the LLM is there for --
+  // but it has to exist so the cross-check and the UI can treat both paths
+  // identically.
+  fields.other_charges = [];
 
   return {
     method: "heuristic",
@@ -314,6 +413,26 @@ function cleanNumber(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+// The long-tail charges between subtotal and total. Kept as a labelled list
+// rather than more columns because the set is genuinely open -- handling,
+// surcharge, deposit applied, freight insurance, "Fuel adjustment" -- and a
+// charge the schema can't name is a charge the cross-check can't reconcile.
+// A row with no usable amount is dropped rather than kept as a zero: a
+// zero would silently pass the cross-check while hiding that something on
+// the page wasn't read.
+export function normalizeOtherCharges(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row) => {
+      const amount = cleanNumber(row?.amount);
+      if (amount === null) return null;
+      const label = String(row?.label ?? "").trim().slice(0, 128);
+      return { label: label || "Other charge", amount };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 function cleanDate(value) {

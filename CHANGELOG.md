@@ -4,6 +4,67 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.39
+
+Everything between the subtotal and the total.
+
+The extraction schema went subtotal, tax, total, with nothing in between.
+So `confidence.js`'s cross-check computed `subtotal + tax` and compared it
+to the stated total -- and **every invoice carrying a shipping line failed
+its own cross-check**, had its confidence dragged down for it, and landed
+in the review queue captioned "the numbers don't add up" against a document
+that added up perfectly. The failure was the checker's, not the invoice's.
+
+What the schema now carries:
+
+- **Shipping** and **discount** as their own fields. They are the two that
+  recur on most invoices, and a discount needs to be identifiable on its own
+  to be stated as a percentage of the subtotal.
+- **Other charges** as a labelled list -- handling, service charge,
+  surcharge, deposit applied, "Fuel adjustment". The set is genuinely open,
+  and a charge the schema cannot name is a charge the cross-check cannot
+  reconcile. Signed, so a credit is negative.
+- **Payment terms** as printed: "2/10 n/30", "Net 30", "Due on receipt".
+  Deliberately not parsed into a discount rate and a due date -- the notation
+  has real regional variation, and inventing a due date from a misread term
+  is how a bill gets paid late. It is shown so a human can act on it.
+
+The cross-check is now `subtotal + charges - discount + tax = total`, and
+when it fails it names what it counted (`Subtotal (100) + adjustments (5) +
+tax (8) = 113, but total is 999`) so the disagreement is debuggable from the
+review queue instead of requiring the document.
+
+**Tax and discount percentages** are derived from the figures already on the
+record and shown beside their fields, never stored. A rate is a fact about
+two numbers that are both already there; storing it would give it its own
+chance to drift out of step with them. Null rather than zero when there is
+no subtotal to divide by, so the label omits the parenthetical instead of
+printing a confident "0.0%".
+
+**Whether the bill has been paid** now appears on the invoice, from the
+payments actually recorded against it rather than from a status flag that
+would have to be kept in step with them. "Partially paid" is its own state:
+a bill with one of three instalments against it is neither paid nor unpaid,
+and collapsing it into either is how somebody pays it twice.
+
+Three quieter fixes that were the same bug wearing different hats:
+
+- **The heuristic (no-LLM) extractor reads the new lines too.** Fixing the
+  cross-check only for the LLM path would leave an org running without an
+  API key still failing its own extractions. Shipping and discount are read
+  the way tax already was -- last non-percentage figure on the line -- so
+  "Discount 10% $45.00" yields 45, not 10.
+- **A correction now re-scores the invoice.** The PATCH route never re-ran
+  the cross-check, so a reviewer who supplied the missing shipping amount
+  still saw the old failure on screen. Same complaint, different place.
+- **Quick review was building its own scoring input** and would have omitted
+  the new fields, re-introducing the false failure the moment anyone used
+  it. Both routes now share one `scoringFieldsFor`.
+
+`other_charges` is excluded from quick review on purpose: that flow is one
+scalar field at a time, and a labelled list has no sensible single-value
+prompt. It is corrected in the full detail view.
+
 ## v1.38
 
 The income statement becomes multi-step, and the demo finally has books.
