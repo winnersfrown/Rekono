@@ -136,18 +136,52 @@ accent button is a wall of accent, and the accent stops meaning anything.
 - **Scale:** `2xs 2` · `xs 4` · `sm 8` · `md 16` · `lg 24` · `xl 32` ·
   `2xl 48` · `3xl 64` · `4xl 96`
 
+The nine steps are defined as `--sp-*` custom properties in **both**
+stylesheets. The marketing site reads them through Tailwind's `spacing`
+extension (`py-3xl`, `gap-xl`); the product reads them directly. A layout
+rule that hand-picks a rem value instead is how the density drifted back to
+0.55rem in places while this table still said 24px.
+
 Concrete floors, so "spacious" is checkable rather than a feeling:
 
-- Table rows: **52px** minimum height, 16px cell padding
+- Table rows: **52px** minimum height, 16px/24px cell padding
 - Panel padding: **32px** (24px below 720px)
 - Between sections: **48–64px**
-- Between page sections on marketing: **96px**
+- Between page sections on marketing: **96px** (`py-3xl` top and bottom)
+
+## Measure
+
+Width is not the same thing as room. A panel that spans the page is
+generous; a text input that spans the page is unusable. Two caps, applied
+to different things:
+
+- `--measure-form` (**760px**) caps the *field column inside* a panel, not
+  the panel. The panel itself takes the page.
+- Prose caps at **62–68ch** wherever it appears — `.hint` in the product,
+  the lede and body columns on marketing.
+
+The cap used to sit on `.panel` itself, which is why Settings, Close,
+Export and Team each drew a 760px strip down the left of a 1400px window
+with half the page blank beside it. Dead paper reads as unfinished, not as
+roomy: a page that is a stack of independent panels lays them out two-up
+(`.panel-columns`) rather than leaving the second column empty.
 
 ## Layout
 
 - **Approach:** hybrid. Grid-disciplined in the product (data needs
   predictable alignment); editorial asymmetry on the marketing site.
-- **Max content width:** 1180px product, 1320px marketing
+- **Max content width:** 1400px product, 1320px marketing
+- **Every column in a layout carries something.** Editorial asymmetry is a
+  heading against a lede, or a spine against a body column — not one column
+  of content and one of blank paper. A marketing section head sets its
+  heading and lede side by side on the baseline; a five-row schedule gives
+  its rows a number, a titled spine and a prose column rather than
+  stranding a mono tag at the far right of an empty 400px.
+- **A statement is one schedule, not several tables.** An income statement
+  renders as four stacked `<table>`s, and left to size their own columns
+  they put the account names at a different x in every section. `.report`
+  fixes the code and amount columns as a share of the table so the whole
+  page rules up.
 - **Border radius:** `sm 3px` · `md 5px` · `lg 8px`. Deliberately tight.
   Bubble radius reads as consumer app.
 - **Elevation:** hairline rules, **not** shadows. A statement is ruled, it
@@ -186,3 +220,6 @@ floating consumer app, which is the one thing this is not).
 | 2026-08-29 | **Reverted to Bitter + IBM Plex on the blue palette** | Explicit user request. Superseded the 2026-08-28 typeface and colour decisions; every other decision in this table stands. |
 | 2026-08-29 | Kept the layout, spacing, rules and marketing copy from the editorial pass | What makes the product read as a workpaper is the ruled schedule, right-aligned money and the room to breathe, none of which depend on the palette. Only the two things asked for changed. |
 | 2026-08-29 | Added `--accent-ink`; darkened `--accent-text` to `#2C68D6` | The blue fill is light enough that white on it is 3.47:1 and fails AA, so the accent's label is the dark navy at 4.97:1. The palette's own `#2F6FE0` is 4.38:1 on the page ground, just under the bar. |
+| 2026-08-29 | **The measure moved off `.panel` and onto its contents** | Explicit user request to spread the product out. The 760px cap on the panel was pinning every all-panel page into a left-hand strip; capping the field column instead keeps forms readable and gives tables and schedules the page. |
+| 2026-08-29 | `--sp-*` added to the product stylesheet | The scale existed only on the marketing site, so the product's spacing was hand-picked rem values that drifted from this document. |
+| 2026-08-29 | Marketing section heads are two-column mastheads | The stacked head left 60% of the opening row blank on every section, which reads as an unfinished layout rather than as editorial white space. |

@@ -57,11 +57,15 @@ export default function Features() {
           <div className="rule-head">
             <span className="label">What's underneath</span>
           </div>
-          <h2 className="section-title mt-lg max-w-[22ch]">A ledger first, with the AI in front of it.</h2>
-          <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
-            The model reads documents and suggests. It never decides what posts. Everything below is ordinary
-            accounting, done properly, with the extraction feeding it rather than replacing it.
-          </p>
+          {/* Same masthead shape as "The month": heading and lede share the
+              row instead of stacking down the left edge. */}
+          <div className="mt-lg grid gap-lg md:grid-cols-[1fr_minmax(0,28rem)] md:items-end md:gap-3xl">
+            <h2 className="section-title max-w-[22ch]">A ledger first, with the AI in front of it.</h2>
+            <p className="text-[1rem] leading-relaxed text-ink-soft">
+              The model reads documents and suggests. It never decides what posts. Everything below is ordinary
+              accounting, done properly, with the extraction feeding it rather than replacing it.
+            </p>
+          </div>
         </Reveal>
 
         <div className="mt-3xl grid gap-3xl md:grid-cols-2 md:gap-2xl">
@@ -70,7 +74,7 @@ export default function Features() {
               <span className="label">{group.heading}</span>
               <div className="mt-md flex flex-col">
                 {group.items.map((f, i) => (
-                  <Reveal key={f.title} delay={i * 0.03} className="border-t border-rule py-lg">
+                  <Reveal key={f.title} delay={i * 0.03} className="border-t border-rule py-xl">
                     <h3 className="panel-title">{f.title}</h3>
                     <p className="mt-sm text-[0.92rem] leading-relaxed text-ink-soft">{f.body}</p>
                   </Reveal>

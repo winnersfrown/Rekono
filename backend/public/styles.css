@@ -80,6 +80,26 @@
   --neg: #d43a41;
   --warn: #96650f;
 
+  /* 4px base, the same nine steps DESIGN.md defines and the marketing
+     stylesheet already carried. The product was the surface without them:
+     every gap here was a hand-picked rem value, which is how "spacious"
+     drifted back to 0.55rem in a few places while the design system said
+     24px. Named steps make the density checkable instead of a feeling. */
+  --sp-2xs: 2px;
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+  --sp-2xl: 48px;
+  --sp-3xl: 64px;
+  --sp-4xl: 96px;
+
+  /* A column of form fields never gets wider than this, however wide the
+     panel around it is. A 1300px text input is not generous, it is
+     unusable -- the eye loses the row between the label and the value. */
+  --measure-form: 760px;
+
   --radius-sm: 3px;
   --radius-md: 5px;
   --radius-lg: 8px;
@@ -397,22 +417,88 @@ select {
 /* ---------- Panels: group a section's controls into a defined card,
    matching .queue-detail's existing treatment -- Upload/Matching/Export/
    Team/Settings used to float raw form rows directly on the blueprint-grid
-   background, which reads as unfinished next to the carded Review Queue. */
+   background, which reads as unfinished next to the carded Review Queue.
+
+   The cap that used to sit here (max-width: 760px) was applied to the
+   panel, which is the wrong thing to measure. It kept forms readable, but
+   it also pinned every all-panel page -- Settings, Close, Export, Team --
+   into a strip down the left of a 1400px window with 560px of dead paper
+   beside it. That reads as unfinished, not as roomy.
+
+   The measure belongs to the *contents*: a panel now spans the page, and
+   the field column inside it is what stops at --measure-form. Panels that
+   hold a table or a schedule finally get the width they were always
+   drawing at. */
 .panel {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  padding: 2rem;
+  padding: var(--sp-xl);
   box-shadow: var(--glass-shadow);
-  margin-bottom: 2rem;
-  max-width: 760px;
+  margin-bottom: var(--sp-xl);
+}
+@media (max-width: 720px) {
+  .panel { padding: var(--sp-lg); }
 }
 .panel h3:first-child { margin-top: 0; }
 .panel > *:last-child { margin-bottom: 0; }
 
-.table-empty-row { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
+/* Two-up on a wide window, for a page that is a stack of independent
+   panels with no reading order between them. auto-fit rather than a fixed
+   2, so the same rule gives one column on a laptop half-window without a
+   second breakpoint. */
+.panel-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+  gap: var(--sp-xl);
+  align-items: start;
+  /* The panels inside give up their own bottom margin, so the wrapper has
+     to carry it -- otherwise whatever follows the group sits flush. */
+  margin-bottom: var(--sp-xl);
+}
+.panel-columns > .panel { margin-bottom: 0; }
+
+/* A form inside a panel: rows wrap with real space between them, and the
+   field column stops at the reading measure however wide the panel is.
+
+   The label stays *beside* its field rather than above it. Several of
+   these labels are sentences with the control set into them ("Flag
+   anything below [ 80 ]% confidence"), and stacking would break each text
+   run onto its own line -- flex makes an anonymous item of every text node
+   between elements. The bug being fixed is only the missing gap: with none
+   at all the settings form read as "Full nameAlex Rivera". */
+.panel form {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-md) var(--sp-lg);
+  max-width: var(--measure-form);
+  margin-bottom: var(--sp-md);
+}
+.panel form > label {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+/* Prose inside a panel keeps its own measure -- a hint running the full
+   1300px is a line nobody can track back to the start of. */
+.panel > .hint, .panel > p { max-width: 68ch; }
+
+/* Status lines are empty until something is saved. Left visible they still
+   carry .hint's 1.75rem bottom margin, which is why several panels had a
+   band of blank paper under the last control. */
+.hint:empty { display: none; }
+
+/* The !important is doing real work: this cell carries a colspan, so it is
+   simultaneously the row's first and last child and picks up .report's
+   right-alignment for the money column. "No activity in this period."
+   was rendering hard against the right edge of an empty statement. */
+td.table-empty-row { text-align: center !important; color: var(--muted); padding: var(--sp-2xl) var(--sp-md); }
 
 table {
   width: 100%;
@@ -428,7 +514,7 @@ table {
 
 th, td {
   text-align: left;
-  padding: 0.9rem 1rem;
+  padding: var(--sp-md) var(--sp-lg);
   border-bottom: 1px solid var(--rule-soft);
   font-size: 0.92rem;
 }
@@ -469,6 +555,18 @@ table.report-dc th:nth-last-child(-n+2) {
 }
 table.report tfoot th:first-child { text-align: left; }
 
+/* One statement is several <table>s stacked -- revenue, cost of revenue,
+   gross profit, operating expenses -- and each was sizing its own columns
+   from its own content. The account names started at a different x in
+   every section, and the amount column stepped left and right down the
+   page. Fixing the code and amount columns as a share of the table makes
+   the whole statement read as one ruled schedule, which is the entire
+   point of the form. */
+table.report th:first-child, table.report td:first-child { width: 12%; }
+table.report th:last-child, table.report td:last-child { width: 20%; }
+table.report-dc th:first-child, table.report-dc td:first-child { width: 12%; }
+table.report-dc th:nth-last-child(-n + 2), table.report-dc td:nth-last-child(-n + 2) { width: 18%; }
+
 table.report tfoot th {
   color: var(--ink);
   font-family: var(--font-body);
@@ -489,8 +587,8 @@ th {
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding-top: 0.75rem;
-  padding-bottom: 0.75rem;
+  padding-top: var(--sp-md);
+  padding-bottom: var(--sp-md);
   background: var(--paper-sunk);
 }
 
@@ -498,9 +596,20 @@ tbody tr { transition: background 0.12s var(--ease); }
 tbody tr:hover td { background: var(--paper-sunk); cursor: pointer; }
 tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
-.queue-layout { display: grid; grid-template-columns: 1fr 1.3fr; gap: 2rem; align-items: start; }
+/* The list used to get 1fr against the detail pane's 1.3fr, which on a
+   1320px page left it 560px -- narrow enough that every vendor name wrapped
+   to two lines and the status badge sat on top of the confidence column.
+   The detail pane is the thing with slack in it (its widest child is a
+   two-column field grid), so the ratio inverts. */
+.queue-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-xl); align-items: start; }
 
-.queue-filters { display: flex; gap: 0.4rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+/* Vendor is the column people scan; total, status and confidence are all
+   fixed-width content. Left to `table-layout: auto` the three short columns
+   took what they wanted and the vendor name got the remainder, which was
+   narrow enough to wrap almost every real company name onto two lines. */
+#invoice-table th:nth-child(2) { width: 46%; }
+
+.queue-filters { display: flex; gap: var(--sp-sm); margin-bottom: var(--sp-md); flex-wrap: wrap; }
 
 .bulk-toolbar {
   align-items: center;
@@ -568,14 +677,22 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .empty-state svg { color: var(--muted); opacity: 0.5; }
 .empty-state .hint { margin: 0; max-width: 30ch; }
 
-/* The date-range picker above each financial statement. The base `form`
-   rule already lays this out as a centered flex row; this only stacks each
-   label's caption over its input, matching how the auth/onboarding forms
-   present a labelled field. */
+/* The date-range picker above each financial statement. Each label's
+   caption stacks over its input, matching how the auth/onboarding forms
+   present a labelled field -- which is why the row aligns on the bottom
+   edge rather than inheriting the base `form` rule's centring. Centred,
+   the Update button floated to the middle of the label-plus-input stack
+   and sat visibly above the input beside it. */
+.statement-period {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-xl);
+}
 .statement-period label {
   display: flex;
   flex-direction: column;
-  gap: 0.32rem;
+  gap: var(--sp-sm);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.06em;
@@ -1513,7 +1630,11 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 }
 .recent-item:hover .recent-open { color: var(--ink); }
 .recent-open:hover, .recent-open:focus-visible { background: transparent; box-shadow: none; transform: none; }
-.recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-width:0 is what makes the ellipsis actually engage: without it the
+   filename is a flex item at its content width, the badge beside it gets
+   pushed past the panel's right edge, and NEEDS_REVIEW hangs off the card. */
+.recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.recent-open .badge { flex: none; }
 .recent-empty {
   display: flex;
   flex-direction: column;
@@ -1691,7 +1812,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
 .reconcile-note { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
 
-.app-main { flex: 1; min-width: 0; max-width: 1400px; width: 100%; margin: 0 auto; padding: 3rem 2.5rem 4rem; }
+.app-main { flex: 1; min-width: 0; max-width: 1400px; width: 100%; margin: 0 auto; padding: var(--sp-3xl) var(--sp-2xl) var(--sp-4xl); }
+@media (max-width: 900px) {
+  .app-main { padding: var(--sp-xl) var(--sp-lg) var(--sp-3xl); }
+}
 
 .demo-mode-banner {
   display: flex;
@@ -1786,8 +1910,8 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .dash-kpis {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.1rem;
+  gap: var(--sp-md);
+  margin-bottom: var(--sp-lg);
 }
 @media (max-width: 1240px) { .dash-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
@@ -1870,8 +1994,11 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 @media (prefers-reduced-motion: reduce) { .kpi-card.is-loading { animation: none; } }
 
 /* ---------- dashboard grid ---------- */
-.dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 1.1rem; align-items: start; }
-.dash-col-main, .dash-col-side { display: flex; flex-direction: column; gap: 1.1rem; min-width: 0; }
+/* 300px, not 260px. At 260 the side column could not hold a filename and
+   its status badge on one line, so the badge overflowed the panel's right
+   edge and sat on the rule. */
+.dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--sp-lg); align-items: start; }
+.dash-col-main, .dash-col-side { display: flex; flex-direction: column; gap: var(--sp-lg); min-width: 0; }
 
 .dash-panel {
   border-radius: var(--radius-lg);
@@ -1880,7 +2007,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
-  padding: 1rem 1.1rem 1.1rem;
+  padding: var(--sp-lg);
 }
 
 /* Label over title, not label beside title. These panels live in a narrow
@@ -1891,9 +2018,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .dash-panel-head {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  margin-bottom: 1.1rem;
-  padding-bottom: 0.7rem;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-lg);
+  padding-bottom: var(--sp-md);
   border-bottom: 1px solid var(--rule-soft);
 }
 .dash-panel-head h2 { font-size: 1.25rem; line-height: 1.25; order: 2; }
@@ -2574,9 +2701,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: var(--sp-lg);
   flex-wrap: wrap;
-  margin-bottom: 1.2rem;
+  margin-bottom: var(--sp-2xl);
 }
 .close-head-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 /* The period picker ("which period am I looking at") and the open-a-period
@@ -2609,15 +2736,20 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--sp-lg);
   flex-wrap: wrap;
-  padding: 0.9rem 1.1rem;
+  padding: var(--sp-lg);
   border-radius: var(--radius-lg);
-  margin-bottom: 1.1rem;
+  margin-bottom: var(--sp-xl);
   font-size: 0.88rem;
   border: 1px solid var(--rule);
   background: var(--paper-sunk);
 }
+/* One flex item, not two. The message used to be a bare <strong> followed
+   by a text node, which flex treats as separate children -- so
+   space-between pushed the headline hard left and stranded the sentence
+   that explains it in the middle of the banner. */
+.close-banner-msg { margin: 0; max-width: 84ch; }
 .close-banner.is-ready { background: rgba(23, 128, 72, 0.09); border-color: rgba(23, 128, 72, 0.28); }
 .close-banner.is-blocking { background: rgba(150, 101, 15, 0.09); border-color: rgba(150, 101, 15, 0.28); }
 .close-banner.is-closed { background: var(--paper-deep); }
@@ -2677,11 +2809,29 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   border-radius: var(--radius-md);
 }
 .close-task:hover { background: var(--paper-sunk); }
-.close-task label { display: flex; align-items: center; gap: 0.6rem; flex: 1; min-width: 0; margin: 0; cursor: pointer; }
+/* flex-basis auto, not 0: with a 0 basis the task title started from
+   nothing and grew only into whatever the provenance column left over,
+   which wrapped every checklist item onto two lines while the row still
+   had space in it. From auto the title claims its content width first and
+   the metadata beside it is what gives way. */
+.close-task label { display: flex; align-items: center; gap: 0.6rem; flex: 1 1 auto; min-width: 0; margin: 0; cursor: pointer; }
 .close-task input[type="checkbox"] { flex: none; }
 .close-task-title { font-size: 0.88rem; }
 .close-task.is-done .close-task-title { color: var(--muted); text-decoration: line-through; }
-.close-task-meta { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); flex: none; }
+/* Shrinks before the task title does, and truncates rather than pushing.
+   Who ticked a box and when is provenance, not the thing being read -- a
+   long account address had been taking a third of the row and wrapping
+   every checklist item onto two lines. */
+.close-task-meta {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .close-task-delete {
   flex: none;
