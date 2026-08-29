@@ -131,18 +131,15 @@ describe("the heuristic extractor (the no-LLM path)", () => {
 });
 
 describe("the API", () => {
-  async function uploadedInvoice(token) {
-    const res = await request(app)
-      .post("/api/invoices/upload")
-      .set(authHeader(token))
-      .attach("file", Buffer.from("%PDF-1.4 test"), { filename: "test.pdf", contentType: "application/pdf" });
-    expect(res.status).toBe(201);
-    return res.body.id;
-  }
+  // Rows are created directly rather than uploaded. An upload queues a real
+  // OCR job that outlives the test file, and jest fails the whole run for
+  // logging after teardown ("Cannot log after tests are done") even when
+  // every assertion passed. Nothing here needs the pipeline: these tests
+  // are about the fields and the arithmetic over them.
 
   test("accepts and returns the new fields, and derives the rates", async () => {
     const token = await signup(app, request);
-    const id = await uploadedInvoice(token);
+    const { id } = await flaggedInvoice(token);
 
     const patched = await request(app)
       .patch(`/api/invoices/${id}`)
@@ -159,7 +156,7 @@ describe("the API", () => {
 
   test("a discount typed as a negative is stored as a magnitude", async () => {
     const token = await signup(app, request);
-    const id = await uploadedInvoice(token);
+    const { id } = await flaggedInvoice(token);
 
     const patched = await request(app)
       .patch(`/api/invoices/${id}`)
@@ -170,7 +167,7 @@ describe("the API", () => {
 
   test("a rate is null rather than zero when there is no subtotal to divide by", async () => {
     const token = await signup(app, request);
-    const id = await uploadedInvoice(token);
+    const { id } = await flaggedInvoice(token, { subtotal: null, tax: null, total: null });
 
     const patched = await request(app).patch(`/api/invoices/${id}`).set(authHeader(token)).send({ tax: 5, total: 5 });
     expect(patched.body.tax_rate_percent).toBeNull();
@@ -241,7 +238,7 @@ describe("the API", () => {
 
   test("reports payment status, so nobody pays a bill twice", async () => {
     const token = await signup(app, request);
-    const id = await uploadedInvoice(token);
+    const { id } = await flaggedInvoice(token);
     const detail = await request(app).get(`/api/invoices/${id}`).set(authHeader(token));
     expect(detail.status).toBe(200);
     expect(detail.body.payment_status).toBe("unpaid");
