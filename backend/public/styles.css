@@ -310,8 +310,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid 
      destructive-adjacent action in the same colour as Save, which is
      exactly the ambiguity DESIGN.md warns about for a red-family accent. */
 td button,
-button.btn-quiet,
-#je-add-line, #ci-add-line, #bill-add-line, #rev-add-line {
+button.btn-quiet {
   background: transparent;
   color: var(--ink);
   border: 1px solid var(--rule);
@@ -320,8 +319,7 @@ button.btn-quiet,
   font-size: 0.82rem;
 }
 td button:hover,
-button.btn-quiet:hover,
-#je-add-line:hover, #ci-add-line:hover, #bill-add-line:hover, #rev-add-line:hover {
+button.btn-quiet:hover {
   background: var(--paper-sunk);
   border-color: var(--ink-soft);
   color: var(--ink);
@@ -649,14 +647,21 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  padding: 1.6rem;
+  padding: 2rem;
   box-shadow: var(--glass-shadow);
-  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+  /* Column layout with the action pushed to the bottom, so two cards
+     whose descriptions wrap to different line counts still line their
+     buttons up. */
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.14s var(--ease);
 }
-.export-card:hover { box-shadow: var(--glass-highlight), var(--shadow-md); transform: translateY(-2px); }
+.export-card:hover { border-color: var(--ink-soft); }
 .export-card svg { color: var(--accent); }
 .export-card h3 { margin: 0.75rem 0 0.35rem; }
-.export-card .hint { margin-bottom: 1.1rem; }
+.export-card .hint { margin-bottom: 1.5rem; }
+/* The button, not a wrapping <a> -- these are plain <button>s. */
+.export-card > .export-btn { margin-top: auto; }
 .export-card a { text-decoration: none; }
 .export-card button { width: 100%; }
 
