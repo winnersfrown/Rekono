@@ -20,9 +20,10 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <!-- The three faces are self-hosted (see styles.css's @font-face block and
+       /fonts), so there is no cross-origin request in front of first paint. -->
+  <link rel="preload" href="/fonts/geist.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
@@ -1081,7 +1082,7 @@
                 </table>
               </div>
               <div class="line-item-footer">
-                <button type="button" id="rec-add-line">+ Add line</button>
+                <button type="button" class="btn-quiet" id="rec-add-line">+ Add line</button>
                 <p class="hint" id="rec-balance-indicator"></p>
                 <button type="submit" class="line-item-submit">Save template</button>
               </div>
@@ -1090,7 +1091,7 @@
           </div>
           <form id="recurring-run-form" class="statement-period">
             <label>Run through<input type="date" id="rec-as-of" /></label>
-            <button type="button" id="rec-preview">Preview</button>
+            <button type="button" class="btn-quiet" id="rec-preview">Preview</button>
             <button type="submit">Run</button>
           </form>
           <div id="recurring-run-status" class="hint"></div>
@@ -1253,7 +1254,7 @@
                 </table>
               </div>
               <div class="line-item-footer">
-                <button type="button" id="ci-add-line">+ Add line</button>
+                <button type="button" class="btn-quiet" id="ci-add-line">+ Add line</button>
                 <p class="hint" id="ci-total-indicator"></p>
                 <button type="submit" class="line-item-submit">Create draft</button>
               </div>
@@ -1280,7 +1281,7 @@
           </div>
           <h3>Deferred revenue waterfall</h3>
           <p class="hint">What's still unearned, and the month each part releases in.</p>
-          <table>
+          <table class="report">
             <thead><tr><th>Period</th><th>Releases</th></tr></thead>
             <tbody id="revenue-waterfall-body"></tbody>
             <tfoot><tr id="revenue-waterfall-total"></tr></tfoot>
@@ -1294,7 +1295,7 @@
             <label>As of<input type="date" id="ar-as-of" /></label>
             <button type="submit">Update</button>
           </form>
-          <table>
+          <table class="report">
             <thead><tr><th>Customer</th><th>Current</th><th>1-30</th><th>31-60</th><th>61-90</th><th>90+</th><th>Total</th></tr></thead>
             <tbody id="ar-aging-body"></tbody>
             <tfoot><tr id="ar-aging-totals"></tr></tfoot>
@@ -1342,7 +1343,7 @@
             <label>As of<input type="date" id="ap-as-of" /></label>
             <button type="submit">Update</button>
           </form>
-          <table>
+          <table class="report">
             <thead><tr><th>Vendor</th><th>Current</th><th>1-30</th><th>31-60</th><th>61-90</th><th>90+</th><th>Total</th></tr></thead>
             <tbody id="ap-aging-body"></tbody>
             <tfoot><tr id="ap-aging-totals"></tr></tfoot>
@@ -1393,7 +1394,7 @@
                 </table>
               </div>
               <div class="line-item-footer">
-                <button type="button" id="je-add-line">+ Add line</button>
+                <button type="button" class="btn-quiet" id="je-add-line">+ Add line</button>
                 <p class="hint" id="je-balance-indicator"></p>
                 <button type="submit" class="line-item-submit">Post entry</button>
               </div>
@@ -1410,7 +1411,7 @@
           <h1>Trial Balance</h1>
           <p class="hint">Every account's activity to date. A real ledger always balances to zero -- this is the report that proves it.</p>
           <p id="trial-balance-banner"></p>
-          <table>
+          <table class="report report-dc">
             <thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead>
             <tbody id="trial-balance-body"></tbody>
             <tfoot>
@@ -1429,14 +1430,14 @@
           </form>
 
           <h3 style="margin-top: 1.5rem;">Revenue</h3>
-          <table>
+          <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="pnl-revenue-body"></tbody>
             <tfoot><tr><th colspan="2">Total revenue</th><th id="pnl-revenue-total"></th></tr></tfoot>
           </table>
 
           <h3 style="margin-top: 1.5rem;">Expenses</h3>
-          <table>
+          <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="pnl-expenses-body"></tbody>
             <tfoot><tr><th colspan="2">Total expenses</th><th id="pnl-expenses-total"></th></tr></tfoot>
@@ -1498,14 +1499,14 @@
           <p id="bs-banner"></p>
 
           <h3 style="margin-top: 1.5rem;">Assets</h3>
-          <table>
+          <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="bs-assets-body"></tbody>
             <tfoot><tr><th colspan="2">Total assets</th><th id="bs-assets-total"></th></tr></tfoot>
           </table>
 
           <h3 style="margin-top: 1.5rem;">Liabilities</h3>
-          <table>
+          <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="bs-liabilities-body"></tbody>
             <tfoot><tr><th colspan="2">Total liabilities</th><th id="bs-liabilities-total"></th></tr></tfoot>
@@ -1513,7 +1514,7 @@
 
           <h3 style="margin-top: 1.5rem;">Equity</h3>
           <p class="hint">Both earnings lines are derived rather than posted as year-end closing entries, so they always match the P&amp;L without anything being written to your books. Set your fiscal year end in Settings if it isn't December.</p>
-          <table>
+          <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="bs-equity-body"></tbody>
             <tfoot>
@@ -1754,7 +1755,7 @@
             <button type="submit">Update</button>
           </form>
           <p id="cf-banner"></p>
-          <table>
+          <table class="report">
             <thead><tr><th>Activity</th><th>Amount</th></tr></thead>
             <tbody id="cash-flow-body"></tbody>
             <tfoot><tr><th>Net change in cash</th><th id="cf-net-change"></th></tr></tfoot>

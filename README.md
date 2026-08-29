@@ -94,6 +94,19 @@ Two things are specific to this module rather than inherited from the other four
 
 **Stack**: Node.js 22 + Express + Sequelize (SQLite/Postgres), plain JavaScript (ESM, no build step/TypeScript compile) so `docker run`/`node src/server.js` is all it takes to run it, matching the no-build-step philosophy of the frontend it's paired with.
 
+**Design** ([`DESIGN.md`](DESIGN.md)): both surfaces -- the product
+(`backend/public/styles.css`) and the marketing site
+(`website/src/index.css`) -- are drawn from one token system defined there.
+Read it before changing anything visual. The short version: it looks like a
+printed financial statement rather than a banking app, because a controller
+is personally accountable when a number is wrong, and trust in that job
+comes from the profession's own reference material. Warm paper, one oxblood
+accent, Fraunces over Geist, hairline rules instead of shadows, and
+spacious density with checkable floors (52px table rows, 32px panel
+padding). Fonts are self-hosted woff2 under `fonts/`, mirrored into each
+surface's own public directory, so no page makes a cross-origin font
+request.
+
 ## Running locally
 
 Requires Node.js 20+, and the Tesseract + Poppler system binaries for OCR:

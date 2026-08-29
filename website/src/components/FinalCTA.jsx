@@ -4,34 +4,38 @@ import { trackEvent } from "../lib/analytics.js";
 
 export default function FinalCTA({ onOpenContact }) {
   return (
-    <section id="final-cta" className="py-16">
-      <Reveal className="glass-tint mx-auto flex max-w-content flex-col items-center rounded-3xl px-7 py-12 text-center">
-        <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
-          Get started
-        </span>
-        <h2 className="mt-4 text-[2.2rem]">Stop retyping invoices.</h2>
-        <p className="mt-3 max-w-[520px] text-[1rem] text-paper-dim">
-          Get started free, no card required, or talk to us if you've got a real pile of invoices and want to build
-          the matching rules around them together.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-          <a
-            href={APP_URL}
-            onClick={() => trackEvent("cta_click", { cta: "final_cta_primary" })}
-            className="rounded-xl bg-gradient-to-b from-blue to-blue-deep px-7 py-3.5 font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
-          >
-            Get started
-          </a>
-          <button
-            type="button"
-            onClick={() => {
-              trackEvent("cta_click", { cta: "final_cta_contact" });
-              onOpenContact();
-            }}
-            className="font-medium text-blue-bright underline decoration-blue/30 underline-offset-4 hover:text-blue-deep"
-          >
-            Talk to us about a design partnership →
-          </button>
+    <section id="final-cta" className="py-2xl md:py-3xl">
+      <Reveal className="mx-auto max-w-content px-lg md:px-xl">
+        <div className="border-t border-rule pt-2xl">
+          <div className="grid gap-xl md:grid-cols-[1fr_auto] md:items-end md:gap-3xl">
+            <div>
+              <span className="label">Get started</span>
+              <h2 className="section-title mt-md max-w-[18ch]">Close the month with nothing left unexplained.</h2>
+              <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
+                Free to start, no card required. Or talk to us if you have a real set of books to move across and
+                want the chart of accounts and matching rules built around them.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-md md:flex-col md:items-stretch">
+              <a
+                href={APP_URL}
+                onClick={() => trackEvent("cta_click", { cta: "final_cta_primary" })}
+                className="btn-primary px-xl py-md"
+              >
+                Get started free
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  trackEvent("cta_click", { cta: "final_cta_contact" });
+                  onOpenContact();
+                }}
+                className="btn-secondary px-xl py-md"
+              >
+                Talk to us
+              </button>
+            </div>
+          </div>
         </div>
       </Reveal>
     </section>

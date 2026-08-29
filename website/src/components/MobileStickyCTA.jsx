@@ -25,12 +25,12 @@ export default function MobileStickyCTA() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
           transition={{ duration: 0.25 }}
-          className="fixed inset-x-0 bottom-0 z-40 border-t border-line-soft bg-white/95 p-3 backdrop-blur md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 border-t border-rule bg-paper p-md md:hidden"
         >
           <a
             href={APP_URL}
             onClick={() => trackEvent("cta_click", { cta: "mobile_sticky" })}
-            className="block rounded-xl bg-gradient-to-b from-blue to-blue-deep py-3 text-center font-semibold text-white shadow-md"
+            className="btn-primary w-full py-md"
           >
             Get started free
           </a>

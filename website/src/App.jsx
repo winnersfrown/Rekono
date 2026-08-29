@@ -20,11 +20,14 @@ export default function App() {
     // component in this tree relies on: it makes every motion.* element
     // resolve straight to its end state, with no transition, whenever the
     // OS-level prefers-reduced-motion is set -- so no individual component
-    // needs its own manual check (see Reveal.jsx and Hero.jsx's comments).
+    // needs its own manual check (see Reveal.jsx).
+    //
+    // The decorative colour blobs and blueprint grid that used to sit
+    // behind everything here are gone. They existed to give the glass
+    // panels something to refract; there are no glass panels now, and a
+    // ruled page on warm paper wants nothing floating behind it.
     <MotionConfig reducedMotion="user">
-      <div className="bg-field" aria-hidden />
-      <div className="bg-grid" aria-hidden />
-      <div id="top" className="relative z-[1]">
+      <div id="top">
         <Nav />
         <main>
           <Hero />
