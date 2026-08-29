@@ -65,6 +65,11 @@ when they are both absent and empty. Absent and empty means absent.
 
 ## v1.39
 
+*Landed in the same pull request as v1.40, so `git log` on `main` shows one
+squash commit for the two. They are separate entries here because they are
+separate changes: this one is about what an invoice says, the next is about
+how the chart of accounts is arranged.*
+
 Everything between the subtotal and the total.
 
 The extraction schema went subtotal, tax, total, with nothing in between.
