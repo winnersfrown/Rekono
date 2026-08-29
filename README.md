@@ -457,6 +457,30 @@ With both configured, OpenRouter wins; set `LLM_PROVIDER=gemini` to override. Wi
 
 `tests/llm.test.js` covers the OpenRouter adapter against a stubbed `fetch`: the request shape it builds (OpenAI-style `tools`, forced `tool_choice`, the schema passed through untouched), parsing arguments that arrive as a JSON string rather than an object, HTTP and body-level errors (OpenRouter reports some upstream failures with a `200`), the retry, and the abort on timeout.
 
+#### Any OpenAI-compatible endpoint
+
+Nothing in that adapter is actually OpenRouter-specific past the two attribution headers — it is a plain `POST /chat/completions` with a bearer token. So `OPENAI_COMPATIBLE_BASE_URL` redirects it anywhere that speaks the same dialect: a self-hosted gateway (LiteLLM, OmniRoute), a local runtime (vLLM, Ollama, llama.cpp), or an Azure deployment. Give it the base, without `/chat/completions`:
+
+```bash
+OPENAI_COMPATIBLE_BASE_URL=http://127.0.0.1:20128/v1 \
+OPENROUTER_API_KEY=whatever-that-gateway-wants \
+OPENROUTER_MODEL=the-model-slug-it-uses \
+LLM_PROVIDER=openrouter \
+node scripts/check-llm.mjs
+```
+
+`OPENROUTER_MODEL` still names the model and it still has to support tool/function calling. Errors name the host they came from, so a failure against a gateway on localhost doesn't report itself as "OpenRouter request failed".
+
+**Self-hosted gateways: read this first.** A gateway is not a neutral pipe. It terminates your provider credentials and it sees every prompt — which, for this app, means the contents of customer invoices: vendor names, amounts, bank details. That is a real trust decision, not a config detail, and it deserves the same scrutiny as picking a subprocessor.
+
+Check at minimum, before pointing production at one:
+
+- **Does it ship fixed secrets?** Some do. A signing or encryption key that is identical in every copy of the package is public by construction, and any at-rest encryption keyed on it is decorative. Grep the package for a committed `.env` and compare it against what the process actually loads at runtime — a value the installer *documents* as generated is not necessarily a value it *generates*.
+- **What does it bind by default,** and does exposing the port to your app also expose its admin dashboard?
+- **Where does an unrouted request go?** A router with a fallback chain can silently send a document to a provider you never chose.
+
+None of that argues against self-hosting — a gateway you have actually read is a good way to keep keys out of the app and switch models without a deploy. It argues against adopting one on the strength of a star count.
+
 ### Contact form email (Resend)
 
 `POST /api/contact` sends through [Resend](https://resend.com) and needs `RESEND_API_KEY` set, or it responds `503` (the marketing site's contact modal falls back to a `mailto:` link automatically when that happens, so the form degrading gracefully doesn't mean visitors are stuck).

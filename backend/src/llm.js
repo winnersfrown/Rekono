@@ -27,7 +27,26 @@ import { settings } from "./config.js";
 export const LLM_TIMEOUT_MS = 60_000;
 export const LLM_MAX_ATTEMPTS = 2; // original call + one retry
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Built from settings rather than a module constant, so a test (or a
+// process that reloads config) sees a changed base URL instead of whatever
+// the first import happened to capture. The trailing slash is trimmed so
+// both "…/v1" and "…/v1/" produce the same endpoint.
+function chatCompletionsUrl() {
+  return `${settings.openrouterBaseUrl.replace(/\/+$/, "")}/chat/completions`;
+}
+
+// What to call this endpoint in an error message. "OpenRouter request
+// failed" is actively misleading when the base URL points at a gateway on
+// localhost, and the host is the one detail that tells somebody which box
+// to go and look at.
+export function openaiCompatibleLabel() {
+  try {
+    const { host } = new URL(settings.openrouterBaseUrl);
+    return host === "openrouter.ai" ? "OpenRouter" : host;
+  } catch {
+    return settings.openrouterBaseUrl || "the OpenAI-compatible endpoint";
+  }
+}
 
 function geminiReady() {
   return Boolean(settings.geminiApiKey);
@@ -93,7 +112,7 @@ async function openrouterFetch(body, timeoutMs = LLM_TIMEOUT_MS) {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeoutMs);
     try {
-      const res = await fetch(OPENROUTER_URL, {
+      const res = await fetch(chatCompletionsUrl(), {
         method: "POST",
         signal: abort.signal,
         headers: {
@@ -110,7 +129,7 @@ async function openrouterFetch(body, timeoutMs = LLM_TIMEOUT_MS) {
       try {
         payload = JSON.parse(text);
       } catch {
-        throw new Error(`OpenRouter returned a non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
+        throw new Error(`${openaiCompatibleLabel()} returned a non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
       }
 
       // OpenRouter reports upstream provider failures in the body with a
@@ -118,11 +137,11 @@ async function openrouterFetch(body, timeoutMs = LLM_TIMEOUT_MS) {
       // failed call reads as an empty success.
       if (!res.ok || payload.error) {
         const detail = payload.error?.message || payload.error || `HTTP ${res.status}`;
-        throw new Error(`OpenRouter request failed: ${detail}`);
+        throw new Error(`${openaiCompatibleLabel()} request failed: ${detail}`);
       }
       return payload;
     } catch (err) {
-      lastError = err.name === "AbortError" ? new Error(`OpenRouter request timed out after ${timeoutMs}ms`) : err;
+      lastError = err.name === "AbortError" ? new Error(`${openaiCompatibleLabel()} request timed out after ${timeoutMs}ms`) : err;
       if (attempt === LLM_MAX_ATTEMPTS) throw lastError;
     } finally {
       clearTimeout(timer);
@@ -179,7 +198,7 @@ export async function callTool({ prompt, tool, maxOutputTokens = 4096, timeoutMs
       // all -- worth distinguishing, since the second is a permanent
       // property of the chosen model rather than a bad roll.
       throw new Error(
-        `OpenRouter model "${settings.openrouterModel}" returned no tool call. If it doesn't support tool/function calling, pick one that does.`
+        `${openaiCompatibleLabel()} model "${settings.openrouterModel}" returned no tool call. If it doesn't support tool/function calling, pick one that does.`
       );
     }
 
@@ -187,7 +206,7 @@ export async function callTool({ prompt, tool, maxOutputTokens = 4096, timeoutMs
       // Arguments arrive as a JSON string here, unlike Gemini's parsed object.
       return JSON.parse(call.function.arguments);
     } catch {
-      throw new Error(`OpenRouter returned tool arguments that aren't valid JSON: ${String(call.function.arguments).slice(0, 200)}`);
+      throw new Error(`${openaiCompatibleLabel()} returned tool arguments that aren't valid JSON: ${String(call.function.arguments).slice(0, 200)}`);
     }
   }
 

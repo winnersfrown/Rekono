@@ -137,6 +137,41 @@ describe("callTool against OpenRouter", () => {
     expect(body.tool_choice).toEqual({ type: "function", function: { name: TOOL.name } });
   });
 
+  // Nothing in this adapter is OpenRouter-specific past the two attribution
+  // headers -- it is plain `POST /chat/completions` with a bearer token. So
+  // the base URL is configurable, and pointing it at a self-hosted
+  // OpenAI-compatible gateway (OmniRoute, LiteLLM, vLLM, Ollama) is a config
+  // change rather than a third provider branch.
+  test("honours a custom OpenAI-compatible base URL", async () => {
+    useOpenRouter();
+    settings.openrouterBaseUrl = "http://127.0.0.1:20128/v1";
+    const spy = stubFetch(async () => toolCallResponse({ name: "widget", count: 2 }));
+
+    await callTool({ prompt: "p", tool: TOOL });
+
+    expect(spy.mock.calls[0][0]).toBe("http://127.0.0.1:20128/v1/chat/completions");
+  });
+
+  test("a trailing slash on the base URL doesn't double up", async () => {
+    useOpenRouter();
+    settings.openrouterBaseUrl = "http://127.0.0.1:20128/v1/";
+    const spy = stubFetch(async () => toolCallResponse({ name: "widget", count: 2 }));
+
+    await callTool({ prompt: "p", tool: TOOL });
+
+    expect(spy.mock.calls[0][0]).toBe("http://127.0.0.1:20128/v1/chat/completions");
+  });
+
+  // "OpenRouter request failed" against a box on localhost sends whoever
+  // reads it to the wrong place entirely.
+  test("names the endpoint it actually called when that isn't OpenRouter", async () => {
+    useOpenRouter();
+    settings.openrouterBaseUrl = "http://127.0.0.1:20128/v1";
+    stubFetch(async () => ({ ok: false, status: 502, text: async () => JSON.stringify({ error: { message: "upstream down" } }) }));
+
+    await expect(callTool({ prompt: "p", tool: TOOL })).rejects.toThrow(/127\.0\.0\.1:20128 request failed: upstream down/);
+  });
+
   test("parses arguments that arrive as a JSON string", async () => {
     useOpenRouter();
     stubFetch(async () => toolCallResponse({ name: "widget", count: 2 }));
