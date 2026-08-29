@@ -4522,10 +4522,24 @@ async function loadProfitAndLoss() {
 function renderProfitAndLoss(data) {
   document.getElementById("pnl-revenue-body").innerHTML = statementAccountRows(data.revenue.accounts);
   document.getElementById("pnl-revenue-total").textContent = fmtMoney(data.revenue.total);
+
+  // The cost-of-revenue block only appears once something is actually
+  // posted there. An org that doesn't separate cost of revenue would
+  // otherwise get an empty table and a "gross profit" line repeating total
+  // revenue, which is a subtotal that tells the reader nothing.
+  const cogs = data.cost_of_revenue ?? { accounts: [], total: 0 };
+  const hasCogs = cogs.accounts.length > 0;
+  document.getElementById("pnl-cogs-section").hidden = !hasCogs;
+  if (hasCogs) {
+    document.getElementById("pnl-cogs-body").innerHTML = statementAccountRows(cogs.accounts);
+    document.getElementById("pnl-cogs-total").textContent = fmtMoney(cogs.total);
+    document.getElementById("pnl-gross-profit").textContent = fmtMoney(data.gross_profit);
+  }
+
   document.getElementById("pnl-expenses-body").innerHTML = statementAccountRows(data.expenses.accounts);
   document.getElementById("pnl-expenses-total").textContent = fmtMoney(data.expenses.total);
 
-  document.getElementById("pnl-pretax").textContent = fmtMoney(data.income_before_taxes);
+  document.getElementById("pnl-operating-income").textContent = fmtMoney(data.operating_income);
   document.getElementById("pnl-tax").textContent = fmtMoney(data.income_tax_expense);
 
   const netIncomeEl = document.getElementById("pnl-net-income");

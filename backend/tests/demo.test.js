@@ -58,6 +58,66 @@ test("each demo login spins up its own isolated org", async () => {
   expect(overlap).toHaveLength(0);
 });
 
+// Until v1.38 the demo seeded the five document pipelines and nothing else,
+// so every accounting tab -- chart of accounts, journal entries, trial
+// balance, income statement, balance sheet -- was empty for anyone clicking
+// into the sandbox. The demo showed the front half of the product and none
+// of the half it is now mostly made of.
+test("demo login pre-populates a working ledger, not just documents", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const accounts = await request(app).get("/api/accounts").set(headers);
+  expect(accounts.body.items.length).toBeGreaterThan(0);
+
+  const entries = await request(app).get("/api/journal-entries").set(headers);
+  expect(entries.body.items.length).toBeGreaterThan(0);
+
+  // The one thing a demo must never show is books that don't balance.
+  const tb = await request(app).get("/api/ledger/trial-balance").set(headers);
+  expect(tb.body.balanced).toBe(true);
+  expect(tb.body.total_debit).toBeGreaterThan(0);
+});
+
+test("the demo's income statement shows a real gross profit", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const pnl = await request(app)
+    .get("/api/statements/profit-and-loss?from=2000-01-01&to=2099-12-31")
+    .set(headers);
+  expect(pnl.status).toBe(200);
+
+  // Seeded with cost of revenue on purpose, so the multi-step statement has
+  // something to separate rather than collapsing to the single-step shape.
+  expect(pnl.body.revenue.total).toBeGreaterThan(0);
+  expect(pnl.body.cost_of_revenue.total).toBeGreaterThan(0);
+  expect(pnl.body.gross_profit).toBeCloseTo(pnl.body.revenue.total - pnl.body.cost_of_revenue.total, 2);
+  expect(pnl.body.operating_income).toBeCloseTo(pnl.body.gross_profit - pnl.body.expenses.total, 2);
+  expect(pnl.body.net_income).toBeGreaterThan(0);
+
+  const bs = await request(app).get("/api/statements/balance-sheet").set(headers);
+  expect(bs.body.balanced).toBe(true);
+});
+
+// The Close tab is the other thing that read as empty. The seed leaves two
+// deliberate gaps -- a month of rent that never posted, and a fixed asset
+// with nothing depreciating it -- so closeAutomation.js has something real
+// to find instead of handing a visitor a clean bill of health that teaches
+// them nothing about what the feature does.
+test("the demo's close suggestions have something real to surface", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const month = new Date().toISOString().slice(0, 7);
+  const res = await request(app).get(`/api/close/suggestions?period_month=${month}`).set(headers);
+  expect(res.status).toBe(200);
+
+  const types = res.body.items.map((i) => i.type);
+  expect(types).toContain("missing_expense");
+  expect(types).toContain("undepreciated_asset");
+});
+
 // Kept last, same reasoning as auth.test.js's rate-limit tests -- exhausts
 // the shared per-file limiter state, so nothing after it needs a fresh call.
 test("demo login rate limits after repeated attempts from the same IP", async () => {
@@ -68,7 +128,9 @@ test("demo login rate limits after repeated attempts from the same IP", async ()
   expect(lastRes.status).toBe(429);
   // Generous timeout: the 20 requests before the limiter trips each seed a
   // whole demo org (invoices, receipts, vendor documents, leases, tax
-  // documents), so this is the most expensive test in the suite by far and
-  // was previously finishing within a few hundred milliseconds of its own
-  // limit whenever the workers were busy.
+  // documents, and since v1.38 around 48 journal entries apiece), so this is
+  // the most expensive test in the suite by far. It runs at roughly 15s of
+  // the 60s here; the headroom is for a busy machine, not for growth -- if
+  // the demo seed gets much heavier, shrink the seed rather than raising
+  // this again.
 }, 60000);

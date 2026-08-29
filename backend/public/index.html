@@ -387,7 +387,7 @@
           </button>
           <button class="tab-btn" data-tab="profitandloss">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
-            Profit &amp; Loss
+            Income Statement
           </button>
           <button class="tab-btn" data-tab="balancesheet">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M3 12h18"/></svg>
@@ -1421,8 +1421,8 @@
         </section>
 
         <section id="tab-profitandloss" class="tab-panel">
-          <h1>Profit &amp; Loss</h1>
-          <p class="hint">Revenue earned minus expenses incurred over the period. Accrual basis -- an approved invoice counts here even before it's paid.</p>
+          <h1>Income Statement</h1>
+          <p class="hint">Revenue earned minus expenses incurred over the period, also called the profit &amp; loss. Accrual basis -- an approved invoice counts here even before it's paid. Presented multi-step: gross profit says whether what you sell makes money, operating income says whether the company around it does.</p>
           <form id="pnl-period-form" class="statement-period">
             <label>From<input type="date" id="pnl-from" /></label>
             <label>To<input type="date" id="pnl-to" /></label>
@@ -1436,19 +1436,44 @@
             <tfoot><tr><th colspan="2">Total revenue</th><th id="pnl-revenue-total"></th></tr></tfoot>
           </table>
 
-          <h3 style="margin-top: 1.5rem;">Expenses</h3>
+          <!-- Hidden entirely when nothing is posted to a cost-of-revenue
+               account: an org that doesn't separate cost of revenue gets the
+               single-step statement it had before, not two empty tables and
+               a gross profit line that just repeats total revenue. -->
+          <div id="pnl-cogs-section" hidden>
+            <h3 style="margin-top: 1.5rem;">Cost of revenue</h3>
+            <table class="report">
+              <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
+              <tbody id="pnl-cogs-body"></tbody>
+              <tfoot><tr><th colspan="2">Total cost of revenue</th><th id="pnl-cogs-total"></th></tr></tfoot>
+            </table>
+
+            <table class="report" style="margin-top: 1rem;">
+              <tbody></tbody>
+              <tfoot><tr><th colspan="2">Gross profit</th><th id="pnl-gross-profit"></th></tr></tfoot>
+            </table>
+          </div>
+
+          <h3 style="margin-top: 1.5rem;">Operating expenses</h3>
           <table class="report">
             <thead><tr><th>Code</th><th>Account</th><th>Amount</th></tr></thead>
             <tbody id="pnl-expenses-body"></tbody>
-            <tfoot><tr><th colspan="2">Total expenses</th><th id="pnl-expenses-total"></th></tr></tfoot>
+            <tfoot><tr><th colspan="2">Total operating expenses</th><th id="pnl-expenses-total"></th></tr></tfoot>
           </table>
 
-          <table style="margin-top: 1.5rem;">
+          <table class="report" style="margin-top: 1.5rem;">
             <tbody>
-              <tr><th colspan="2">Income before income taxes</th><th id="pnl-pretax"></th></tr>
+              <tr><td colspan="2">Operating income</td><td id="pnl-operating-income"></td></tr>
               <tr><td colspan="2">Income tax expense</td><td id="pnl-tax"></td></tr>
             </tbody>
           </table>
+          <!-- Operating income and income before income taxes are the same
+               figure until there is something non-operating to report, so
+               showing both would be two identical numbers with different
+               labels. Only one line is drawn; the note says which figure the
+               provision below is computed against, which is the reason
+               anyone needs the pre-tax number named at all. -->
+          <p class="hint" style="margin-top: 0.5rem;">Operating income is the pre-tax figure the provision below is calculated on. It is also income before income taxes: nothing non-operating is classified separately yet.</p>
 
           <div class="panel" style="margin-top: 1.5rem;">
             <h3>Net income</h3>

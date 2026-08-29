@@ -39,7 +39,9 @@ const PERIOD_MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 // checks already verify automatically -- a manual "review all invoices"
 // checkbox next to an automatic one that measures the same thing is just
 // an invitation to tick the box while the real number says otherwise.
-const DEFAULT_CLOSE_TASKS = [
+// Exported for demoSeed.js, which opens a close period for the sandbox --
+// a second copy of this list would drift from the real one silently.
+export const DEFAULT_CLOSE_TASKS = [
   "Reconcile bank statements to the general ledger",
   "Post accruals for goods received but not yet invoiced",
   "Review aged payables and follow up on anything overdue",

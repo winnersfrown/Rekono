@@ -4,6 +4,84 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.38
+
+The income statement becomes multi-step, and the demo finally has books.
+
+Two things that turned out to be one problem. The income statement already
+existed -- it is the tab labelled Profit & Loss, and since v1.34 it carried
+revenue, expenses, income before taxes, tax and net income. What it did not
+do was separate **cost of revenue** from operating expenses, so it could
+not report gross profit. And it was blank in the demo, along with every
+other accounting tab, which is the more likely reason it read as missing.
+
+**Multi-step.** The statement now walks:
+
+    Revenue
+    less  Cost of revenue        <- subtype cost_of_revenue
+    =     Gross profit
+    less  Operating expenses
+    =     Operating income
+    less  Income tax expense     <- subtype income_tax_expense
+    =     Net income
+
+Each subtotal answers a different question, which is the whole reason to
+separate them: gross profit says whether the thing being sold makes money
+at all, and operating income says whether the company around it does. A
+single-step statement (revenue minus one lump of expenses) cannot tell
+those two failures apart, and that distinction is most of what an investor
+or a lender reads an income statement for.
+
+Cost of revenue is an account **subtype**, not a new account type. It is
+still an expense in every other sense: debit-normal, closes into retained
+earnings, and the trial balance doesn't care. Only the statement treats it
+differently, and it finds it by subtype rather than by name for the same
+reason the tax line does -- an org can rename its accounts and the
+arithmetic must not follow the label.
+
+**Nothing is reclassified behind anyone's back.** An org with no account
+carrying the new subtype has zero cost of revenue, so its gross profit
+equals its revenue, `expenses.total` is the number it always was, and the
+statement collapses back to the single-step one it had before. The UI hides
+the cost-of-revenue block entirely in that case rather than showing an
+empty table and a gross profit line that just repeats total revenue. That
+is what makes this safe to add to live books, and it is the same
+compatibility argument v1.34's tax split made.
+
+`operating_income` and `income_before_taxes` are both in the response and
+are the same figure today. They are kept apart because the moment anything
+non-operating is classified (interest, FX, a one-off gain) they diverge,
+and the tax provision is defined against pre-tax income specifically. The
+UI draws one line and names which figure the provision is computed on,
+rather than printing two identical numbers with different labels.
+
+**The demo now seeds a ledger.** Until now `seedDemoOrg` created the
+Organization directly and never called `seedDefaultChartOfAccounts`, so a
+demo org had zero accounts and zero journal entries. Chart of Accounts,
+Journal Entries, Trial Balance, the income statement, Balance Sheet, Cash
+Flow, the aging reports, the cap table and Close all rendered blank. The
+public sandbox showed the document pipelines and none of the accounting
+that is now most of the product.
+
+It now seeds six months of trading through `postJournalEntry` -- the same
+single write path a real posting uses, so the demo's books are subject to
+the same balance checks a customer's are. Revenue grows month over month,
+cost of revenue tracks it at roughly 38% so gross margin is a number worth
+looking at, receivables are collected the following month so AR and the
+cash flow statement have something real, and an open close period with
+half its checklist ticked means the Close tab shows a close in progress
+instead of "No close period open yet".
+
+Two gaps in that data are deliberate: a month of rent that never posted,
+and a fixed asset with nothing depreciating it. Those are exactly the two
+things `closeAutomation.js` looks for, so the Close tab surfaces genuine
+suggestions rather than handing a visitor a clean bill of health that
+teaches them nothing about what the feature does.
+
+The tab is relabelled **Income Statement**, keeping "profit & loss" in the
+description since both names are in daily use. The tab id stays
+`profitandloss` -- it is in every deep link.
+
 ## v1.37
 
 Back to Bitter and the blue palette, keeping everything else v1.36 built.

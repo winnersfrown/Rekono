@@ -49,6 +49,22 @@ function todayIso() {
 // Expense accounts mirror ExpenseReceipt.EXPENSE_CATEGORIES exactly, so
 // the chart of accounts lines up with the category taxonomy already used
 // everywhere else (ExpenseReceipt.category, Transaction.category).
+// Cost of revenue: the expense of delivering what was sold, as opposed to
+// the cost of running the company. It is a *subtype* rather than a separate
+// account type because it is still an expense in every other sense -- it is
+// debit-normal, it closes into retained earnings, and the trial balance
+// doesn't care. Only the income statement treats it differently, and it
+// does so by subtype for the same reason the tax line does (incomeTax.js):
+// an org can rename its accounts, and the arithmetic must not depend on the
+// label.
+//
+// An org with no account carrying this subtype has zero cost of revenue, so
+// its gross profit equals its revenue and the multi-step statement collapses
+// back to the single-step one it had before. That is what makes this safe to
+// add to an app with live books: nothing is reclassified behind anyone's
+// back, and an existing org's reported figures do not move.
+export const COST_OF_REVENUE_SUBTYPE = "cost_of_revenue";
+
 function defaultAccountsFor() {
   const expenseAccounts = EXPENSE_CATEGORIES.map((name, i) => ({
     code: String(5000 + (i + 1) * 10),
@@ -73,6 +89,11 @@ function defaultAccountsFor() {
     // needs them, and an empty Treasury Stock line on every new org's
     // chart is clutter.
     { code: "4900", name: "Uncategorized Revenue", type: "revenue" },
+    // Ahead of the categorised operating expenses at 5010+, matching the
+    // order it appears in on the statement. Seeded empty rather than left
+    // out: an org that has a cost of revenue needs somewhere obvious to
+    // post it, and one that doesn't sees a zero line the statement omits.
+    { code: "5000", name: "Cost of Revenue", type: "expense", subtype: COST_OF_REVENUE_SUBTYPE },
     ...expenseAccounts,
     { code: "5900", name: "Uncategorized Expense", type: "expense" },
   ];

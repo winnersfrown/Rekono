@@ -34,7 +34,12 @@ import {
   TaxDocument,
   NetWorthAccount,
   NetWorthEntry,
+  Account,
+  ClosePeriod,
+  CloseTask,
 } from "./models/index.js";
+import { postJournalEntry, seedDefaultChartOfAccounts } from "./ledger.js";
+import { DEFAULT_CLOSE_TASKS } from "./routes/close.js";
 
 // ---- minimal hand-rolled single-page PDF builder ----
 // No PDF library dependency for a handful of lines of Helvetica text --
@@ -417,9 +422,165 @@ export async function seedDemoOrg() {
     overallConfidence: 0.58,
   });
 
+  await seedLedger(org, owner);
+  await seedClosePeriod(org, owner);
   await seedNetWorth(owner);
 
   return { org, user: owner };
+}
+
+// ---- the ledger ----
+//
+// Until this existed the demo seeded the five document pipelines and
+// nothing else, which left every accounting tab -- chart of accounts,
+// journal entries, trial balance, income statement, balance sheet, cash
+// flow -- completely empty for anyone clicking into the sandbox. The demo
+// showed the front half of the product and none of the half it is now
+// mostly made of.
+//
+// Everything below goes through postJournalEntry, the same single write
+// path a real posting uses, so the demo's books are subject to exactly the
+// balance checks a customer's are. A seed that inserted journal_lines
+// directly could produce an out-of-balance demo, which is the one thing
+// this product must never show.
+const DEMO_MONTHS = 6;
+
+// A month key `n` months before the seeded "today", so the demo's data
+// slides forward with the calendar rather than aging into a fixed year and
+// eventually showing an income statement with nothing in the period a
+// visitor's date picker defaults to.
+function monthsAgo(n) {
+  const d = new Date();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - n);
+  return d;
+}
+
+function isoDay(monthDate, day) {
+  const y = monthDate.getUTCFullYear();
+  const m = String(monthDate.getUTCMonth() + 1).padStart(2, "0");
+  // Clamped so a "31st" never rolls into the next month on a short one.
+  const lastDay = new Date(Date.UTC(y, monthDate.getUTCMonth() + 1, 0)).getUTCDate();
+  return `${y}-${m}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
+}
+
+async function seedLedger(org, owner) {
+  await seedDefaultChartOfAccounts(org);
+  // The default chart's expense accounts mirror EXPENSE_CATEGORIES exactly
+  // (5010 Travel through 5070 Other), so it has no Rent and no Equipment.
+  // A real org adds them; posting rent to "Other" instead would make the
+  // demo's own close suggestion ("Rent posted in 5 of the last 6 months")
+  // read as nonsense.
+  await Account.bulkCreate([
+    { orgId: org.id, code: "1500", name: "Equipment", type: "asset" },
+    { orgId: org.id, code: "5080", name: "Rent", type: "expense" },
+  ]);
+
+  const accounts = await Account.findAll({ where: { orgId: org.id }, raw: true });
+  const byCode = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
+
+  const cash = byCode["1000"];
+  const ar = byCode["1100"];
+  const revenue = byCode["4900"];
+  const cogs = byCode["5000"];
+  const equity = byCode["3000"];
+
+  const post = (entryDate, memo, lines) =>
+    postJournalEntry(org.id, { entryDate, memo, source: "manual", postedByUserId: owner.id, lines });
+
+  // Opening capital, dated before the reporting window so it lands on the
+  // balance sheet without distorting any month's income statement.
+  const opening = monthsAgo(DEMO_MONTHS);
+  await post(isoDay(opening, 1), "Founder capital contribution", [
+    { accountId: cash, debitCents: 25_000_00 },
+    { accountId: equity, creditCents: 25_000_00 },
+  ]);
+
+  // A fixed asset with nothing depreciating it, which is one of the two
+  // things closeAutomation.js looks for -- so the Close tab's suggestions
+  // have something real to surface instead of an empty list.
+  await post(isoDay(opening, 12), "Server hardware", [
+    { accountId: byCode["1500"], debitCents: 18_000_00 },
+    { accountId: cash, creditCents: 18_000_00 },
+  ]);
+
+  // Six months of trading. Revenue grows, cost of revenue tracks it at
+  // roughly 38% so gross margin is a number worth looking at, and the
+  // operating expenses are the recurring ones a real close chases.
+  const monthly = [
+    { revenue: 41_200_00, cogs: 15_600_00 },
+    { revenue: 46_800_00, cogs: 17_900_00 },
+    { revenue: 44_100_00, cogs: 16_800_00 },
+    { revenue: 52_400_00, cogs: 19_700_00 },
+    { revenue: 58_900_00, cogs: 22_300_00 },
+    { revenue: 63_500_00, cogs: 24_100_00 },
+  ];
+
+  for (let i = 0; i < monthly.length; i += 1) {
+    const month = monthsAgo(DEMO_MONTHS - 1 - i);
+    const { revenue: rev, cogs: cost } = monthly[i];
+
+    // Billed on account, collected the following month -- so Accounts
+    // Receivable carries a real balance and the AR aging report and cash
+    // flow statement both have something to show.
+    await post(isoDay(month, 28), "Consulting fees billed", [
+      { accountId: ar, debitCents: rev },
+      { accountId: revenue, creditCents: rev },
+    ]);
+    if (i > 0) {
+      await post(isoDay(month, 8), "Customer payments received", [
+        { accountId: cash, debitCents: monthly[i - 1].revenue },
+        { accountId: ar, creditCents: monthly[i - 1].revenue },
+      ]);
+    }
+
+    // Cost of revenue: contractor delivery time. This is what makes the
+    // multi-step income statement show a gross profit line rather than
+    // collapsing to the single-step shape.
+    await post(isoDay(month, 25), "Contractor delivery time", [
+      { accountId: cogs, debitCents: cost },
+      { accountId: cash, creditCents: cost },
+    ]);
+
+    for (const [code, cents, memo] of [
+      ["5080", 9_400_00, "Office rent"],
+      ["5040", 1_850_00, "Software subscriptions"],
+      ["5050", 640_00, "Utilities"],
+      ["5030", 415_00, "Office supplies"],
+      ["5010", 2_100_00, "Travel"],
+    ]) {
+      // Rent skips the most recent month on purpose. That is the other
+      // thing closeAutomation.js looks for -- an expense that posted in
+      // most of the window and not in this one -- so the Close tab shows a
+      // genuine "this month is missing something" suggestion rather than a
+      // clean bill of health nobody learns anything from.
+      if (code === "5080" && i === monthly.length - 1) continue;
+      await post(isoDay(month, 5), memo, [
+        { accountId: byCode[code], debitCents: cents },
+        { accountId: cash, creditCents: cents },
+      ]);
+    }
+  }
+}
+
+// An open close period for the current month. Without one the Close tab
+// says "No close period open yet" and stops there, so a visitor never
+// reaches the checklist or the ledger-derived suggestions underneath it --
+// which are the two things that tab exists to show. Half the tasks are
+// ticked so it reads as a close in progress rather than an untouched list.
+async function seedClosePeriod(org, owner) {
+  const period = await ClosePeriod.create({ orgId: org.id, periodMonth: new Date().toISOString().slice(0, 7) });
+  await CloseTask.bulkCreate(
+    DEFAULT_CLOSE_TASKS.map((title, i) => ({
+      closePeriodId: period.id,
+      orgId: org.id,
+      title,
+      position: i,
+      done: i < 3,
+      completedAt: i < 3 ? new Date() : null,
+      completedBy: i < 3 ? owner.email : null,
+    }))
+  );
 }
 
 // The Net Worth tab is personal, not org data, so it hangs off the demo's
