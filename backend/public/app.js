@@ -7178,8 +7178,8 @@ function nwSparklineMarkup(trend) {
     <svg class="nw-sparkline" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id="nw-spark-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.25" />
-          <stop offset="100%" stop-color="var(--blue)" stop-opacity="0" />
+          <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.25" />
+          <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
         </linearGradient>
       </defs>
       <polygon points="0,32 ${points} 100,32" fill="url(#nw-spark-fill)" />
@@ -7241,8 +7241,8 @@ function nwRenderTrend(trend, currentNetWorth) {
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id="nw-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.28" />
-            <stop offset="100%" stop-color="var(--blue)" stop-opacity="0" />
+            <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28" />
+            <stop offset="100%" stop-color="var(--accent)" stop-opacity="0" />
           </linearGradient>
         </defs>
         ${crossesZero ? `<line class="nw-zero-line" x1="0" y1="${zeroY}" x2="100" y2="${zeroY}" />` : ""}

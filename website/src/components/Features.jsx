@@ -1,80 +1,83 @@
 import Reveal from "./Reveal.jsx";
 
-const FEATURES = [
+// A ruled index of what the ledger actually does, in two columns of rows
+// rather than a bento of tinted cards. A card grid asks you to read six
+// boxes in no particular order; a ruled list asks you to scan a schedule,
+// which is the thing this audience does all day.
+const GROUPS = [
   {
-    tag: "Trust",
-    title: "Confidence scoring",
-    body: "Every field carries its own score. A cross-check of line items against the stated total catches what confidence alone misses.",
-    span: "md:col-span-5",
-    tint: true,
+    heading: "The ledger",
+    items: [
+      {
+        title: "Double-entry general ledger",
+        body: "Your own chart of accounts, journal entries that cannot post out of balance, a trial balance, and financial statements built from the entries rather than from a running total kept alongside them.",
+      },
+      {
+        title: "Revenue recognition",
+        body: "ASC 606 performance obligations recognised over their own schedules. The deferred balance is what the schedule says is unrecognised, not a figure maintained by hand.",
+      },
+      {
+        title: "Adjusting and closing entries",
+        body: "Accruals, prepaid amortisation, straight-line depreciation on a schedule, recurring templates, and a year-end close that rolls the P&L into retained earnings and locks the period.",
+      },
+      {
+        title: "Income tax provision",
+        body: "Current tax computed on pre-tax income at your effective rate, never on net income. On a loss the provision floors at zero rather than booking a benefit nobody has agreed to.",
+      },
+    ],
   },
   {
-    tag: "Compliance",
-    title: "Full audit trail",
-    body: "Every extraction, correction, approval, and match decision is logged: who made it, when, and exactly what changed.",
-    span: "md:col-span-7",
-    tint: true,
-  },
-  {
-    tag: "Extraction",
-    title: "Structured, every time",
-    body: "Vendor, invoice number, dates, PO reference, line items, tax, and totals: pulled into one consistent schema regardless of layout.",
-    span: "md:col-span-3",
-  },
-  {
-    tag: "Review",
-    title: "Human review queue",
-    body: "Low-confidence fields are flagged, not shipped. Correct them side by side with the source document in a single pass.",
-    span: "md:col-span-5",
-  },
-  {
-    tag: "Reconciliation",
-    title: "Fuzzy matching engine",
-    body: "Vendor names, amounts, and dates matched against your POs or bank statement, with tolerance rules instead of exact-string demands.",
-    span: "md:col-span-4",
-  },
-  {
-    tag: "Output",
-    title: "Export & sync",
-    body: "CSV and Excel today, built on the same data your ledger needs next. QuickBooks, Xero, and NetSuite sync are on the roadmap.",
-    span: "md:col-span-12",
+    heading: "Equity and payables",
+    items: [
+      {
+        title: "Share register and cap table",
+        body: "Issues, transfers, repurchases and reissues replayed in date order, so a backdated movement is re-derived rather than patched. The register ties out against Common Stock at par.",
+      },
+      {
+        title: "Options and stock compensation",
+        body: "An option pool with fully-diluted ownership, and ASC 718 expense that accrues for service through a cliff even though nothing has vested yet. Forfeiture reverses what was never earned.",
+      },
+      {
+        title: "Invoice and receipt capture",
+        body: "OCR plus structured extraction with per-field confidence and a line-items-against-total cross-check. Low confidence routes to review; a correction teaches the vendor alias for next time.",
+      },
+      {
+        title: "Reconciliation and audit trail",
+        body: "Fuzzy matching against POs and bank statements, a three-way check once goods receipts are uploaded, and an audit log of every extraction, correction, approval and match decision.",
+      },
+    ],
   },
 ];
 
 export default function Features() {
   return (
-    <section id="features" className="py-16">
-      <div className="mx-auto max-w-content px-7">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
-            Features
-          </span>
-          <h2 className="mt-3 text-[2.1rem]">Built for the part of AP automation people don't trust yet.</h2>
-          <p className="mt-3 text-[1rem] text-paper-dim">
-            Every feature here exists because "fully autonomous" isn't a real option for your books. "Flags what
-            needs a human" is.
+    <section id="ledger" className="border-t border-rule bg-paper-sunk py-2xl md:py-3xl">
+      <div className="mx-auto max-w-content px-lg md:px-xl">
+        <Reveal>
+          <div className="rule-head">
+            <span className="label">What's underneath</span>
+          </div>
+          <h2 className="section-title mt-lg max-w-[22ch]">A ledger first, with the AI in front of it.</h2>
+          <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
+            The model reads documents and suggests. It never decides what posts. Everything below is ordinary
+            accounting, done properly, with the extraction feeding it rather than replacing it.
           </p>
         </Reveal>
 
-        <div className="mt-16 grid grid-cols-1 gap-4 md:grid-cols-12">
-          {FEATURES.map((f, i) => (
-            <Reveal
-              key={f.tag}
-              delay={(i % 3) * 0.06}
-              className={`group relative overflow-hidden rounded-2xl p-7 transition-transform duration-300 ease-brand hover:-translate-y-1 ${f.span} ${
-                f.tint ? "glass-tint" : "glass-panel"
-              }`}
-            >
-              {/* A quiet glow that only appears on hover -- interactive
-                  affordance without a persistent gradient competing with
-                  the copy the rest of the time. */}
-              <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-blue/0 blur-3xl transition-colors duration-300 group-hover:bg-blue/20" aria-hidden />
-              <span className="relative font-mono text-[0.7rem] font-semibold uppercase tracking-widest text-blue-bright">
-                {f.tag}
-              </span>
-              <h3 className={`relative mt-2 ${f.tint ? "text-[1.4rem]" : "text-[1.15rem]"}`}>{f.title}</h3>
-              <p className="relative mt-2 max-w-[520px] text-[0.92rem] leading-relaxed text-paper-dim">{f.body}</p>
-            </Reveal>
+        <div className="mt-3xl grid gap-3xl md:grid-cols-2 md:gap-2xl">
+          {GROUPS.map((group, gi) => (
+            <div key={group.heading} className={gi === 1 ? "md:border-l md:border-rule md:pl-2xl" : ""}>
+              <span className="label">{group.heading}</span>
+              <div className="mt-md flex flex-col">
+                {group.items.map((f, i) => (
+                  <Reveal key={f.title} delay={i * 0.03} className="border-t border-rule py-lg">
+                    <h3 className="panel-title">{f.title}</h3>
+                    <p className="mt-sm text-[0.92rem] leading-relaxed text-ink-soft">{f.body}</p>
+                  </Reveal>
+                ))}
+                <div className="border-t border-rule" aria-hidden />
+              </div>
+            </div>
           ))}
         </div>
       </div>

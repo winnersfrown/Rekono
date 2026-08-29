@@ -13,19 +13,19 @@ const PLANS = [
     annualTotal: "$948/yr",
     annualSave: "save $240 (20%)",
     cap: "Up to 150 documents/mo",
-    features: ["14-day free trial", "1 seat", "Extraction + review queue", "CSV / Excel export", "Email support"],
+    features: ["14-day free trial", "1 seat", "Full general ledger", "Extraction + review queue", "CSV / Excel export"],
     featured: false,
   },
   {
     tag: "Growth",
-    badge: "Most Popular",
-    title: "For a small AP team",
+    badge: "Most chosen",
+    title: "For a small finance team",
     monthly: 249,
     annual: 199,
     annualTotal: "$2,388/yr",
     annualSave: "save $600 (20%)",
     cap: "Up to 750 documents/mo",
-    features: ["14-day free trial", "5 seats", "Everything in Starter", "Matching engine + full audit trail", "Priority support"],
+    features: ["14-day free trial", "5 seats", "Everything in Starter", "Matching engine + audit trail", "Priority support"],
     featured: true,
   },
   {
@@ -62,20 +62,21 @@ const PLANS = [
 function PriceTag({ plan, annual }) {
   const value = annual ? plan.annual : plan.monthly;
   return (
-    <div className="mt-4 flex items-baseline gap-1">
+    <div className="mt-md flex items-baseline gap-xs">
       <AnimatePresence mode="wait" initial={false}>
         <motion.span
           key={annual ? "annual" : "monthly"}
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.18 }}
-          className="tabular-nums font-display text-[2.3rem] font-bold text-paper"
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.14 }}
+          className="figures font-display text-[2.4rem] font-semibold leading-none text-ink"
+          style={{ fontVariationSettings: '"opsz" 60' }}
         >
           ${value.toLocaleString()}
         </motion.span>
       </AnimatePresence>
-      <span className="text-[0.85rem] text-muted">{annual ? "/mo, billed annually" : "/mo"}</span>
+      <span className="text-[0.82rem] text-muted">{annual ? "/mo, billed annually" : "/mo"}</span>
     </div>
   );
 }
@@ -84,92 +85,83 @@ export default function Pricing() {
   const [annual, setAnnual] = useState(false);
 
   return (
-    <section id="pricing" className="py-16">
-      <div className="mx-auto max-w-content px-7">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
-            Pricing
-          </span>
-          <h2 className="mt-3 text-[2.1rem]">Flat monthly plans with a document cap.</h2>
-          <p className="mt-3 text-[1rem] text-paper-dim">
-            No per-document metering to watch nervously. Every plan runs the same extraction, review, and matching
-            engine; you're paying for volume and support.
-          </p>
-        </Reveal>
+    <section id="pricing" className="py-2xl md:py-3xl">
+      <div className="mx-auto max-w-content px-lg md:px-xl">
+        <Reveal>
+          <div className="rule-head">
+            <span className="label">Pricing</span>
+          </div>
+          <div className="mt-lg flex flex-col gap-lg md:flex-row md:items-end md:justify-between">
+            <div>
+              <h2 className="section-title max-w-[20ch]">Flat monthly plans with a document cap.</h2>
+              <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
+                No per-document metering to watch nervously. Every plan runs the same ledger, extraction, review and
+                matching engine. You are paying for volume, seats and support.
+              </p>
+            </div>
 
-        <Reveal className="mt-9 flex justify-center">
-          <div role="group" aria-label="Billing period" className="glass-panel inline-flex rounded-full p-1">
-            {[
-              { key: "monthly", label: "Monthly" },
-              { key: "annual", label: "Annual" },
-            ].map((opt) => {
-              const active = (opt.key === "annual") === annual;
-              return (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setAnnual(opt.key === "annual")}
-                  className={`relative flex items-center gap-2 rounded-full px-5 py-2 text-[0.86rem] font-semibold transition-colors ${
-                    active ? "text-white" : "text-paper-dim hover:text-paper"
-                  }`}
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="billing-pill"
-                      transition={{ type: "spring", stiffness: 400, damping: 32 }}
-                      className="absolute inset-0 rounded-full bg-gradient-to-b from-blue to-blue-deep"
-                    />
-                  )}
-                  <span className="relative">{opt.label}</span>
-                  {opt.key === "annual" && (
-                    <span className={`relative rounded-full px-1.5 py-0.5 font-mono text-[0.65rem] ${active ? "bg-white/20" : "bg-green/15 text-green"}`}>
-                      Save 20%
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+            <div role="group" aria-label="Billing period" className="inline-flex self-start border border-rule md:self-end">
+              {[
+                { key: "monthly", label: "Monthly" },
+                { key: "annual", label: "Annual · save 20%" },
+              ].map((opt, i) => {
+                const active = (opt.key === "annual") === annual;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setAnnual(opt.key === "annual")}
+                    aria-pressed={active}
+                    className={`px-lg py-sm text-[0.84rem] font-medium transition-colors ${i === 1 ? "border-l border-rule" : ""} ${
+                      active ? "bg-accent text-white" : "bg-paper-rise text-ink-soft hover:text-ink"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </Reveal>
 
-        <div className="mt-12 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* One ruled band of four columns, divided by hairlines, rather than
+            four cards with a scaled-up featured one. The featured plan is
+            marked by a rule above it and its accent label, not by lifting
+            it off the page. */}
+        <div className="mt-2xl grid grid-cols-1 border-t border-rule sm:grid-cols-2 lg:grid-cols-4">
           {PLANS.map((plan, i) => (
             <Reveal
               key={plan.tag}
-              delay={i * 0.05}
-              className={`relative flex flex-col rounded-2xl p-7 transition-transform duration-300 ease-brand hover:-translate-y-1 ${
-                plan.featured ? "glass-tint scale-[1.03] shadow-lg" : "glass-panel"
+              delay={i * 0.04}
+              className={`flex flex-col border-b border-rule px-lg py-xl sm:px-xl ${
+                i > 0 ? "lg:border-l lg:border-rule" : ""
+              } ${i === 1 ? "sm:border-l sm:border-rule" : ""} ${i === 3 ? "sm:border-l sm:border-rule" : ""} ${
+                plan.featured ? "bg-paper-rise" : ""
               }`}
             >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[0.72rem] font-semibold uppercase tracking-widest text-blue-bright">
-                  {plan.tag}
-                </span>
-                {plan.badge && (
-                  <span className="rounded-full bg-blue px-2 py-0.5 font-mono text-[0.62rem] font-semibold uppercase tracking-wide text-white">
-                    {plan.badge}
-                  </span>
-                )}
+              <div className="flex items-baseline gap-sm">
+                <span className={`label ${plan.featured ? "!text-accent-text" : ""}`}>{plan.tag}</span>
+                {plan.badge && <span className="label !text-accent-text">· {plan.badge}</span>}
               </div>
-              <h3 className="mt-2 text-[1.1rem]">{plan.title}</h3>
+              <h3 className="mt-xs font-body text-[0.98rem] font-medium text-ink-soft">{plan.title}</h3>
 
               <PriceTag plan={plan} annual={annual} />
 
-              <div className="mt-1 h-4 text-[0.76rem] text-muted">
+              <div className="mt-xs h-4 text-[0.76rem] text-muted">
                 {annual && (
                   <span>
-                    {plan.annualTotal}, <span className="text-green">{plan.annualSave}</span>
+                    {plan.annualTotal}, <span className="text-pos">{plan.annualSave}</span>
                   </span>
                 )}
               </div>
 
-              <div className="mt-3 font-mono text-[0.78rem] text-paper-dim">{plan.cap}</div>
+              <div className="code mt-md border-y border-rule-soft py-sm text-[0.78rem] text-ink-soft">{plan.cap}</div>
 
-              <ul className="mt-5 flex flex-1 flex-col gap-2.5">
+              <ul className="mt-lg flex flex-1 flex-col gap-sm">
                 {plan.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[0.86rem] text-paper-dim">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" className="mt-0.5 flex-none text-green">
-                      <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                  <li key={f} className="flex items-start gap-sm text-[0.86rem] text-ink-soft">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="mt-[5px] flex-none text-muted" aria-hidden>
+                      <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                     {f}
                   </li>
@@ -179,11 +171,7 @@ export default function Pricing() {
               <a
                 href={APP_URL}
                 onClick={() => trackEvent("cta_click", { cta: "pricing", plan: plan.tag.toLowerCase(), billing: annual ? "annual" : "monthly" })}
-                className={`mt-7 rounded-xl px-5 py-3 text-center font-semibold transition-transform duration-150 hover:-translate-y-0.5 ${
-                  plan.featured
-                    ? "bg-gradient-to-b from-blue to-blue-deep text-white shadow-md hover:shadow-glow"
-                    : "border border-line text-paper hover:border-blue hover:text-blue-deep"
-                }`}
+                className={`mt-xl py-sm text-center text-[0.9rem] ${plan.featured ? "btn-primary" : "btn-secondary"}`}
               >
                 Get started
               </a>
@@ -191,7 +179,7 @@ export default function Pricing() {
           ))}
         </div>
 
-        <p className="mt-10 text-center text-[0.82rem] text-muted">
+        <p className="mt-xl max-w-measure text-[0.84rem] leading-relaxed text-muted">
           Paid plans include a 14-day free trial. Card required at signup, first charge after the trial ends.
           Upgrading to a higher tier later bills right away, without a new trial.
         </p>

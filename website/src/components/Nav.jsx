@@ -5,17 +5,18 @@ import { trackEvent } from "../lib/analytics.js";
 import Logomark from "./Logomark.jsx";
 
 const LINKS = [
-  { href: "#how-it-works", label: "How It Works" },
-  { href: "#features", label: "Features" },
+  { href: "#the-month", label: "The month" },
+  { href: "#ledger", label: "Ledger" },
   { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
 ];
 
 export default function Nav() {
-  // The header starts fully transparent over the hero (nothing to separate
-  // it from yet) and only picks up the glass treatment once there's real
-  // content passing underneath it to blur -- a glass bar over empty sky
-  // looks like a rendering bug, not a design choice.
+  // The header is on the page ground the whole way down; what changes on
+  // scroll is only whether it carries a rule under it. Over the hero
+  // there's nothing to separate from yet, so there's no rule. The previous
+  // version swapped in a blurred glass bar here -- that read as a floating
+  // consumer app, which is exactly what this identity is not.
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -37,36 +38,36 @@ export default function Nav() {
 
   return (
     <header
-      className={`sticky top-0 z-40 transition-colors duration-300 ${
-        scrolled ? "glass-panel-strong" : "bg-transparent border-b border-transparent"
+      className={`sticky top-0 z-40 bg-paper transition-colors duration-200 ${
+        scrolled || mobileOpen ? "border-b border-rule" : "border-b border-transparent"
       }`}
     >
-      <div className="mx-auto flex max-w-content items-center justify-between px-7 py-4">
-        <a href="#top" className="flex items-center gap-2 font-display text-lg font-bold text-paper">
-          <Logomark className="h-[26px] w-[26px] shadow-glow" />
+      <div className="mx-auto flex max-w-content items-center justify-between gap-lg px-lg py-md md:px-xl">
+        <a href="#top" className="flex items-center gap-sm font-display text-[1.15rem] font-semibold text-ink">
+          <Logomark className="h-[26px] w-[26px]" />
           Rekono
         </a>
 
-        <nav className="hidden items-center gap-7 font-body text-[0.92rem] text-paper-dim md:flex">
+        <nav className="hidden items-center gap-xl text-[0.92rem] text-ink-soft md:flex">
           {LINKS.map((l) => (
-            <a key={l.href} href={l.href} className="transition-colors hover:text-paper">
+            <a key={l.href} href={l.href} className="transition-colors hover:text-accent-text">
               {l.label}
             </a>
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-md md:flex">
           <a
             href={APP_URL}
             onClick={() => trackEvent("cta_click", { cta: "nav_sign_in" })}
-            className="rounded-lg px-4 py-2 text-[0.9rem] font-semibold text-paper-dim transition-colors hover:text-paper"
+            className="text-[0.92rem] font-medium text-ink-soft transition-colors hover:text-ink"
           >
             Sign in
           </a>
           <a
             href={APP_URL}
             onClick={() => trackEvent("cta_click", { cta: "nav_get_started" })}
-            className="rounded-lg bg-gradient-to-b from-blue to-blue-deep px-4 py-2 text-[0.9rem] font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
+            className="btn-primary px-lg py-sm text-[0.9rem]"
           >
             Get started
           </a>
@@ -77,9 +78,9 @@ export default function Nav() {
           aria-label="Toggle menu"
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-paper md:hidden"
+          className="flex h-9 w-9 items-center justify-center rounded text-ink md:hidden"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
             {mobileOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
           </svg>
         </button>
@@ -91,34 +92,34 @@ export default function Nav() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="glass-panel-strong overflow-hidden border-t border-line-soft md:hidden"
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden border-t border-rule-soft bg-paper md:hidden"
           >
-            <nav className="flex flex-col gap-1 px-7 py-4">
+            <nav className="flex flex-col px-lg py-md">
               {LINKS.map((l) => (
                 <a
                   key={l.href}
                   href={l.href}
                   onClick={() => setMobileOpen(false)}
-                  className="rounded-lg px-2 py-2.5 text-[0.95rem] text-paper-dim hover:text-paper"
+                  className="border-b border-rule-soft py-md text-[0.98rem] text-ink-soft"
                 >
                   {l.label}
                 </a>
               ))}
-              <div className="mt-2 flex flex-col gap-2 border-t border-line-soft pt-3">
-                <a
-                  href={APP_URL}
-                  onClick={() => trackEvent("cta_click", { cta: "nav_mobile_sign_in" })}
-                  className="rounded-lg px-2 py-2 text-center font-semibold text-paper-dim"
-                >
-                  Sign in
-                </a>
+              <div className="mt-lg flex flex-col gap-sm">
                 <a
                   href={APP_URL}
                   onClick={() => trackEvent("cta_click", { cta: "nav_mobile_get_started" })}
-                  className="rounded-lg bg-gradient-to-b from-blue to-blue-deep px-2 py-2.5 text-center font-semibold text-white shadow-md"
+                  className="btn-primary py-md"
                 >
                   Get started
+                </a>
+                <a
+                  href={APP_URL}
+                  onClick={() => trackEvent("cta_click", { cta: "nav_mobile_sign_in" })}
+                  className="btn-secondary py-md"
+                >
+                  Sign in
                 </a>
               </div>
             </nav>

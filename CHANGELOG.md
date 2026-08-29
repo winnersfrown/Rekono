@@ -4,6 +4,74 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.36
+
+A new visual identity, applied to both surfaces.
+
+Rekono looked like every other AI-native accounting product: cool blue-grey,
+a geometric sans, translucent glass panels floating on a field of coloured
+blobs, gradient buttons, generous bubble radius. That visual language says
+*this will be easy*. It is the wrong promise for this product. Rekono's
+actual differentiator is the opposite one: it refuses to value an option,
+compute an effective tax rate, or book a tax benefit on a loss. Its
+personality is *we will not guess on your behalf*. A controller is
+personally accountable when a number is wrong, and trust in that job comes
+from looking like the profession's own reference material, not like a
+banking app.
+
+So: **design toward the workpaper, not the wallet.**
+
+- **Warm paper, not cool white.** `#FAF8F4` reads as document at a glance.
+- **Oxblood, not blue.** Ledger binding and legal seal. Blue was Rekono's
+  own colour and is the category default; nobody here owns oxblood.
+- **Fraunces over Geist over Geist Mono.** An optical-sized serif for
+  headings, a neutral sans with real tabular figures for everything that is
+  a number, and a mono reserved for things that are *codes* rather than
+  words -- account numbers, entry references, period labels. All three
+  self-hosted as variable woff2, which also removed the two cross-origin
+  Google Fonts requests the product made in front of first paint.
+- **Hairline rules, not shadows.** A statement is ruled; it is not floated.
+  The glass material and the whole elevation scale are gone. The one
+  remaining shadow is on the one genuinely floating layer, a modal.
+- **Money right-aligns and totals carry a double rule.** Both are real
+  conventions from the printed statement, and the alignment is the single
+  most legible thing you can do to a column of figures -- a left-aligned
+  dollar column cannot be scanned for magnitude at all.
+
+The Render app is also **noticeably more spread out**, which was the
+explicit ask. "Spacious" is defined as three checkable floors rather than a
+feeling: 52px table rows, 32px panel padding, and 96px between sections on
+the marketing site. `DESIGN.md` at the repo root is now the source of truth
+for all of it, and `CLAUDE.md` says to read it before any visual decision.
+
+Two things worth knowing about how this was done:
+
+- The old token `--paper` meant *primary text* and the new one means *page
+  ground*. That collision is why the rename ran through uppercase
+  placeholders rather than an ordered find-and-replace, which would have
+  silently produced dark text on a dark fill in a handful of places. One
+  case still needed a human eye afterwards: the topbar wordmark is a
+  `<button>`, so it inherited the filled button's new white label and went
+  white-on-white until it was given an explicit `color`.
+- The `--glass-*` and `--shadow-*` tokens are neutralised rather than
+  deleted. Around forty selectors still ask for them; redefining the recipe
+  turned every translucent panel opaque in one edit instead of forty, and
+  kept the diff readable.
+
+Also: `--accent` and `--accent-text` are separate tokens on purpose. A fill
+sits against the page ground and a label sits against a panel, and
+lightening a single accent token for a dark theme turns the primary button
+a washed-out pink that reads as *disabled*. The dark palette is specified
+in `DESIGN.md` but deliberately not wired yet -- the product stylesheet
+still holds semi-transparent literals that assume a light ground, so a
+token-only dark block would render half-converted.
+
+The marketing site's copy moved with it, from "invoice extraction" to what
+the product has actually become: a double-entry ledger with the AP work in
+front of it. The hero's artifact is now a trial balance tying out with the
+month's two close exceptions underneath it, which is the thesis of the
+product in one panel.
+
 ## v1.35
 
 Close automation: noticing what a close is missing.

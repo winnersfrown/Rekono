@@ -74,7 +74,7 @@ export default function ContactModal({ open, onClose }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-paper/40 backdrop-blur-sm"
+            className="absolute inset-0 bg-ink/25"
           />
           <motion.div
             initial={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -84,23 +84,23 @@ export default function ContactModal({ open, onClose }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="contact-modal-title"
-            className="glass-panel-strong relative w-full max-w-[440px] rounded-2xl p-7"
+            className="panel relative w-full max-w-[440px] p-xl shadow-modal"
           >
             <button
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-ink-850 hover:text-paper"
+              className="absolute right-md top-md flex h-8 w-8 items-center justify-center rounded text-muted transition-colors hover:text-ink"
             >
               ×
             </button>
-            <h2 id="contact-modal-title" className="text-[1.3rem]">Talk to us</h2>
-            <p className="mt-1.5 text-[0.88rem] text-muted">
+            <h2 id="contact-modal-title" className="panel-title">Talk to us</h2>
+            <p className="mt-sm text-[0.88rem] text-ink-soft">
               Tell us a bit about what you're looking for. We reply within 1 business day.
             </p>
 
-            <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-4">
-              <label className="flex flex-col gap-1.5 text-[0.82rem] font-medium text-paper-dim">
+            <form onSubmit={handleSubmit} className="mt-lg flex flex-col gap-md">
+              <label className="flex flex-col gap-xs text-[0.82rem] font-medium text-ink-soft">
                 Name
                 <input
                   ref={nameRef}
@@ -109,20 +109,20 @@ export default function ContactModal({ open, onClose }) {
                   maxLength={256}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="rounded-lg border border-line bg-white px-3 py-2 text-[0.92rem] text-paper focus:border-blue focus:outline-none focus:ring-2 focus:ring-blue/20"
+                  className="rounded border border-rule bg-paper-rise px-md py-sm text-[0.92rem] text-ink transition-colors focus:border-accent focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1.5 text-[0.82rem] font-medium text-paper-dim">
+              <label className="flex flex-col gap-xs text-[0.82rem] font-medium text-ink-soft">
                 Email
                 <input
                   type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="rounded-lg border border-line bg-white px-3 py-2 text-[0.92rem] text-paper focus:border-blue focus:outline-none focus:ring-2 focus:ring-blue/20"
+                  className="rounded border border-rule bg-paper-rise px-md py-sm text-[0.92rem] text-ink transition-colors focus:border-accent focus:outline-none"
                 />
               </label>
-              <label className="flex flex-col gap-1.5 text-[0.82rem] font-medium text-paper-dim">
+              <label className="flex flex-col gap-xs text-[0.82rem] font-medium text-ink-soft">
                 Message
                 <textarea
                   required
@@ -130,7 +130,7 @@ export default function ContactModal({ open, onClose }) {
                   maxLength={5000}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  className="resize-y rounded-lg border border-line bg-white px-3 py-2 text-[0.92rem] text-paper focus:border-blue focus:outline-none focus:ring-2 focus:ring-blue/20"
+                  className="resize-y rounded border border-rule bg-paper-rise px-md py-sm text-[0.92rem] text-ink transition-colors focus:border-accent focus:outline-none"
                 />
               </label>
               {/* Off-screen, not display:none -- a screen reader still needs
@@ -146,7 +146,7 @@ export default function ContactModal({ open, onClose }) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="mt-1 rounded-xl bg-gradient-to-b from-blue to-blue-deep px-5 py-3 font-semibold text-white shadow-md transition-opacity disabled:opacity-60"
+                className="btn-primary mt-xs py-md transition-opacity disabled:opacity-60"
               >
                 {submitting ? "Sending…" : "Send message"}
               </button>
@@ -154,8 +154,8 @@ export default function ContactModal({ open, onClose }) {
 
             {status && (
               <div
-                className={`mt-4 rounded-lg px-3.5 py-2.5 text-[0.85rem] ${
-                  status.kind === "ok" ? "bg-green/10 text-green" : "bg-amber/10 text-amber"
+                className={`mt-md border px-md py-sm text-[0.85rem] ${
+                  status.kind === "ok" ? "border-pos/30 bg-pos/5 text-pos" : "border-neg/30 bg-neg/5 text-neg"
                 }`}
               >
                 {status.text}

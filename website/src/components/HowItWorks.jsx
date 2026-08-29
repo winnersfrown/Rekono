@@ -1,72 +1,75 @@
 import Reveal from "./Reveal.jsx";
 
+// Numbered because this genuinely is a sequence: a month runs in this
+// order, and step 5 cannot happen before step 4. Numbers that encode
+// nothing are decoration; these encode the order the work has to happen in.
 const STEPS = [
   {
     n: "01",
-    title: "Upload",
-    body: "Drop in a PDF or a photo of an invoice, one at a time or as a batch. It's queued immediately and processed in the background; nothing blocks on the upload.",
-    tag: "async job queue",
+    title: "Capture",
+    body: "Invoices and expense receipts come in as PDFs or photographs. OCR lifts the text, a model parses it into a fixed schema, and every field carries its own confidence. Anything the model is unsure about, or that fails the line-items-against-total cross-check, goes to a review queue instead of straight to the books.",
+    tag: "Extraction · review queue · learned vendor aliases",
   },
   {
     n: "02",
-    title: "Read",
-    body: "OCR lifts the raw text from the page, then a language model parses it into a fixed schema: vendor, dates, PO reference, line items, tax, and totals.",
-    tag: "OCR + structured extraction",
+    title: "Post",
+    body: "Approving an invoice posts a balanced journal entry against your own chart of accounts. Bills and invoices carry their AP and AR sides, recurring templates post rent and subscriptions on schedule, and revenue contracts recognise on their own ASC 606 schedules rather than in one lump.",
+    tag: "Double-entry GL · AR / AP · ASC 606",
   },
   {
     n: "03",
-    title: "Check",
-    body: "Line items are summed and compared against the stated total. Every field also carries its own self-reported confidence score.",
-    tag: "automatic cross-check",
+    title: "Reconcile",
+    body: "Approved documents are fuzzy-matched against uploaded POs and bank statements on vendor name, an amount tolerance you set, and a date window. Upload goods receipts too and the check becomes three-way: ordered, received, billed, with a verdict for each leg.",
+    tag: "Matching engine · three-way check",
   },
   {
     n: "04",
-    title: "Review",
-    body: "Anything below the confidence bar, or that fails the cross-check, lands in the review queue. Source document and extracted fields sit side by side; corrections are one click and get logged.",
-    tag: "human-in-the-loop",
+    title: "Adjust",
+    body: "The entries that only exist at month-end: accruals and prepaid amortisation, straight-line depreciation, stock compensation under ASC 718, and an income tax provision computed on pre-tax income at the rate you supply.",
+    tag: "Adjusting entries · ASC 718 · tax provision",
   },
   {
     n: "05",
-    title: "Reconcile & export",
-    body: "Approved invoices are fuzzy-matched against your PO list or bank statement (vendor name, amount tolerance, date window), then exported to CSV or Excel, or synced onward.",
-    tag: "matching engine + export",
+    title: "Close",
+    body: "The checklist reads the ledger, not the queue. An expense that posted in three of the last four months and not this one is flagged. So is a fixed asset with nothing depreciating it. Neither blocks the close; both make sure the exception is one somebody actually saw. Then the period locks.",
+    tag: "Close suggestions · period lock · year-end close",
   },
 ];
 
 export default function HowItWorks() {
   return (
-    <section id="how-it-works" className="py-16">
-      <div className="mx-auto max-w-content px-7">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <span className="font-mono text-[0.78rem] font-semibold uppercase tracking-widest text-blue-bright">
-            How it works
-          </span>
-          <h2 className="mt-3 text-[2.1rem]">One pipeline, from inbox to reconciled record.</h2>
-          <p className="mt-3 text-[1rem] text-paper-dim">
-            Five steps, in order: each one a real stage the document passes through, not a marketing simplification.
+    <section id="the-month" className="py-2xl md:py-3xl">
+      <div className="mx-auto max-w-content px-lg md:px-xl">
+        <Reveal>
+          <div className="rule-head">
+            <span className="label">The month</span>
+          </div>
+          <h2 className="section-title mt-lg max-w-[20ch]">Five stages, in the order the work happens.</h2>
+          <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
+            Not a marketing simplification of the pipeline. These are the real stages a document and a period pass
+            through, and each one is a screen you can open today.
           </p>
         </Reveal>
 
-        <div className="relative mt-16 flex flex-col gap-10">
-          {/* One continuous rail down the left, behind every step number --
-              a single visual thread tying the five stages into one pipeline
-              instead of five separate cards that happen to be stacked. */}
-          <div className="absolute left-[27px] top-3 bottom-3 hidden w-px bg-line md:block" aria-hidden />
-
+        <div className="mt-3xl flex flex-col">
           {STEPS.map((s, i) => (
-            <Reveal key={s.n} delay={i * 0.05} className="relative flex gap-6 md:gap-8">
-              <div className="relative z-10 flex h-14 w-14 flex-none items-center justify-center rounded-full border border-line bg-white font-display text-lg font-bold text-blue-deep shadow-sm">
-                {s.n}
+            <Reveal
+              key={s.n}
+              delay={i * 0.04}
+              // A ruled schedule: one hairline per row, the number in its
+              // own narrow column on the left. No cards, no rail, no
+              // circles -- the alignment does the work a container used to.
+              className="grid gap-md border-t border-rule py-xl md:grid-cols-[5rem_1fr_16rem] md:gap-xl"
+            >
+              <span className="code text-[1.6rem] leading-none text-accent-text">{s.n}</span>
+              <div>
+                <h3 className="panel-title">{s.title}</h3>
+                <p className="mt-sm max-w-[54ch] text-[0.95rem] leading-relaxed text-ink-soft">{s.body}</p>
               </div>
-              <div className="glass-panel flex-1 rounded-2xl p-6 md:p-7">
-                <h3 className="text-[1.3rem]">{s.title}</h3>
-                <p className="mt-2 max-w-[620px] text-[0.95rem] leading-relaxed text-paper-dim">{s.body}</p>
-                <span className="mt-4 inline-block rounded-full bg-blue/10 px-3 py-1 font-mono text-[0.7rem] font-medium uppercase tracking-wide text-blue-deep">
-                  {s.tag}
-                </span>
-              </div>
+              <span className="label leading-relaxed md:pt-xs">{s.tag}</span>
             </Reveal>
           ))}
+          <div className="border-t border-rule" aria-hidden />
         </div>
       </div>
     </section>

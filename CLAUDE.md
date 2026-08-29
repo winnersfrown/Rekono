@@ -223,3 +223,14 @@ the schedule remainder lands on the last month, why closing entries don't
 double-count. If a future reader would file a bug against a deliberate
 decision, the comment is doing real work. Skip comments that restate the
 code.
+
+## Design System
+
+**Always read `DESIGN.md` before making any visual or UI decision.** Font
+choices, colors, spacing, radius, motion and the aesthetic direction are
+defined there, for both surfaces: `backend/public/styles.css` (the product)
+and `website/src/index.css` (the marketing site). Those two files carry the
+same token names and must agree.
+
+Do not deviate without explicit user approval. In QA or review mode, flag
+any code that doesn't match `DESIGN.md`.

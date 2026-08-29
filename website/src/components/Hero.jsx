@@ -2,131 +2,143 @@ import { motion } from "framer-motion";
 import { APP_URL, DEMO_URL, EASE } from "../lib/constants.js";
 import { trackEvent } from "../lib/analytics.js";
 
-const FIELDS = [
-  { label: "VENDOR_NAME", value: "Dunmore Hardware Co.", conf: 98, flag: false },
-  { label: "PO_REFERENCE", value: "PO-4421", conf: 96, flag: false },
-  { label: "DUE_DATE", value: "02/14/2026", conf: 61, flag: true },
-  { label: "TAX", value: "$4.00", conf: 94, flag: false },
+// The hero's artifact is the workpaper, not a product screenshot and not a
+// floating invoice card: a period's trial balance tying out, with the two
+// exceptions the close found underneath it. That is the thesis of the whole
+// product in one panel -- the books balance, and the software says what is
+// missing rather than deciding for you -- and it is the one thing in this
+// category nobody else puts on their homepage.
+const TRIAL_BALANCE = [
+  { code: "1000", name: "Cash", debit: "412,880.00", credit: "" },
+  { code: "1200", name: "Accounts Receivable", debit: "186,240.00", credit: "" },
+  { code: "2000", name: "Accounts Payable", debit: "", credit: "94,310.00" },
+  { code: "3100", name: "Common Stock", debit: "", credit: "12,500.00" },
+  { code: "4000", name: "Revenue", debit: "", credit: "638,410.00" },
+  { code: "6100", name: "Operating Expenses", debit: "146,100.00", credit: "" },
 ];
 
-function DocMock() {
+const EXCEPTIONS = [
+  {
+    kind: "MISSING_EXPENSE",
+    text: "Rent posted in 4 of the last 4 months (typically $4,000.00) and has nothing in 2026-05.",
+  },
+  {
+    kind: "UNDEPRECIATED_ASSET",
+    text: "Equipment holds $60,000.00 and no recurring entry posts against it.",
+  },
+];
+
+function Workpaper() {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.94, y: 30 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{ duration: 0.7, ease: EASE, delay: 0.15 }}
-      className="glass-panel-strong relative w-full max-w-[420px] rounded-2xl p-6"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: EASE, delay: 0.1 }}
+      className="panel w-full max-w-[560px] overflow-hidden"
     >
-      {/* A slow, continuous drift once the entrance settles -- the one
-          place motion never stops, because this card is the hero's thesis:
-          the product itself, always doing something, not a static
-          screenshot. A separate element from the one animating entrance
-          above, so the two animations (settle once, then drift forever)
-          don't fight over the same transform. Handled by the app-wide
-          <MotionConfig reducedMotion="user"> in App.jsx under
-          prefers-reduced-motion -- an *infinite* animation is exactly the
-          kind that preference exists to stop, and MotionConfig turns this
-          into a no-op automatically rather than needing a manual check. */}
-      <motion.div
-        animate={{ y: [0, -8, 0] }}
-        transition={{ duration: 5, repeat: Infinity, ease: "easeInOut", delay: 0.9 }}
-      >
-        <div className="flex items-start justify-between border-b border-line-soft pb-4">
-          <div>
-            <span className="font-mono text-[0.7rem] uppercase tracking-wide text-muted">Invoice · INV-2026-0007</span>
-            <div className="mt-1 font-display text-lg font-bold text-paper">Dunmore Hardware Co.</div>
-          </div>
-          <span className="font-mono text-[0.7rem] text-muted">01/15/2026</span>
-        </div>
+      <div className="flex items-baseline justify-between border-b border-rule px-lg py-md">
+        <span className="label">Trial balance · 2026-05</span>
+        <span className="label">Unadjusted</span>
+      </div>
 
-        <div className="flex flex-col gap-3 py-4">
-          {FIELDS.map((f, i) => (
-            <motion.div
-              key={f.label}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.5 + i * 0.12, duration: 0.4, ease: EASE }}
-              className="flex items-center justify-between"
-            >
-              <span className="font-mono text-[0.68rem] uppercase tracking-wide text-muted">{f.label}</span>
-              <span className="flex items-center gap-2">
-                <span className="tabular-nums font-mono text-[0.86rem] font-medium text-paper">{f.value}</span>
-                <span
-                  className={`tabular-nums rounded-full px-2 py-0.5 font-mono text-[0.68rem] font-semibold ${
-                    f.flag ? "bg-amber/15 text-amber" : "bg-green/15 text-green"
-                  }`}
-                >
-                  {f.conf}%
-                </span>
-              </span>
-            </motion.div>
+      <table className="w-full border-collapse text-[0.86rem]">
+        <thead>
+          <tr className="border-b border-rule-soft">
+            <th className="label px-lg py-sm text-left font-medium">Account</th>
+            <th className="label py-sm pr-md text-right font-medium">Debit</th>
+            <th className="label py-sm pr-lg text-right font-medium">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {TRIAL_BALANCE.map((row) => (
+            <tr key={row.code} className="border-b border-rule-soft">
+              <td className="px-lg py-sm">
+                <span className="code mr-sm text-muted">{row.code}</span>
+                <span className="text-ink-soft">{row.name}</span>
+              </td>
+              <td className="figures py-sm pr-md text-right text-ink">{row.debit}</td>
+              <td className="figures py-sm pr-lg text-right text-ink">{row.credit}</td>
+            </tr>
           ))}
-        </div>
+          {/* The double rule under a total is a real convention, not
+              decoration: it is how a ruled statement says "this line is
+              the sum of everything above it and nothing is missing". */}
+          <tr className="border-b-4 border-double border-ink/70">
+            <td className="px-lg py-sm">
+              <span className="label">Total</span>
+            </td>
+            <td className="figures py-sm pr-md text-right font-medium text-ink">745,220.00</td>
+            <td className="figures py-sm pr-lg text-right font-medium text-ink">745,220.00</td>
+          </tr>
+        </tbody>
+      </table>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.1, duration: 0.4 }}
-          className="flex items-start gap-2 rounded-lg bg-amber/10 px-3 py-2.5 text-[0.78rem] text-paper-dim"
-        >
-          <span aria-hidden className="text-amber">⚑</span>
-          <span>Due date confidence below threshold, routed to review queue for a one-click check.</span>
-        </motion.div>
+      <div className="flex items-center gap-sm px-lg py-md text-[0.82rem] text-pos">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden className="flex-none">
+          <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        In balance to the cent.
+      </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-line-soft pt-4">
-          <span className="text-[0.8rem] text-muted">Total · cross-checked against line items</span>
-          <span className="tabular-nums font-display text-xl font-bold text-paper">$54.00</span>
-        </div>
-      </motion.div>
+      <div className="border-t border-rule bg-paper-sunk px-lg py-md">
+        <span className="label">Close found 2 exceptions</span>
+        {/* No per-item entrance here. The panel as a whole already fades in
+            once, and staggering two lines of text inside something that is
+            itself still arriving is motion competing with motion. */}
+        <ul className="mt-sm flex flex-col gap-sm">
+          {EXCEPTIONS.map((e) => (
+            <li key={e.kind} className="text-[0.82rem] leading-relaxed text-ink-soft">
+              <span className="code mr-sm text-[0.72rem] text-accent-text">{e.kind}</span>
+              {e.text}
+            </li>
+          ))}
+        </ul>
+      </div>
     </motion.div>
   );
 }
 
 export default function Hero() {
   return (
-    <section className="relative overflow-hidden pt-12 pb-16 md:pt-16 md:pb-20">
-      <div className="mx-auto grid max-w-content items-center gap-14 px-7 md:grid-cols-[1.05fr_0.95fr] md:gap-10">
-        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.65, ease: EASE }}>
-          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white/60 px-3 py-1 font-mono text-[0.76rem] uppercase tracking-widest text-blue-bright">
-            Accounts payable, read by a model, checked by you
-          </span>
-          <h1 className="mt-5 text-[2.6rem] leading-[1.08] md:text-[3.3rem]">
-            Every invoice, read, checked, and reconciled before it touches your books.
-          </h1>
-          <p className="mt-5 max-w-[520px] text-[1.06rem] leading-relaxed text-paper-dim">
-            Rekono turns PDFs and scanned invoices into structured, audited records: extracting vendor, totals, and
-            line items, flagging anything it isn't confident about, and matching each one against your POs or bank
-            statement.
+    <section className="pb-2xl pt-2xl md:pb-3xl md:pt-3xl">
+      <div className="mx-auto grid max-w-content items-start gap-3xl px-lg md:grid-cols-[1.02fr_0.98fr] md:gap-2xl md:px-xl">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE }}>
+          <span className="label">Accrual accounting · Financial close</span>
+          <h1 className="display mt-md">Close the books without guessing.</h1>
+          <p className="mt-lg max-w-measure text-[1.08rem] leading-relaxed text-ink-soft">
+            Rekono is a real double-entry general ledger with the accounts-payable work sitting in front of it.
+            Invoices are read and checked before they post, revenue is recognised on a schedule, and the close tells
+            you what the month is missing before you sign it off.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+
+          <div className="mt-xl flex flex-wrap items-center gap-md">
             <a
               href={APP_URL}
               onClick={() => trackEvent("cta_click", { cta: "hero_primary" })}
-              className="rounded-xl bg-gradient-to-b from-blue to-blue-deep px-6 py-3.5 font-semibold text-white shadow-md transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-glow"
+              className="btn-primary px-xl py-md"
             >
-              Get started free, no card required
+              Get started free
             </a>
-            <a
-              href="#how-it-works"
-              className="rounded-xl border border-line px-6 py-3.5 font-semibold text-paper transition-colors hover:border-blue hover:text-blue-deep"
-            >
-              See how it works
+            <a href="#the-month" className="btn-secondary px-xl py-md">
+              See a month, end to end
             </a>
           </div>
-          <p className="mt-4 font-mono text-[0.78rem] text-muted">AI-powered extraction included, no API key or setup required.</p>
-          <p className="mt-1.5">
+
+          <p className="mt-lg max-w-measure text-[0.86rem] leading-relaxed text-muted">
+            No card required. AI extraction included, no API key to supply.{" "}
             <a
               href={DEMO_URL}
               onClick={() => trackEvent("cta_click", { cta: "hero_demo" })}
-              className="text-[0.9rem] font-medium text-blue-bright underline decoration-blue/30 underline-offset-4 hover:text-blue-deep"
+              className="text-accent-text underline decoration-rule underline-offset-4 transition-colors hover:decoration-accent"
             >
-              Or explore a live demo with sample data, no signup required →
+              Or open the live demo with sample data
             </a>
+            .
           </p>
         </motion.div>
 
         <div className="flex justify-center md:justify-end">
-          <DocMock />
+          <Workpaper />
         </div>
       </div>
     </section>
