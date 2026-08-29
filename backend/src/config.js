@@ -40,6 +40,16 @@ export const settings = {
   // OpenRouter key without a model is treated as unconfigured and says so.
   openrouterApiKey: process.env.OPENROUTER_API_KEY || "",
   openrouterModel: process.env.OPENROUTER_MODEL || "",
+  // Where the OpenAI-dialect calls actually go. It defaults to OpenRouter,
+  // but nothing in the code path is OpenRouter-specific past the headers --
+  // it's plain `POST /chat/completions` with a bearer token. Pointing this
+  // at any other OpenAI-compatible endpoint (a self-hosted gateway like
+  // OmniRoute or LiteLLM, vLLM, Ollama, an Azure deployment) is therefore a
+  // config change rather than a third provider branch in llm.js.
+  //
+  // Give it the base, without the trailing /chat/completions -- llm.js
+  // appends that, so a base with or without a trailing slash both work.
+  openrouterBaseUrl: process.env.OPENAI_COMPATIBLE_BASE_URL || process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
   // Sent as OpenRouter's optional attribution headers, which is also what
   // decides whether this app shows up on their public leaderboards.
   openrouterSiteUrl: process.env.OPENROUTER_SITE_URL || "https://winnersfrown.github.io/Rekono/",

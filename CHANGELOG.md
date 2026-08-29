@@ -4,6 +4,50 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.42
+
+Point the OpenAI-dialect adapter at any endpoint, not just OpenRouter.
+
+Nothing in that adapter was ever OpenRouter-specific past two attribution
+headers -- it is a plain `POST /chat/completions` with a bearer token, and
+the URL was a module constant. `OPENAI_COMPATIBLE_BASE_URL` makes it a
+config value, so a self-hosted gateway (LiteLLM, OmniRoute), a local
+runtime (vLLM, Ollama, llama.cpp) or an Azure deployment is a line in the
+environment rather than a third provider branch in `llm.js`. Everything
+else about that path is unchanged: `OPENROUTER_MODEL` still names the
+model, and it still has to support tool calling.
+
+Two details that only show up once the endpoint isn't OpenRouter:
+
+- The URL is built per call rather than captured at import, so a changed
+  base URL takes effect instead of whichever value the first import saw.
+- Errors name the host they actually came from. "OpenRouter request
+  failed" against a box on localhost sends whoever reads the log to the
+  wrong place entirely.
+
+Verified end to end against a real OmniRoute instance on `127.0.0.1:20128`:
+`scripts/check-llm.mjs` built the request, the gateway answered in OpenAI
+dialect, and the failure surfaced as `127.0.0.1:20128 request failed: No
+active credentials for provider: openai` -- the whole path minus a
+provider key.
+
+**README gains a "Self-hosted gateways: read this first" note**, because
+that experiment turned up something worth writing down. A gateway
+terminates your provider credentials and sees every prompt, which for this
+app means invoice contents. The specific trap: the OmniRoute npm package
+ships a committed `.env` whose `JWT_SECRET` (dashboard session signing) and
+`API_KEY_SECRET` (documented in that same file as encrypting provider keys
+at rest) are byte-identical in every install, and a default `npm i` plus
+`omniroute serve` does not rotate them -- it generates a fresh
+`STORAGE_ENCRYPTION_KEY` and leaves those two alone. It binds localhost by
+default, which contains it; exposing the port would not. That is a
+property of one gateway at one version, so the note asks the general
+question instead: does it ship fixed secrets, what does it bind, and where
+does an unrouted request go?
+
+Nothing here adopts a gateway. It makes using one a config change, and
+says what to check first.
+
 ## v1.41
 
 Remodel both surfaces, and give the product the width it was already
