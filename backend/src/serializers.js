@@ -28,6 +28,33 @@ export function serializeMatchResult(mr) {
   };
 }
 
+// Payments recorded against a bill, summarised for display. Cents are
+// summed as integers and converted once at the end, the same rule the
+// ledger follows -- summing dollars as floats is how a penny goes missing.
+function paymentSummary(inv) {
+  const payments = inv.billPayments || [];
+  const paidCents = payments.reduce((sum, p) => sum + (p.amountCents || 0), 0);
+  const totalCents = Math.round((Number(inv.total) || 0) * 100);
+  return {
+    amount_paid: Math.round(paidCents) / 100,
+    payment_count: payments.length,
+    // "partial" is its own state on purpose: a bill with one of three
+    // instalments against it is neither paid nor unpaid, and collapsing it
+    // into either is how somebody pays a bill twice.
+    payment_status: paidCents <= 0 ? "unpaid" : paidCents + 1 >= totalCents ? "paid" : "partial",
+  };
+}
+
+// A charge as a percentage of the subtotal, to one decimal place. Returns
+// null when there is nothing meaningful to divide by, so a caller can leave
+// the line off rather than render "0.0%" as though it were measured.
+function ratePercent(amount, subtotal) {
+  const a = Number(amount);
+  const base = Number(subtotal);
+  if (!Number.isFinite(a) || !Number.isFinite(base) || base === 0 || !a) return null;
+  return Math.round((Math.abs(a) / Math.abs(base)) * 1000) / 10;
+}
+
 export function serializeInvoiceDetail(inv) {
   return {
     id: inv.id,
@@ -44,8 +71,29 @@ export function serializeInvoiceDetail(inv) {
     po_reference: inv.poReference,
 
     subtotal: inv.subtotal,
+    shipping: inv.shipping,
+    discount: inv.discount,
+    other_charges: inv.otherCharges ?? [],
     tax: inv.tax,
+    payment_terms: inv.paymentTerms,
     total: inv.total,
+
+    // Derived, never stored: a rate is a fact about two figures that are
+    // already on the record, and storing it would give it its own chance to
+    // drift out of step with them. Null rather than 0 when there is no
+    // subtotal to divide by, so the UI can omit the line instead of
+    // printing a confident "0.0%".
+    tax_rate_percent: ratePercent(inv.tax, inv.subtotal),
+    discount_rate_percent: ratePercent(inv.discount, inv.subtotal),
+
+    // Whether the bill has actually been paid, from the payments recorded
+    // against it (accountsPayable.js) rather than from a status flag that
+    // would have to be kept in step with them. Present only where the
+    // caller loaded the association; a detail route that didn't is
+    // reporting "no payments", which is the honest reading of an invoice
+    // whose payments were never fetched only because every detail route
+    // does fetch them.
+    ...paymentSummary(inv),
 
     extraction_method: inv.extractionMethod,
     field_confidence: inv.fieldConfidence,

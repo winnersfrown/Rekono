@@ -4,6 +4,131 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.40
+
+Organize the chart of accounts, and the navigation.
+
+**The chart of accounts is grouped by category and ordered within each
+one**, by two different rules, because the two statements are read
+differently.
+
+Balance sheet accounts (asset, liability, equity) sort by **liquidity**:
+how soon the thing turns into cash, or how soon the obligation comes due.
+Cash, then receivables, then everything else. That is the order every
+balance sheet in the world is printed in, and it is why the traditional
+1000/1100/1500 numbering exists at all -- the codes encode the liquidity
+order. Sorting by code alone gets it right only for an org that follows the
+convention; ranking by subtype first gets it right for an org that doesn't,
+and falls back to the code within each rank.
+
+Income statement accounts (revenue, expense) sort by **the order they were
+added**. There is no natural ordering for them -- one expense is not
+"sooner" than another -- so the honest order is the one the user built.
+Cost of revenue leads and income tax trails, because the statement
+subtotals in that order.
+
+Two smaller things fell out of it. Codes now compare **numerically**, so
+"900" sorts before "1100" instead of after it the way a string compare had
+it. And an account with no code sorts after the ones that have codes: a
+coded account is part of a deliberate structure, an uncoded one was added
+in a hurry.
+
+The Type column is gone from the table, since it repeated on every row what
+the heading above it already said.
+
+**Every account picker is grouped too**, via `<optgroup>`, using the same
+ordering. Forty accounts in one flat `<select>` is a wall of text, and the
+type of the account you want is the first thing you know about it. All
+seven pickers now go through one helper, so the Chart of Accounts page and
+a dropdown can't disagree about the order.
+
+**The top bar menus have section headings.** Accounting held eight
+destinations spanning three different jobs -- the ledger, the statements
+that are views over it, and the equity registers that are a separate book --
+in one undifferentiated column. It is now Ledger / Statements / Equity.
+Workflow splits into Review / Month end, Documents into its action and its
+queues. Labels rather than bare dividers: a rule alone says "these are
+separate" without saying what either group is.
+
+**Upload and the review queue link to each other.** Finishing an upload now
+offers the review queue directly instead of leaving the only route there as
+reopening a menu, and the queue offers the way back.
+
+One bug found on the way, worth recording because the existing suite caught
+it and no amount of reading the diff would have. Adding shipping, discount
+and payment terms to the invoice field map in v1.39 also added them to the
+quick-review queue, which reads a *missing* confidence entry as zero. So
+every invoice grew three extra review rows for charges that were never on
+the document, and a reviewer would have been asked to confirm a shipping
+amount on an invoice with no shipping line. Optional fields are now skipped
+when they are both absent and empty. Absent and empty means absent.
+
+## v1.39
+
+*Landed in the same pull request as v1.40, so `git log` on `main` shows one
+squash commit for the two. They are separate entries here because they are
+separate changes: this one is about what an invoice says, the next is about
+how the chart of accounts is arranged.*
+
+Everything between the subtotal and the total.
+
+The extraction schema went subtotal, tax, total, with nothing in between.
+So `confidence.js`'s cross-check computed `subtotal + tax` and compared it
+to the stated total -- and **every invoice carrying a shipping line failed
+its own cross-check**, had its confidence dragged down for it, and landed
+in the review queue captioned "the numbers don't add up" against a document
+that added up perfectly. The failure was the checker's, not the invoice's.
+
+What the schema now carries:
+
+- **Shipping** and **discount** as their own fields. They are the two that
+  recur on most invoices, and a discount needs to be identifiable on its own
+  to be stated as a percentage of the subtotal.
+- **Other charges** as a labelled list -- handling, service charge,
+  surcharge, deposit applied, "Fuel adjustment". The set is genuinely open,
+  and a charge the schema cannot name is a charge the cross-check cannot
+  reconcile. Signed, so a credit is negative.
+- **Payment terms** as printed: "2/10 n/30", "Net 30", "Due on receipt".
+  Deliberately not parsed into a discount rate and a due date -- the notation
+  has real regional variation, and inventing a due date from a misread term
+  is how a bill gets paid late. It is shown so a human can act on it.
+
+The cross-check is now `subtotal + charges - discount + tax = total`, and
+when it fails it names what it counted (`Subtotal (100) + adjustments (5) +
+tax (8) = 113, but total is 999`) so the disagreement is debuggable from the
+review queue instead of requiring the document.
+
+**Tax and discount percentages** are derived from the figures already on the
+record and shown beside their fields, never stored. A rate is a fact about
+two numbers that are both already there; storing it would give it its own
+chance to drift out of step with them. Null rather than zero when there is
+no subtotal to divide by, so the label omits the parenthetical instead of
+printing a confident "0.0%".
+
+**Whether the bill has been paid** now appears on the invoice, from the
+payments actually recorded against it rather than from a status flag that
+would have to be kept in step with them. "Partially paid" is its own state:
+a bill with one of three instalments against it is neither paid nor unpaid,
+and collapsing it into either is how somebody pays it twice.
+
+Three quieter fixes that were the same bug wearing different hats:
+
+- **The heuristic (no-LLM) extractor reads the new lines too.** Fixing the
+  cross-check only for the LLM path would leave an org running without an
+  API key still failing its own extractions. Shipping and discount are read
+  the way tax already was -- last non-percentage figure on the line -- so
+  "Discount 10% $45.00" yields 45, not 10.
+- **A correction now re-scores the invoice.** The PATCH route never re-ran
+  the cross-check, so a reviewer who supplied the missing shipping amount
+  still saw the old failure on screen. Same complaint, different place.
+- **Quick review was building its own scoring input** and would have omitted
+  the new fields, re-introducing the false failure the moment anyone used
+  it. Both routes now share one `scoringFieldsFor`.
+
+`other_charges` is excluded from quick review on purpose: that flow is one
+scalar field at a time, and a labelled list has no sensible single-value
+prompt. It is corrected in the full detail view.
+
 ## v1.38
 
 The income statement becomes multi-step, and the demo finally has books.

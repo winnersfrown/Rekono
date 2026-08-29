@@ -4,7 +4,7 @@ import { Op, fn, col, where as sequelizeWhere } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { AuditLog, Invoice as InvoiceModel, LineItem, MatchResult } from "../models/index.js";
+import { AuditLog, BillPayment, Invoice as InvoiceModel, LineItem, MatchResult } from "../models/index.js";
 import { serializeAuditLog, serializeInvoiceDetail, serializeInvoiceListItem } from "../serializers.js";
 import { rememberVendorCorrection } from "../vendorAlias.js";
 import { enqueue } from "../jobs.js";
@@ -24,9 +24,16 @@ const router = Router();
 const Invoice = InvoiceModel.scope("withSamples");
 
 async function getOwnedInvoice(invoiceId, orgId, options = {}) {
+  // billPayments comes along so the detail view can say whether the bill is
+  // paid. It is loaded here rather than fetched per serializer call because
+  // every route that returns a detail wants the same answer.
   const invoice = await Invoice.findOne({
     where: { id: invoiceId, orgId },
-    include: [{ model: LineItem, as: "lineItems" }, { model: MatchResult, as: "matchResults" }],
+    include: [
+      { model: LineItem, as: "lineItems" },
+      { model: MatchResult, as: "matchResults" },
+      { model: BillPayment, as: "billPayments" },
+    ],
     order: [[{ model: LineItem, as: "lineItems" }, "position", "ASC"]],
     ...options,
   });
@@ -64,7 +71,11 @@ const FIELD_TO_ATTR = {
   currency: "currency",
   po_reference: "poReference",
   subtotal: "subtotal",
+  shipping: "shipping",
+  discount: "discount",
+  other_charges: "otherCharges",
   tax: "tax",
+  payment_terms: "paymentTerms",
   total: "total",
 };
 
@@ -168,8 +179,23 @@ router.post("/api/invoices/bulk-action", requireAuth, requireActivePlan, async (
 // Fields eligible for quick, one-at-a-time review -- reuses FIELD_TO_ATTR's
 // exact key set (the correction route's own field list below) so both stay
 // in sync automatically.
-const QUICK_REVIEW_FIELDS = Object.keys(FIELD_TO_ATTR);
-const NUMERIC_QUICK_REVIEW_FIELDS = new Set(["subtotal", "tax", "total"]);
+// other_charges is excluded: quick review is one scalar field at a time,
+// and a labelled list has no sensible single-value prompt. It is corrected
+// in the full detail view or not at all.
+const QUICK_REVIEW_FIELDS = Object.keys(FIELD_TO_ATTR).filter((f) => f !== "other_charges");
+const NUMERIC_QUICK_REVIEW_FIELDS = new Set(["subtotal", "shipping", "discount", "tax", "total"]);
+
+// Fields that legitimately are not on every invoice. The queue treats a
+// missing confidence entry as zero, which is right for a field the
+// extractor always reports and wrong for one it only reports when the
+// document has it: an invoice with no shipping line has no shipping
+// confidence, and asking somebody to confirm a charge that isn't on the
+// page is worse than not asking. Absent *and* empty means absent.
+//
+// Deliberately not applied to po_reference, which has always queued when
+// missing. That may or may not be the right behaviour, but it is existing
+// behaviour and changing it is not this release's business.
+const OPTIONAL_QUICK_REVIEW_FIELDS = new Set(["shipping", "discount", "payment_terms"]);
 
 // Flat, one-row-per-low-confidence-field queue across every eligible
 // needs_review invoice in the org -- the point is letting a reviewer
@@ -202,12 +228,16 @@ router.get("/api/invoices/quick-review-queue", requireAuth, requireActivePlan, a
     const items = [];
     outer: for (const inv of invoices) {
       for (const field of QUICK_REVIEW_FIELDS) {
+        const value = inv[FIELD_TO_ATTR[field]];
+        const isEmpty = value === null || value === undefined || value === "";
+        if (OPTIONAL_QUICK_REVIEW_FIELDS.has(field) && isEmpty) continue;
+
         const confidence = inv.fieldConfidence?.[field] ?? 0;
         if (confidence >= threshold) continue;
         items.push({
           invoice_id: inv.id,
           field,
-          value: inv[FIELD_TO_ATTR[field]],
+          value,
           confidence,
           vendor_name: inv.vendorName,
           original_filename: inv.originalFilename,
@@ -312,7 +342,18 @@ const correctionSchema = z.object({
   currency: z.string().nullable().optional(),
   po_reference: z.string().nullable().optional(),
   subtotal: z.number().nullable().optional(),
+  shipping: z.number().nullable().optional(),
+  // Accepted either way round and stored as a magnitude, matching how the
+  // extractor normalises it -- a human correcting "-45" and a human
+  // correcting "45" on a discount line mean the same thing.
+  discount: z.number().nullable().optional(),
+  other_charges: z
+    .array(z.object({ label: z.string().max(128), amount: z.number() }))
+    .max(20)
+    .nullable()
+    .optional(),
   tax: z.number().nullable().optional(),
+  payment_terms: z.string().max(64).nullable().optional(),
   total: z.number().nullable().optional(),
   line_items: z.array(lineItemSchema).nullable().optional(),
 });
@@ -329,9 +370,13 @@ router.patch("/api/invoices/:id", requireAuth, requireActivePlan, async (req, re
     const changed = {};
     for (const [field, attr] of Object.entries(FIELD_TO_ATTR)) {
       if (!(field in payload) || payload[field] === undefined) continue;
-      const newValue = payload[field];
+      // Same normalisation the extractor applies: a discount is stored as
+      // the magnitude to subtract, however it was typed. Doing it here
+      // rather than trusting the client means the arithmetic below and the
+      // cross-check see one representation, not two.
+      const newValue = field === "discount" && payload[field] !== null ? Math.abs(payload[field]) : payload[field];
       const oldValue = invoice[attr];
-      if (String(oldValue ?? "") !== String(newValue ?? "")) {
+      if (JSON.stringify(oldValue ?? null) !== JSON.stringify(newValue ?? null)) {
         changed[field] = { old: oldValue, new: newValue };
         invoice[attr] = newValue;
       }
@@ -372,12 +417,52 @@ router.patch("/api/invoices/:id", requireAuth, requireActivePlan, async (req, re
       }
     }
 
+    // Re-score after a correction. The whole point of letting somebody fix
+    // a field is that the verdict on the document changes; leaving the old
+    // cross-check result on screen after they supplied the missing shipping
+    // amount is the same "it says error on a correct invoice" complaint in
+    // a different place. Status is deliberately untouched -- approving is a
+    // separate, explicit act.
     const fresh = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
+    if (Object.keys(changed).length) {
+      const report = scoreConfidence({
+        fields: scoringFieldsFor(fresh),
+        fieldConfidence: fresh.fieldConfidence,
+        lineItems: (fresh.lineItems || []).map((li) => ({ amount: li.amount, confidence: li.confidence })),
+      });
+      fresh.overallConfidence = report.overallConfidence;
+      fresh.crossCheckPassed = report.crossCheckPassed;
+      fresh.crossCheckDetail = report.crossCheckDetail;
+      await fresh.save();
+    }
     res.json(serializeInvoiceDetail(fresh));
   } catch (err) {
     next(err);
   }
 });
+
+// The extraction-shaped view of a stored invoice, for re-scoring after a
+// human edits it. Kept in one place because it is easy to add a field to
+// the model and forget it here, and the symptom -- a cross-check that
+// silently ignores an amount -- looks like a bug in the arithmetic rather
+// than an omission in a mapping.
+function scoringFieldsFor(invoice) {
+  return {
+    vendor_name: invoice.vendorName,
+    invoice_number: invoice.invoiceNumber,
+    invoice_date: invoice.invoiceDate,
+    due_date: invoice.dueDate,
+    po_reference: invoice.poReference,
+    currency: invoice.currency,
+    subtotal: invoice.subtotal,
+    shipping: invoice.shipping,
+    discount: invoice.discount,
+    other_charges: invoice.otherCharges ?? [],
+    tax: invoice.tax,
+    payment_terms: invoice.paymentTerms,
+    total: invoice.total,
+  };
+}
 
 const quickReviewFieldSchema = z.object({
   field: z.enum(QUICK_REVIEW_FIELDS),
@@ -426,17 +511,7 @@ router.post("/api/invoices/:id/quick-review-field", requireAuth, requireActivePl
     invoice.fieldConfidence = { ...invoice.fieldConfidence, [field]: 1.0 };
 
     const report = scoreConfidence({
-      fields: {
-        vendor_name: invoice.vendorName,
-        invoice_number: invoice.invoiceNumber,
-        invoice_date: invoice.invoiceDate,
-        due_date: invoice.dueDate,
-        po_reference: invoice.poReference,
-        currency: invoice.currency,
-        subtotal: invoice.subtotal,
-        tax: invoice.tax,
-        total: invoice.total,
-      },
+      fields: scoringFieldsFor(invoice),
       fieldConfidence: invoice.fieldConfidence,
       lineItems: (invoice.lineItems || []).map((li) => ({ amount: li.amount, confidence: li.confidence })),
     });

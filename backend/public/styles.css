@@ -300,6 +300,11 @@ button {
   transition: background 0.14s var(--ease), border-color 0.14s var(--ease);
 }
 
+/* A button's label is a phrase, not a paragraph: "Add account" wrapping to
+   two lines inside a flex form row reads as a broken layout. Wider padding
+   since v1.36 made this reachable on the shorter labels. */
+button { white-space: nowrap; }
+
 button:hover { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
 button:active { transform: translateY(0); transition-duration: 0.05s; }
 button:disabled { opacity: 0.55; cursor: default; transform: none; box-shadow: none; }
@@ -432,6 +437,22 @@ th, td {
    padding so a one-line row and a two-line row both clear it and a table
    of short values doesn't collapse into a dense stripe. */
 tbody tr { height: 52px; }
+
+/* A category heading inside the chart of accounts, in the row stream
+   rather than as a separate table per type -- the columns have to keep
+   lining up across the whole chart, which separate tables would not. */
+.account-group-row th {
+  background: var(--paper-sunk);
+  border-top: 1px solid var(--rule);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+tbody tr.account-group-row { height: auto; }
+tbody tr.account-group-row:hover th { background: var(--paper-sunk); cursor: default; }
 
 /* Report tables (anything with a total row in a <tfoot>): the money
    columns right-align and the total carries a double rule. Both are real
@@ -722,6 +743,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .badge.badge-sample { background: rgba(75, 134, 247, 0.14); border-color: rgba(75, 134, 247, 0.3); color: var(--accent-text); }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem 1rem; margin-bottom: 1.2rem; }
+
+/* The derived rate beside a Tax or Discount label. Deliberately quieter
+   than the label it sits next to and not uppercased: it is a note about
+   the figure, not a second field name. */
+.field label .field-rate {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--accent-text);
+  font-weight: 500;
+}
 
 .field label {
   display: block;
@@ -1354,6 +1385,22 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .topnav-trigger[aria-expanded="true"] { color: var(--ink); background: var(--accent-wash); }
 .topnav-chevron { flex: none; opacity: 0.6; transition: transform 0.15s var(--ease); }
 .topnav-trigger[aria-expanded="true"] .topnav-chevron { transform: rotate(180deg); }
+
+/* A section heading inside a top-bar menu. The Accounting menu held eight
+   destinations spanning three different jobs -- the ledger, the statements
+   that are views over it, and the equity registers -- in one flat column.
+   Labels rather than bare dividers: a rule alone says "these are separate"
+   without saying what either group is. */
+.topnav-section {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.7rem 0.6rem 0.3rem;
+}
+.topnav-section:first-child { padding-top: 0.2rem; }
+.topnav-section + .tab-btn { margin-top: 0; }
 
 .topnav-menu {
   position: absolute;

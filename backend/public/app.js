@@ -308,8 +308,9 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
     statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
   } else {
-    statusEl.textContent =
-      uploaded > 1 ? `Uploaded ${uploaded} documents — queued for extraction.` : "Uploaded — queued for extraction.";
+    const what = uploaded > 1 ? `Uploaded ${uploaded} documents` : "Uploaded";
+    statusEl.innerHTML = `${what} — queued for extraction. <button type="button" class="linklike" id="upload-goto-review">Open the review queue →</button>`;
+    document.getElementById("upload-goto-review").addEventListener("click", () => switchTab("review"));
   }
 
   fileInput.value = "";
@@ -590,6 +591,29 @@ function fieldConf(inv, name) {
   return (inv.field_confidence && inv.field_confidence[name]) ?? 0;
 }
 
+// "Tax (6.3% of subtotal)". The rate comes from the server, which derives
+// it rather than storing it; null means there was no subtotal to divide by,
+// and the label omits the parenthetical rather than claiming 0.0%.
+function rateSuffix(percent) {
+  return percent === null || percent === undefined ? "" : ` <span class="field-rate">(${percent}% of subtotal)</span>`;
+}
+
+// The long-tail charges between subtotal and total -- handling, surcharge,
+// deposit applied. Read-only on purpose: it is a labelled list, and a full
+// editor is more UI than the case warrants until somebody needs to correct
+// one. Shown because leaving these out is what made the totals look wrong.
+function otherChargesHtml(charges) {
+  if (!Array.isArray(charges) || !charges.length) return "";
+  const rows = charges
+    .map((c) => `<tr><td>${escapeHtml(c.label)}</td><td>${fmtMoney(c.amount)}</td></tr>`)
+    .join("");
+  return `
+    <table class="line-items-table">
+      <thead><tr><th>Other charges</th><th>Amount</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 function renderDetail(inv) {
   const el = document.getElementById("queue-detail");
 
@@ -644,6 +668,17 @@ function renderDetail(inv) {
   // flagged as a likely double-upload/double-pay risk (see pipeline.js's
   // findDuplicateInvoice), separate from and in addition to the cross-check
   // banner above.
+  // Whether the bill has been paid, from the payments actually recorded
+  // against it. Shown next to the cross-check because "is this correct" and
+  // "have we already paid it" are the two questions somebody opening an
+  // invoice is trying to answer, and the second one is how a bill gets paid
+  // twice when nobody can see the answer.
+  const paymentBanner = !inv.payment_status || inv.payment_status === "unpaid"
+    ? ""
+    : `<div class="cross-check ${inv.payment_status === "paid" ? "pass" : "processing"}">
+        ${inv.payment_status === "paid" ? "✓ Paid" : "◐ Partially paid"} — ${fmtMoney(inv.amount_paid)} of ${fmtMoney(inv.total)} across ${inv.payment_count} payment${inv.payment_count === 1 ? "" : "s"}.
+      </div>`;
+
   const sampleBanner = inv.is_sample_data
     ? `<div class="cross-check processing">This is a sample invoice we added so you'd have something to review right away — it doesn't count toward your plan's usage or show up in your dashboard totals or exports. Delete it whenever you're ready.</div>`
     : "";
@@ -666,6 +701,7 @@ function renderDetail(inv) {
     ${duplicateBanner}
     ${multiInvoiceBanner}
     ${statusBanner}
+    ${paymentBanner}
 
     <div class="detail-grid">
       <div class="field ${lowConf("vendor_name")}"><label>Vendor</label><input id="f-vendor_name" value="${escapeHtml(inv.vendor_name)}" /></div>
@@ -675,9 +711,14 @@ function renderDetail(inv) {
       <div class="field ${lowConf("po_reference")}"><label>PO Reference</label><input id="f-po_reference" value="${escapeHtml(inv.po_reference)}" /></div>
       <div class="field ${lowConf("currency")}"><label>Currency</label><input id="f-currency" value="${escapeHtml(inv.currency)}" /></div>
       <div class="field ${lowConf("subtotal")}"><label>Subtotal</label><input id="f-subtotal" value="${inv.subtotal ?? ""}" /></div>
-      <div class="field ${lowConf("tax")}"><label>Tax</label><input id="f-tax" value="${inv.tax ?? ""}" /></div>
+      <div class="field ${lowConf("shipping")}"><label>Shipping</label><input id="f-shipping" value="${inv.shipping ?? ""}" /></div>
+      <div class="field ${lowConf("discount")}"><label>Discount${rateSuffix(inv.discount_rate_percent)}</label><input id="f-discount" value="${inv.discount ?? ""}" /></div>
+      <div class="field ${lowConf("tax")}"><label>Tax${rateSuffix(inv.tax_rate_percent)}</label><input id="f-tax" value="${inv.tax ?? ""}" /></div>
+      <div class="field ${lowConf("payment_terms")}"><label>Terms</label><input id="f-payment_terms" value="${escapeHtml(inv.payment_terms || "")}" placeholder="2/10 n/30" /></div>
       <div class="field ${lowConf("total")}"><label>Total</label><input id="f-total" value="${inv.total ?? ""}" /></div>
     </div>
+
+    ${otherChargesHtml(inv.other_charges)}
 
     <table class="line-items-table">
       <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead>
@@ -839,7 +880,10 @@ async function saveCorrections(id) {
     po_reference: document.getElementById("f-po_reference").value,
     currency: document.getElementById("f-currency").value,
     subtotal: numOrNull(document.getElementById("f-subtotal").value),
+    shipping: numOrNull(document.getElementById("f-shipping").value),
+    discount: numOrNull(document.getElementById("f-discount").value),
     tax: numOrNull(document.getElementById("f-tax").value),
+    payment_terms: document.getElementById("f-payment_terms").value,
     total: numOrNull(document.getElementById("f-total").value),
     line_items: lineItems,
   };
@@ -4252,13 +4296,26 @@ async function loadAccounts() {
 
 function renderAccounts(data) {
   const body = document.getElementById("accounts-body");
+  // Grouped under a heading per category, in the order the server returned
+  // them -- balance sheet accounts by liquidity, income statement accounts
+  // in the order they were created (ledger.js's sortAccounts). A flat
+  // code-sorted list made you read forty rows to find the one liability
+  // account you wanted, and gave no clue that the ordering meant anything.
+  //
+  // The Type column is gone: it repeats what the heading above the row
+  // already says, on every single row.
+  let lastType = null;
   body.innerHTML = data.items
-    .map(
-      (a) => `
+    .map((a) => {
+      const heading =
+        a.type === lastType
+          ? ""
+          : `<tr class="account-group-row"><th colspan="4">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`;
+      lastType = a.type;
+      return `${heading}
     <tr>
       <td>${escapeHtml(a.code)}</td>
       <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
-      <td>${a.type}</td>
       <td>${a.active ? "Active" : "Inactive"}</td>
       <td>${
         a.active && !a.is_system_account
@@ -4266,8 +4323,8 @@ function renderAccounts(data) {
           : ""
       }</td>
     </tr>
-  `
-    )
+  `;
+    })
     .join("");
   body.querySelectorAll(".account-deactivate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -4339,10 +4396,44 @@ async function loadJournalEntryAccounts() {
   );
 }
 
-function accountOptionsHtml(selectedId) {
-  return journalEntryAccounts
-    .map((a) => `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+// The five account categories, in statement order: balance sheet first
+// (assets, liabilities, equity), then the income statement (revenue,
+// expenses). The server already returns accounts in this order -- see
+// ledger.js's sortAccounts -- so grouping here is only a matter of
+// inserting a heading each time the type changes, never re-sorting.
+const ACCOUNT_TYPE_LABELS = {
+  asset: "Assets",
+  liability: "Liabilities",
+  equity: "Equity",
+  revenue: "Revenue",
+  expense: "Expenses",
+};
+
+// <optgroup> rather than a flat list: an account picker with forty entries
+// is a wall of text, and the type of the account you want is the first
+// thing you know about it.
+function groupedAccountOptionsHtml(accounts, selectedId) {
+  const groups = [];
+  for (const a of accounts) {
+    if (!groups.length || groups[groups.length - 1].type !== a.type) groups.push({ type: a.type, accounts: [] });
+    groups[groups.length - 1].accounts.push(a);
+  }
+  return groups
+    .map(
+      (g) => `<optgroup label="${escapeHtml(ACCOUNT_TYPE_LABELS[g.type] || g.type)}">${g.accounts
+        .map(
+          (a) =>
+            `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escapeHtml(
+              a.code ? `${a.code} - ${a.name}` : a.name
+            )}</option>`
+        )
+        .join("")}</optgroup>`
+    )
     .join("");
+}
+
+function accountOptionsHtml(selectedId) {
+  return groupedAccountOptionsHtml(journalEntryAccounts, selectedId);
 }
 
 function updateJournalEntryBalanceIndicator() {
@@ -4572,9 +4663,7 @@ async function loadIncomeTax() {
   // equity tab uses. Income Taxes Payable is excluded by the API, and
   // excluded here too so it never appears as an option.
   taxAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type) && a.subtype !== "income_taxes_payable");
-  document.getElementById("tax-pay-account").innerHTML = taxAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("tax-pay-account").innerHTML = groupedAccountOptionsHtml(taxAccounts, null);
 }
 
 async function previewIncomeTax() {
@@ -4840,9 +4929,7 @@ async function loadCustomerInvoiceFormData() {
 }
 
 function revenueOptionsHtml() {
-  return ciRevenueAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  return groupedAccountOptionsHtml(ciRevenueAccounts, null);
 }
 
 function updateCustomerInvoiceTotal() {
@@ -5044,9 +5131,7 @@ async function paymentDialog(
   document.getElementById("payment-modal-message").textContent = `Outstanding balance is ${fmtMoney(outstanding)}.`;
   document.getElementById("payment-modal-amount").value = outstanding.toFixed(2);
   document.getElementById("payment-modal-date").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("payment-modal-account").innerHTML = options
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("payment-modal-account").innerHTML = groupedAccountOptionsHtml(options, null);
   const errorEl = document.getElementById("payment-modal-error");
   errorEl.textContent = "";
   errorEl.style.display = "none";
@@ -5209,9 +5294,7 @@ async function loadEquityAccounts() {
   // a credit line). Equity accounts are refused by the API -- funding
   // equity from equity is circular.
   eqAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type));
-  document.getElementById("eq-cash").innerHTML = eqAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("eq-cash").innerHTML = groupedAccountOptionsHtml(eqAccounts, null);
   updateEquityForm();
 }
 
@@ -5709,7 +5792,7 @@ function exerciseDialog(exercisable, { strike = null } = {}) {
   const accountField = document.getElementById("exercise-modal-account-field");
   accountField.style.display = strike ? "" : "none";
   document.getElementById("exercise-modal-account").innerHTML =
-    eqAccounts.map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`).join("") +
+    groupedAccountOptionsHtml(eqAccounts, null) +
     `<option value="">Don't post to the ledger</option>`;
   document.getElementById("exercise-modal-shares").value = String(exercisable);
   document.getElementById("exercise-modal-shares").max = String(exercisable);
@@ -6095,9 +6178,7 @@ async function loadAdjustmentAccounts() {
 }
 
 function recAccountOptions() {
-  return recAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  return groupedAccountOptionsHtml(recAccounts, null);
 }
 
 function updateRecurringBalance() {

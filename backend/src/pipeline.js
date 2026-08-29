@@ -130,7 +130,11 @@ export async function processInvoice(invoiceId) {
     invoice.currency = result.fields.currency || "USD";
     invoice.poReference = result.fields.po_reference || "";
     invoice.subtotal = result.fields.subtotal;
+    invoice.shipping = result.fields.shipping ?? null;
+    invoice.discount = result.fields.discount ?? null;
+    invoice.otherCharges = result.fields.other_charges ?? [];
     invoice.tax = result.fields.tax;
+    invoice.paymentTerms = result.fields.payment_terms || "";
     invoice.total = result.fields.total;
 
     invoice.extractionMethod = result.method;

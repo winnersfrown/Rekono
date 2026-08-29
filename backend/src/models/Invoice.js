@@ -41,6 +41,35 @@ export const Invoice = sequelize.define(
 
     subtotal: { type: DataTypes.FLOAT, allowNull: true },
     tax: { type: DataTypes.FLOAT, allowNull: true },
+
+    // Everything that sits between the subtotal and the total. Until these
+    // existed the schema went straight from subtotal to tax to total, so an
+    // invoice with a shipping line could not be represented at all -- and
+    // the cross-check, which computed subtotal + tax and compared it to the
+    // total, reported a calculation error on a perfectly correct document.
+    //
+    // Shipping and discount get their own columns because they are the two
+    // that recur on most invoices, and because a discount needs to be
+    // identifiable on its own to state it as a percentage of the subtotal.
+    // `otherCharges` catches the long tail (handling, service charge,
+    // surcharge, deposit applied, freight insurance) as [{label, amount}],
+    // so the cross-check can always reconcile to the total no matter what a
+    // vendor decided to put on the page. Amounts there are signed: a credit
+    // is negative.
+    shipping: { type: DataTypes.FLOAT, allowNull: true },
+    // Stored positive and *subtracted*. A vendor writes it as "-25.00" or
+    // "25.00 discount" interchangeably, so normalising the sign at the
+    // boundary means the arithmetic below never has to guess.
+    discount: { type: DataTypes.FLOAT, allowNull: true },
+    otherCharges: { type: DataTypes.JSON, allowNull: false, defaultValue: [] },
+
+    // Free text, as printed: "2/10 n/30", "Net 30", "Due on receipt".
+    // Deliberately not parsed into a discount rate and a due date -- the
+    // notation has real regional variation, and inventing a due date from a
+    // misread term is exactly the kind of guess that ends up paying a bill
+    // late. It is shown so a human can act on it.
+    paymentTerms: { type: DataTypes.STRING(64), allowNull: false, defaultValue: "" },
+
     total: { type: DataTypes.FLOAT, allowNull: true },
 
     rawOcrText: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
