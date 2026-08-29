@@ -27,15 +27,16 @@ export default {
           DEFAULT: "var(--accent)",
           deep: "var(--accent-deep)",
           text: "var(--accent-text)",
+          ink: "var(--accent-ink)",
           wash: "var(--accent-wash)",
         },
         pos: "var(--pos)",
         neg: "var(--neg)",
       },
       fontFamily: {
-        display: ["Fraunces", "Georgia", "Times New Roman", "serif"],
-        body: ["Geist", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
-        mono: ["Geist Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        display: ["Bitter", "Georgia", "Times New Roman", "serif"],
+        body: ["IBM Plex Sans", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       // The 4px scale from DESIGN.md, named so "spacious" is checkable
       // instead of a feeling. 2xl/3xl/4xl are the ones that matter: 96px

@@ -33,29 +33,28 @@ ambiguous, this is the tiebreaker.
 - **Mood:** Precise, quietly authoritative, unhurried. A careful person
   produced this document.
 
-**Why this and not the category default.** Every AI-native accounting
-product sells speed ("zero-day close") and dresses like consumer fintech:
-geometric sans, cool blue-grey, soft shadows, generous radius. That visual
-language says *this will be easy*. Rekono's actual differentiator is the
-opposite: it refuses to value an option, compute a tax rate, or book a
-benefit on a loss. Its personality is *we will not guess on your behalf*.
-A controller is accountable when the numbers are wrong, so trust comes from
-looking like the profession's own reference material, not like a banking
-app. **Design toward the workpaper, not the wallet.**
+**The structure is the argument, not the palette.** What makes this look
+like a workpaper is the ruled schedule, the right-aligned money column, the
+double rule under a total, and the room to breathe. Those hold whatever
+colour and typeface sit on top of them. The palette below is the product's
+own blue, restored by explicit request after a spell in oxblood; the
+layout, spacing and rules underneath it are the ones the editorial pass
+introduced, and they stay.
 
 ## Typography
 
 Three faces, three jobs. Self-hosted as woff2 under `fonts/` (root),
-`website/public/fonts/`, and `backend/public/fonts/` — same
-zero-external-request rule the previous system had.
+`website/public/fonts/`, and `backend/public/fonts/`, so no page makes a
+cross-origin font request.
 
-- **Display/Hero:** **Fraunces** — an optical-sized variable serif. Reads as
-  publication and standard-setting rather than app. Headings only.
-  **Never below 20px, never inside a table.**
-- **Body / UI / Data:** **Geist** — neutral with real character, holds up at
-  small sizes, has tabular lining figures. Money and any aligned column uses
+- **Display/Hero:** **Bitter** — a slab serif with a single weight axis and
+  no optical size, so unlike an optically-sized face there is nothing to set
+  per heading level and no minimum size below which the drawing falls apart.
+  Headings only.
+- **Body / UI / Data:** **IBM Plex Sans** — neutral, holds up at small
+  sizes, has tabular lining figures. Money and any aligned column uses
   `font-variant-numeric: tabular-nums lining-nums`.
-- **Codes / References:** **Geist Mono** — reserved for things that are
+- **Codes / References:** **IBM Plex Mono** — reserved for things that are
   codes rather than words: account numbers, journal entry references, period
   labels (`2026-05`), IDs. Not for prose.
 
@@ -63,9 +62,9 @@ zero-external-request rule the previous system had.
 
 | Role | Size | Notes |
 |---|---|---|
-| Display | `clamp(2.6rem, 5.5vw, 4.1rem)` | `opsz` 120, line-height 1.04 |
-| Section | `clamp(1.6rem, 3vw, 2.15rem)` | `opsz` 60 |
-| Panel title | 1.25rem (20px) | `opsz` 24 -- the floor, not a suggestion |
+| Display | `clamp(2.6rem, 5.5vw, 4.1rem)` | line-height 1.06, -0.022em |
+| Section | `clamp(1.6rem, 3vw, 2.15rem)` | -0.015em |
+| Panel title | 1.2rem marketing / 1.25rem product | sized for the space around it |
 | Body | 0.94rem / 15px base | line-height 1.6 |
 | Table | 0.92rem | rows 52px |
 | Label | 0.68rem | mono, uppercase, 0.1em tracking |
@@ -75,59 +74,59 @@ zero-external-request rule the previous system had.
 **Approach:** restrained. Ink on warm paper, one accent, semantic colors
 held strictly in reserve.
 
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| `--paper` | `#FAF8F4` | `#14161A` | Page ground |
-| `--paper-sunk` | `#F3F0E9` | `#0F1114` | Recessed rows, banners |
-| `--paper-rise` | `#FFFFFF` | `#1B1E23` | Panels, cards |
-| `--ink` | `#14161A` | `#F2EFE9` | Primary text |
-| `--ink-soft` | `#3A3E45` | `#CFCBC3` | Lede, secondary |
-| `--muted` | `#5C5F66` | `#989BA2` | Hints, labels |
-| `--rule` | `#E3DED4` | `#2B2F36` | Borders, dividers |
-| `--rule-soft` | `#EFEBE3` | `#23262C` | Table row dividers |
-| `--accent` | `#7A2E33` | `#8E353B` | Primary button **fill** |
-| `--accent-deep` | `#5E2126` | `#A03F45` | Accent hover |
-| `--accent-text` | `#7A2E33` | `#D99A9B` | Accent **text**, links, tags |
-| `--accent-wash` | `#F2E7E6` | `#2E2022` | Accent backgrounds |
-| `--pos` | `#1F6B4A` | `#5FBF8E` | Gain, reconciled, passing |
-| `--neg` | `#C4462F` | `#E08163` | Loss, out of balance |
-| `--warn` | `#96650F` | `#D9A441` | Flagged, needs a human (product only) |
+| Token | Value | Use |
+|---|---|---|
+| `--paper` | `#F4F7FD` | Page ground |
+| `--paper-sunk` | `#F2F5FB` | Recessed rows, table headers, banners |
+| `--paper-rise` | `#FFFFFF` | Panels, cards |
+| `--paper-deep` | `#E7EDFB` | Pressed/active on a sunk surface (product only) |
+| `--ink` | `#101A33` | Primary text |
+| `--ink-soft` | `#3B4964` | Lede, secondary |
+| `--muted` | `#5B6B8C` | Hints, labels |
+| `--rule` | `#D8E0F2` | Borders, dividers |
+| `--rule-soft` | `#E7ECF7` | Table row dividers |
+| `--accent` | `#4B86F7` | Primary button **fill** |
+| `--accent-deep` | `#1D4ED8` | Accent hover |
+| `--accent-text` | `#2C68D6` | Accent **text**, links, tags |
+| `--accent-ink` | `#101A33` | The **label on** an `--accent` fill |
+| `--accent-wash` | `#E7EDFB` | Accent backgrounds |
+| `--pos` | `#178048` | Gain, reconciled, passing |
+| `--neg` | `#D43A41` | Loss, out of balance |
+| `--warn` | `#96650F` | Flagged, needs a human (product only) |
 
-**The dark column is specified, not wired.** Both surfaces ship light-only
-today. The values above are the palette a dark theme must use when one is
-built; nothing reads them yet, and a `prefers-color-scheme` block that only
-redefined the tokens would leave the product half-converted, because the
-stylesheet still carries semi-transparent literals that assume a light
-ground. Wiring it is its own change, not a side effect of one.
+**Light only.** There is no dark theme, and adding one is its own change:
+the product stylesheet still carries semi-transparent literals that assume
+a light ground, so a `prefers-color-scheme` block that only redefined the
+tokens would leave it half-converted.
 
 **`--warn` exists on the product only.** "Flagged, needs a human" is not a
 loss and not an accent, and folding it into either would lie about what it
 means. The marketing site has nothing to flag, so it doesn't define it.
 
-**Warm paper, not cool white.** The whole category is cool blue-grey. Warm
-`#FAF8F4` reads as document at a glance. It demands discipline in the greys
-or it looks dated.
+**`--accent`, `--accent-text` and `--accent-ink` are three tokens on
+purpose.** They do three jobs no single value can do at once:
 
-**Oxblood, not blue.** Blue is the fintech default and was Rekono's own
-colour. Oxblood is ledger binding and legal seal, and nobody in this
-category owns it.
+- `--accent` is a **fill**. It is light enough that a white label on it
+  measures 3.47:1, which fails AA. Its label is `--accent-ink`, the dark
+  navy, at 4.97:1. On `--accent-deep` (the hover) the fill is dark enough
+  that the label has to flip back to white.
+- `--accent-text` is **text on a light ground**, so it has to be dark
+  enough to pass AA at label sizes. It is one step darker than the
+  palette's own `#2F6FE0`, which measures 4.38:1 on the page ground and
+  misses the bar; `#2C68D6` is visually the same blue and clears it on the
+  page ground, a panel, and a sunk row alike.
 
-**`--accent` and `--accent-text` are separate on purpose.** Found by
-rendering: lightening one accent token for dark mode turns the primary
-button washed-out pink, which reads as *disabled*. A fill sits against the
-page ground and a label sits against a panel; they need opposite treatment.
-Never collapse them back into one.
+Collapsing any two of them puts unreadable text somewhere. Check with a
+contrast calculation, not by eye — 4.38:1 and 4.82:1 look identical.
 
-**Semantic colours never decorate.** Green means gain, red means loss. The
-negative red is deliberately pushed toward orange so it can never be
-mistaken for the oxblood accent. A red-family accent on a destructive
-action needs care: destructive confirmations use `--neg`, not `--accent`.
+**Semantic colours never decorate.** Green means gain, red means loss.
+Destructive confirmations use `--neg`, never `--accent` — unambiguous here,
+since a red confirm against a blue accent reads instantly.
 
-That care extends to what *triggers* a destructive action. In the product,
-the filled accent button means "this is the one thing to do on this
-screen", so anything in a table row (Void, Delete, Retry) is the quiet
-outline button instead. A table whose every row carries a filled oxblood
-button is a wall of accent, and the accent stops meaning anything.
+In the product the filled accent button means "this is the one thing to do
+on this screen", so anything in a table row (Void, Delete, Retry) is the
+quiet outline button instead. A table whose every row carries a filled
+accent button is a wall of accent, and the accent stops meaning anything.
 
 ## Spacing
 
@@ -169,7 +168,9 @@ Concrete floors, so "spacious" is checkable rather than a feeling:
 Never, on either surface: purple or violet gradients; three-column icon
 grids with circles; centered-everything; gradient CTA buttons; uniform
 bubble radius; `system-ui` as a display or body face; soft drop shadows used
-as decoration; decorative use of the semantic green and red.
+as decoration; decorative use of the semantic green and red; a translucent
+blurred "glass" surface (the previous system's material — it read as a
+floating consumer app, which is the one thing this is not).
 
 ## Decisions Log
 
@@ -181,4 +182,7 @@ as decoration; decorative use of the semantic green and red.
 | 2026-08-28 | Dark palette specified but not wired | The product stylesheet still holds semi-transparent literals that assume a light ground; a token-only dark block would render half-converted. |
 | 2026-08-28 | Added `--warn`, product only | The review queue needs a third semantic that is neither gain nor loss. |
 | 2026-08-28 | Glass and shadow tokens neutralised rather than deleted | ~40 selectors ask for `--glass-*` and `--shadow-*`. Redefining the recipe turned every translucent panel opaque in one edit instead of forty, and kept the diff readable. |
-| 2026-08-28 | In-table action buttons are the quiet outline style | A row of filled oxblood buttons is a wall of accent, and Void sits one click from a `--neg` confirmation. |
+| 2026-08-28 | In-table action buttons are the quiet outline style | A row of filled accent buttons is a wall of accent, and Void sits one click from a `--neg` confirmation. |
+| 2026-08-29 | **Reverted to Bitter + IBM Plex on the blue palette** | Explicit user request. Superseded the 2026-08-28 typeface and colour decisions; every other decision in this table stands. |
+| 2026-08-29 | Kept the layout, spacing, rules and marketing copy from the editorial pass | What makes the product read as a workpaper is the ruled schedule, right-aligned money and the room to breathe, none of which depend on the palette. Only the two things asked for changed. |
+| 2026-08-29 | Added `--accent-ink`; darkened `--accent-text` to `#2C68D6` | The blue fill is light enough that white on it is 3.47:1 and fails AA, so the accent's label is the dark navy at 4.97:1. The palette's own `#2F6FE0` is 4.38:1 on the page ground, just under the bar. |

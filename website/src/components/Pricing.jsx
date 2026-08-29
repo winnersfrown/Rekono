@@ -70,8 +70,7 @@ function PriceTag({ plan, annual }) {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.14 }}
-          className="figures font-display text-[2.4rem] font-semibold leading-none text-ink"
-          style={{ fontVariationSettings: '"opsz" 60' }}
+          className="figures font-display text-[2.4rem] font-bold leading-none text-ink"
         >
           ${value.toLocaleString()}
         </motion.span>
@@ -113,7 +112,7 @@ export default function Pricing() {
                     onClick={() => setAnnual(opt.key === "annual")}
                     aria-pressed={active}
                     className={`px-lg py-sm text-[0.84rem] font-medium transition-colors ${i === 1 ? "border-l border-rule" : ""} ${
-                      active ? "bg-accent text-white" : "bg-paper-rise text-ink-soft hover:text-ink"
+                      active ? "bg-accent text-accent-ink" : "bg-paper-rise text-ink-soft hover:text-ink"
                     }`}
                   >
                     {opt.label}

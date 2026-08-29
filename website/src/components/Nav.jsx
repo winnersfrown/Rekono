@@ -43,7 +43,7 @@ export default function Nav() {
       }`}
     >
       <div className="mx-auto flex max-w-content items-center justify-between gap-lg px-lg py-md md:px-xl">
-        <a href="#top" className="flex items-center gap-sm font-display text-[1.15rem] font-semibold text-ink">
+        <a href="#top" className="flex items-center gap-sm font-display text-[1.15rem] font-bold text-ink">
           <Logomark className="h-[26px] w-[26px]" />
           Rekono
         </a>
