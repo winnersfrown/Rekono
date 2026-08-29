@@ -3058,7 +3058,7 @@ function renderClose(data, periods) {
 
   body.innerHTML = `
     <div class="close-banner ${isClosed ? "is-closed" : p.blocking_count ? "is-blocking" : "is-ready"}">
-      ${
+      <p class="close-banner-msg">${
         isClosed
           ? `<strong>${escapeHtml(p.period_month)} is closed.</strong> Signed off by ${escapeHtml(p.closed_by || "—")} on ${
               p.closed_at ? new Date(p.closed_at).toLocaleDateString() : "—"
@@ -3068,35 +3068,37 @@ function renderClose(data, periods) {
             // which is not the number of underlying documents behind them.
             `<strong>${p.blocking_count} check${p.blocking_count === 1 ? "" : "s"} still outstanding.</strong> You can still close with a known exception — whatever is left gets recorded on the audit trail.`
           : `<strong>Everything checks out.</strong> ${p.tasks_remaining ? `${p.tasks_remaining} manual task${p.tasks_remaining === 1 ? "" : "s"} left.` : "Ready to sign off."}`
-      }
+      }</p>
       <button type="button" id="close-toggle-period-btn" data-id="${p.id}" data-action="${isClosed ? "reopen" : "close"}">
         ${isClosed ? "Reopen period" : "Close this period"}
       </button>
     </div>
 
-    <div class="panel">
-      <h3>Automatic checks</h3>
-      <p class="hint">Derived from your data every time this page loads — these can't be ticked off by hand, only resolved.</p>
-      <div class="close-checks">${readinessRows}</div>
+    <div class="panel-columns">
+      <div class="panel">
+        <h3>Automatic checks</h3>
+        <p class="hint">Derived from your data every time this page loads — these can't be ticked off by hand, only resolved.</p>
+        <div class="close-checks">${readinessRows}</div>
+      </div>
+
+      <div class="panel">
+        <h3>Checklist</h3>
+        <ul class="close-tasks">${taskRows || `<li class="hint">No tasks left on this checklist.</li>`}</ul>
+        ${
+          isClosed
+            ? ""
+            : `<form id="close-add-task-form">
+                 <input type="text" id="close-new-task" placeholder="Add a task…" maxlength="512" required autocomplete="off" />
+                 <button type="submit">Add</button>
+               </form>`
+        }
+      </div>
     </div>
 
     <div class="panel" id="close-suggestions-panel">
       <h3>Suggestions</h3>
       <p class="hint">Derived from the ledger, not from the document queue: an expense that posts every month and didn't, or an asset with nothing depreciating it. Suggestions only -- nothing here posts anything or blocks a close.</p>
       <div id="close-suggestions">Looking…</div>
-    </div>
-
-    <div class="panel">
-      <h3>Checklist</h3>
-      <ul class="close-tasks">${taskRows || `<li class="hint">No tasks left on this checklist.</li>`}</ul>
-      ${
-        isClosed
-          ? ""
-          : `<form id="close-add-task-form">
-               <input type="text" id="close-new-task" placeholder="Add a task…" maxlength="512" required autocomplete="off" />
-               <button type="submit">Add</button>
-             </form>`
-      }
     </div>`;
 
   body.querySelectorAll(".close-check[data-tab]:not([disabled])").forEach((b) =>

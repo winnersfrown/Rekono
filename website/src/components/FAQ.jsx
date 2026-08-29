@@ -81,7 +81,10 @@ export default function FAQ() {
   return (
     <section id="faq" className="border-t border-rule bg-paper-sunk py-2xl md:py-3xl">
       <div className="mx-auto grid max-w-content gap-2xl px-lg md:grid-cols-[18rem_1fr] md:gap-3xl md:px-xl">
-        <Reveal>
+        {/* Sticky, so the column beside eight accordion rows isn't blank
+            paper for most of the scroll. The heading stays with whichever
+            question the reader is on. */}
+        <Reveal className="md:sticky md:top-[7rem] md:self-start">
           <div className="rule-head">
             <span className="label">Questions</span>
           </div>

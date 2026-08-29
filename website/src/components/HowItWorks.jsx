@@ -40,15 +40,20 @@ export default function HowItWorks() {
   return (
     <section id="the-month" className="py-2xl md:py-3xl">
       <div className="mx-auto max-w-content px-lg md:px-xl">
+        {/* Masthead: heading left, lede in its own column on the baseline
+            rather than stacked under it. Stacked, the section opened with
+            two short paragraphs down the left and half the row empty. */}
         <Reveal>
           <div className="rule-head">
             <span className="label">The month</span>
           </div>
-          <h2 className="section-title mt-lg max-w-[20ch]">Five stages, in the order the work happens.</h2>
-          <p className="mt-md max-w-measure text-[1rem] leading-relaxed text-ink-soft">
-            Not a marketing simplification of the pipeline. These are the real stages a document and a period pass
-            through, and each one is a screen you can open today.
-          </p>
+          <div className="mt-lg grid gap-lg md:grid-cols-[1fr_minmax(0,28rem)] md:items-end md:gap-3xl">
+            <h2 className="section-title max-w-[20ch]">Five stages, in the order the work happens.</h2>
+            <p className="text-[1rem] leading-relaxed text-ink-soft">
+              Not a marketing simplification of the pipeline. These are the real stages a document and a period pass
+              through, and each one is a screen you can open today.
+            </p>
+          </div>
         </Reveal>
 
         <div className="mt-3xl flex flex-col">
@@ -59,14 +64,21 @@ export default function HowItWorks() {
               // A ruled schedule: one hairline per row, the number in its
               // own narrow column on the left. No cards, no rail, no
               // circles -- the alignment does the work a container used to.
-              className="grid gap-md border-t border-rule py-xl md:grid-cols-[5rem_1fr_16rem] md:gap-xl"
+              //
+              // Three columns, all of them carrying something. The previous
+              // shape was [number][prose][tag] with the prose capped at 54ch
+              // inside a 1fr that was twice that wide, so every row had a
+              // 400px hole in the middle and the tag hung on its own at the
+              // far right edge. Title and tag now share a fixed spine and the
+              // prose takes the rest of the measure.
+              className="grid gap-md border-t border-rule py-2xl md:grid-cols-[4rem_minmax(0,20rem)_minmax(0,1fr)] md:gap-xl"
             >
               <span className="code text-[1.6rem] leading-none text-accent-text">{s.n}</span>
               <div>
                 <h3 className="panel-title">{s.title}</h3>
-                <p className="mt-sm max-w-[54ch] text-[0.95rem] leading-relaxed text-ink-soft">{s.body}</p>
+                <span className="label mt-sm block leading-relaxed">{s.tag}</span>
               </div>
-              <span className="label leading-relaxed md:pt-xs">{s.tag}</span>
+              <p className="max-w-[68ch] text-[1rem] leading-relaxed text-ink-soft">{s.body}</p>
             </Reveal>
           ))}
           <div className="border-t border-rule" aria-hidden />

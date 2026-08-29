@@ -1897,6 +1897,11 @@
         <section id="tab-settings" class="tab-panel">
           <h1>Settings</h1>
 
+          <!-- Ten unrelated panels with no reading order between them. Stacked
+               one per row they made a strip down the left of the window with
+               half the page blank beside it; .panel-columns flows them two-up
+               on a wide screen and back to one below 1000px. -->
+          <div class="panel-columns">
           <div class="panel">
             <h3>Account</h3>
             <form id="settings-account-form">
@@ -2070,6 +2075,7 @@
             <div id="settings-sampling-status" class="hint"></div>
 
             <div id="settings-qa-queue" style="margin-top: 1rem;"></div>
+          </div>
           </div>
         </section>
       </main>

@@ -4,6 +4,64 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.41
+
+Remodel both surfaces, and give the product the width it was already
+drawing at.
+
+**The product had a 760px cap on `.panel`.** That is the wrong thing to
+measure. It kept forms readable, which was its job, but it also meant every
+page that is a stack of panels -- Settings, Close, Export, Team -- drew a
+narrow strip down the left of a 1400px window with 560px of blank paper
+beside it. Wide margins are not the same thing as room; that reads as an
+unfinished layout, which is what "make everything more spread out" was
+actually pointing at.
+
+The cap moved off the panel and onto the panel's *contents*. A field column
+still stops at 760px, because a text input that spans thirteen hundred
+pixels is unusable and prose that does is unreadable. Everything else --
+tables, schedules, checklists -- takes the page. Pages that are a stack of
+independent panels lay them out two-up (`.panel-columns`) instead of
+leaving the second column empty.
+
+The rest of the product pass is the same idea applied a step down:
+
+- **The `--sp-*` scale now exists in the product stylesheet**, not only the
+  marketing one. It was defined in DESIGN.md for both surfaces and
+  implemented on one, so the product's spacing was hand-picked rem values
+  that had drifted from the document -- 0.55rem gaps under a heading that
+  says 24px. Every layout rule touched here reads a named step.
+- **Form labels had no gap at all.** The only rule was the flex row on
+  `<form>`, so Settings read as "Full nameAlex Rivera" in one visual run.
+  Labels stay beside their fields rather than above them, because several
+  of them are sentences with the control set into them ("Flag anything
+  below `[80]`% confidence") and stacking breaks each text run onto its own
+  line.
+- **The review queue's list was the narrow half of the split.** At 1fr
+  against the detail pane's 1.3fr it got 560px, which wrapped almost every
+  real company name onto two lines and pushed the status badge onto the
+  confidence column. The ratio inverts, and vendor gets a fixed share of
+  the table instead of the remainder after three fixed-width columns.
+- **An income statement is one schedule, not four tables.** Each `<table>`
+  was sizing its own columns from its own content, so the account names
+  started at a different x in the revenue section than in cost of revenue,
+  and the amount column stepped left and right down the page. `.report`
+  fixes the code and amount columns as a share of the table.
+- **The dashboard's side column could not hold a filename and its badge on
+  one line**, so `NEEDS_REVIEW` overflowed the panel and sat on the rule.
+  300px, and the filename gets `min-width: 0` so its ellipsis actually
+  engages.
+
+On the **marketing site**, the recurring problem was a layout whose columns
+were not all carrying something. The five-stage schedule ran
+`[number][prose capped at 54ch][tag]` inside a 1fr twice that wide, so
+every row had a 400px hole in the middle and the mono tag hung alone at the
+far right. Title and tag now share a spine and the prose takes the rest of
+the measure. Section heads set their heading and lede side by side on the
+baseline instead of stacking two short paragraphs down the left edge. The
+FAQ's heading column is sticky, so the space beside eight accordion rows
+is the section head rather than blank paper.
+
 ## v1.40
 
 Organize the chart of accounts, and the navigation.
