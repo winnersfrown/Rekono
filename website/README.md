@@ -106,9 +106,9 @@ template's.
 
 The brand mark (`src/components/Logomark.jsx`, and the standalone
 `public/favicon.svg` used for the favicon/app icons) is an "R" traced
-directly from Fraunces' own outline at the optical size and weight the
-"Rekono" wordmark next to it is already set in (opsz 120, wght 600), not a
-generic geometric letterform or icon-font glyph. It's shipped as a static SVG
+directly from Bitter Bold's own glyph outline -- the exact typeface and
+weight the "Rekono" wordmark next to it is already set in, not a generic
+geometric letterform or icon-font glyph. It's shipped as a static SVG
 `<path>`, not live `<text>`, because a favicon or home-screen icon has no
 guarantee the page's own `@font-face` has loaded, or ever will.
 
@@ -120,11 +120,8 @@ from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 from fontTools.pens.svgPathPen import SVGPathPen
 
-font = TTFont("public/fonts/fraunces.woff2")
-# Match the wordmark: opsz 120, wght 600. Fraunces' own default instance is
-# opsz 9 / wght 900, so leaving either out gives a much heavier letter drawn
-# for caption sizes.
-instantiateVariableFont(font, {"wght": 600, "opsz": 120}, inplace=True)
+font = TTFont("public/fonts/bitter-600.woff2")
+instantiateVariableFont(font, {"wght": 800}, inplace=True)  # match .brand's weight
 glyph_set = font.getGlyphSet()
 glyph = glyph_set[font.getBestCmap()[ord("R")]]
 pen = SVGPathPen(glyph_set)
@@ -140,10 +137,10 @@ margin), and `icon-192.png`/`icon-512.png` (referenced by `manifest.json`)
 are all rendered from that same SVG via a headless browser screenshot, not
 hand-exported -- regenerate them the same way if the mark ever changes.
 `og-image.png` (the social-preview card) is a standalone 1200x630 HTML page
-rendered the same way, setting the headline in Fraunces on the same warm
-paper. One headless-Chromium quirk to know when regenerating it: shooting
-at a window height exactly equal to the page height clips the last painted
-line, so render taller and crop.
+rendered the same way, setting the headline in Bitter on the page ground.
+One headless-Chromium quirk to know when regenerating it: shooting at a
+window height exactly equal to the page height clips the last painted line,
+so render taller and crop.
 
 ## Analytics (optional, off until configured)
 

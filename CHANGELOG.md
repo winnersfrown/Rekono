@@ -4,6 +4,50 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.37
+
+Back to Bitter and the blue palette, keeping everything else v1.36 built.
+
+v1.36 changed two things at once: the *skin* (an oxblood-on-warm-paper
+palette set in Fraunces and Geist) and the *structure* (ruled panels
+instead of glass, right-aligned money columns with double-ruled totals,
+one filled accent button per screen, and the spacious density that was the
+actual request). Only the skin is reverted here. Bitter, IBM Plex Sans and
+IBM Plex Mono are back, on `#4B86F7` over `#F4F7FD`, and every layout,
+spacing and typographic-hierarchy decision from the editorial pass stays.
+
+That split is the point worth recording: what makes a ledger read like a
+workpaper is the ruled schedule, the money column you can scan for
+magnitude, and the room to breathe. None of it depends on the palette.
+
+**Three accent tokens, not two.** The blue accent is *light*, and that
+changes what a flat fill can carry. Measured:
+
+- White on `--accent` is **3.47:1** — fails AA. The old button got away
+  with a white-ish look only because it was a gradient with a dark navy
+  label, and flattening it exposed the problem.
+- So the accent's label is now its own token, `--accent-ink` (the dark
+  navy), at **4.97:1**. On `--accent-deep` — the hover — the fill is dark
+  enough that the label has to flip back to white, which the rule now does
+  explicitly.
+- `--accent-text` is a third job again: text on a light ground. The
+  palette's own `#2F6FE0` measures **4.38:1** on the page ground, just
+  under the 4.5:1 bar for the label sizes it is used at, so it is one step
+  darker at `#2C68D6` — visually the same blue, and clear of the bar on the
+  page ground, a panel and a sunk row alike.
+
+The lesson generalises past this palette: a *dark* accent and a *light*
+accent need opposite label colours, so a design system with one accent
+token has a latent contrast bug waiting for whichever direction it swaps
+in. Check with a contrast calculation, not by eye — 4.38:1 and 4.82:1 look
+identical.
+
+Also cleaned up while the palette was open: several hover rules still
+carried a `translateY(-1.5px)` lift paired with a shadow token v1.36
+neutralised, so what actually shipped was a button that moved on hover
+without lifting. Those are gone, along with the last two hardcoded radii
+and two shadow tokens nothing read any more.
+
 ## v1.36
 
 A new visual identity, applied to both surfaces.

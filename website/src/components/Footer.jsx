@@ -15,7 +15,7 @@ export default function Footer() {
     <footer className="border-t border-rule bg-paper-sunk py-xl">
       <div className="mx-auto flex max-w-content flex-col gap-lg px-lg md:flex-row md:items-center md:justify-between md:px-xl">
         <div className="flex flex-col gap-xs">
-          <a href="#top" className="flex items-center gap-sm font-display text-[1.05rem] font-semibold text-ink">
+          <a href="#top" className="flex items-center gap-sm font-display text-[1.05rem] font-bold text-ink">
             <Logomark className="h-5 w-5" />
             Rekono
           </a>

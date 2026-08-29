@@ -1,27 +1,34 @@
-// The brand mark: an "R" traced directly from Fraunces' own outline at the
-// optical size and weight the "Rekono" wordmark beside it is set in (opsz
-// 120, wght 600), not a generic geometric letterform or an icon-font glyph.
-// Shipped as a static path rather than live <text> so it renders identically
-// everywhere -- a favicon or home-screen icon has no guarantee the page's
-// own @font-face has loaded, or ever will.
-//
-// Regenerate the same way if the wordmark's typeface, weight, or optical
-// size changes: instantiate public/fonts/fraunces.woff2 at that location
-// with fontTools, draw the R through SVGPathPen, round the coordinates to
-// whole font units (upm 2000 drawn at 32px, so a unit is far under a pixel),
-// and keep website/public/favicon.svg in step with it.
-//
-// No gradient, deliberately. A gradient fill was the previous identity's
-// tell; this one is a flat oxblood field with the letter knocked out of it,
-// which is what a seal or a ledger binding actually looks like.
-const R_PATH =
-  "M1242 911Q1242 810 1197 729Q1152 648 1071 596Q989 543 877 523Q857 520 835 517Q814 515 792 513Q770 512 746 512Q668 512 609 522Q551 532 506 551Q462 570 425 599L435 616Q469 588 506 572Q544 556 586 549Q628 542 674 542Q803 542 881 629Q959 717 959 899Q959 1038 908 1147Q857 1256 768 1318Q680 1380 569 1380H481V68Q481 49 490 40Q499 31 520 27L601 15Q607 14 610 13Q613 11 613 7Q613 0 603 0H79Q74 0 71 2Q69 4 69 7Q69 13 81 15L162 27Q182 31 191 40Q201 49 201 68V1345Q201 1357 191 1363Q182 1370 162 1373L81 1385Q69 1387 69 1393Q69 1396 71 1398Q74 1400 79 1400H568Q779 1400 930 1339Q1081 1279 1161 1169Q1242 1059 1242 911ZM684 530 945 560 1233 80Q1254 46 1278 34Q1301 22 1331 15Q1338 13 1341 12Q1343 11 1343 7Q1343 4 1341 2Q1338 0 1333 0H875Q865 0 865 7Q865 11 868 12Q871 12 877 15L919 23Q944 31 949 46Q955 60 937 92Z";
+import { useId } from "react";
 
+// The brand mark: an "R" traced directly from Bitter Bold's own glyph
+// outline (the exact typeface and weight the "Rekono" wordmark next to it
+// is set in), not a generic geometric letterform or icon-font glyph. Shipped
+// as a static path rather than live <text> so it renders identically
+// everywhere -- a favicon or home-screen icon has no guarantee the page's
+// own @font-face has loaded, or ever will. Traced with fontTools from
+// public/fonts/bitter-600.woff2 instantiated at weight 800 (matching
+// .brand's font-weight everywhere else); regenerate the same way if the
+// wordmark's weight or typeface ever changes.
 export default function Logomark({ className = "h-9 w-9" }) {
+  // Nav and Footer both render this on the same page at once, so a literal
+  // id="logomark-gradient" would collide -- two elements with the same id
+  // is invalid SVG/HTML and leaves which one actually gets referenced up to
+  // the browser. useId() makes each instance's gradient genuinely unique.
+  const gradientId = `logomark-gradient-${useId()}`;
   return (
     <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-      <rect width="32" height="32" rx="3" fill="var(--accent)" />
-      <path d={R_PATH} transform="translate(7.43,24.5) scale(0.012143,-0.012143)" fill="var(--paper)" />
+      <rect x="1" y="1" width="30" height="30" rx="8" fill={`url(#${gradientId})`} />
+      <path
+        d="M30.17 0V85.83L118 115.66L96.83 82.67V619.33L127.17 583.84L30.17 616.17V702L277.83 707H365.5Q489 707 551.83 655.5Q614.66 604 614.66 507.5Q614.66 422.5 563.16 366.33Q511.66 310.17 399.16 296.33L400.5 316Q439.5 315.83 464.75 306.08Q490 296.33 506.58 278.67Q523.16 261 536.16 236.33L613.5 90.33L565.17 120.66L659.83 85.83V0H476L386.33 190.33Q369.5 227.17 358.42 245.83Q347.33 264.5 332.25 270.75Q317.17 277 286.67 276.17L243.16 275.33L271 299V82.67L249 116.5L341.83 85.83V0ZM271 352.33 243.16 395.17H319.5Q379.33 395.17 408.5 420.42Q437.67 445.67 437.67 495.67Q437.67 536.67 414.83 560.25Q392 583.84 343.5 583.84H243.16L271 610Z"
+        transform="translate(6.728,25.5) scale(0.026874,-0.026874)"
+        fill="white"
+      />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="32" y2="32">
+          <stop stopColor="#4b86f7" />
+          <stop offset="1" stopColor="#1d4ed8" />
+        </linearGradient>
+      </defs>
     </svg>
   );
 }
