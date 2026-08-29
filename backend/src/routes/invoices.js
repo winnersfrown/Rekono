@@ -185,6 +185,18 @@ router.post("/api/invoices/bulk-action", requireAuth, requireActivePlan, async (
 const QUICK_REVIEW_FIELDS = Object.keys(FIELD_TO_ATTR).filter((f) => f !== "other_charges");
 const NUMERIC_QUICK_REVIEW_FIELDS = new Set(["subtotal", "shipping", "discount", "tax", "total"]);
 
+// Fields that legitimately are not on every invoice. The queue treats a
+// missing confidence entry as zero, which is right for a field the
+// extractor always reports and wrong for one it only reports when the
+// document has it: an invoice with no shipping line has no shipping
+// confidence, and asking somebody to confirm a charge that isn't on the
+// page is worse than not asking. Absent *and* empty means absent.
+//
+// Deliberately not applied to po_reference, which has always queued when
+// missing. That may or may not be the right behaviour, but it is existing
+// behaviour and changing it is not this release's business.
+const OPTIONAL_QUICK_REVIEW_FIELDS = new Set(["shipping", "discount", "payment_terms"]);
+
 // Flat, one-row-per-low-confidence-field queue across every eligible
 // needs_review invoice in the org -- the point is letting a reviewer
 // confirm/correct one field at a time (see the quick-review-field route
@@ -216,12 +228,16 @@ router.get("/api/invoices/quick-review-queue", requireAuth, requireActivePlan, a
     const items = [];
     outer: for (const inv of invoices) {
       for (const field of QUICK_REVIEW_FIELDS) {
+        const value = inv[FIELD_TO_ATTR[field]];
+        const isEmpty = value === null || value === undefined || value === "";
+        if (OPTIONAL_QUICK_REVIEW_FIELDS.has(field) && isEmpty) continue;
+
         const confidence = inv.fieldConfidence?.[field] ?? 0;
         if (confidence >= threshold) continue;
         items.push({
           invoice_id: inv.id,
           field,
-          value: inv[FIELD_TO_ATTR[field]],
+          value,
           confidence,
           vendor_name: inv.vendorName,
           original_filename: inv.originalFilename,

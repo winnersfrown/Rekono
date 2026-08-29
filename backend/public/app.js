@@ -308,8 +308,9 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
     statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
   } else {
-    statusEl.textContent =
-      uploaded > 1 ? `Uploaded ${uploaded} documents — queued for extraction.` : "Uploaded — queued for extraction.";
+    const what = uploaded > 1 ? `Uploaded ${uploaded} documents` : "Uploaded";
+    statusEl.innerHTML = `${what} — queued for extraction. <button type="button" class="linklike" id="upload-goto-review">Open the review queue →</button>`;
+    document.getElementById("upload-goto-review").addEventListener("click", () => switchTab("review"));
   }
 
   fileInput.value = "";
@@ -4295,13 +4296,26 @@ async function loadAccounts() {
 
 function renderAccounts(data) {
   const body = document.getElementById("accounts-body");
+  // Grouped under a heading per category, in the order the server returned
+  // them -- balance sheet accounts by liquidity, income statement accounts
+  // in the order they were created (ledger.js's sortAccounts). A flat
+  // code-sorted list made you read forty rows to find the one liability
+  // account you wanted, and gave no clue that the ordering meant anything.
+  //
+  // The Type column is gone: it repeats what the heading above the row
+  // already says, on every single row.
+  let lastType = null;
   body.innerHTML = data.items
-    .map(
-      (a) => `
+    .map((a) => {
+      const heading =
+        a.type === lastType
+          ? ""
+          : `<tr class="account-group-row"><th colspan="4">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`;
+      lastType = a.type;
+      return `${heading}
     <tr>
       <td>${escapeHtml(a.code)}</td>
       <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
-      <td>${a.type}</td>
       <td>${a.active ? "Active" : "Inactive"}</td>
       <td>${
         a.active && !a.is_system_account
@@ -4309,8 +4323,8 @@ function renderAccounts(data) {
           : ""
       }</td>
     </tr>
-  `
-    )
+  `;
+    })
     .join("");
   body.querySelectorAll(".account-deactivate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -4382,10 +4396,44 @@ async function loadJournalEntryAccounts() {
   );
 }
 
-function accountOptionsHtml(selectedId) {
-  return journalEntryAccounts
-    .map((a) => `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+// The five account categories, in statement order: balance sheet first
+// (assets, liabilities, equity), then the income statement (revenue,
+// expenses). The server already returns accounts in this order -- see
+// ledger.js's sortAccounts -- so grouping here is only a matter of
+// inserting a heading each time the type changes, never re-sorting.
+const ACCOUNT_TYPE_LABELS = {
+  asset: "Assets",
+  liability: "Liabilities",
+  equity: "Equity",
+  revenue: "Revenue",
+  expense: "Expenses",
+};
+
+// <optgroup> rather than a flat list: an account picker with forty entries
+// is a wall of text, and the type of the account you want is the first
+// thing you know about it.
+function groupedAccountOptionsHtml(accounts, selectedId) {
+  const groups = [];
+  for (const a of accounts) {
+    if (!groups.length || groups[groups.length - 1].type !== a.type) groups.push({ type: a.type, accounts: [] });
+    groups[groups.length - 1].accounts.push(a);
+  }
+  return groups
+    .map(
+      (g) => `<optgroup label="${escapeHtml(ACCOUNT_TYPE_LABELS[g.type] || g.type)}">${g.accounts
+        .map(
+          (a) =>
+            `<option value="${a.id}" ${a.id === selectedId ? "selected" : ""}>${escapeHtml(
+              a.code ? `${a.code} - ${a.name}` : a.name
+            )}</option>`
+        )
+        .join("")}</optgroup>`
+    )
     .join("");
+}
+
+function accountOptionsHtml(selectedId) {
+  return groupedAccountOptionsHtml(journalEntryAccounts, selectedId);
 }
 
 function updateJournalEntryBalanceIndicator() {
@@ -4615,9 +4663,7 @@ async function loadIncomeTax() {
   // equity tab uses. Income Taxes Payable is excluded by the API, and
   // excluded here too so it never appears as an option.
   taxAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type) && a.subtype !== "income_taxes_payable");
-  document.getElementById("tax-pay-account").innerHTML = taxAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("tax-pay-account").innerHTML = groupedAccountOptionsHtml(taxAccounts, null);
 }
 
 async function previewIncomeTax() {
@@ -4883,9 +4929,7 @@ async function loadCustomerInvoiceFormData() {
 }
 
 function revenueOptionsHtml() {
-  return ciRevenueAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  return groupedAccountOptionsHtml(ciRevenueAccounts, null);
 }
 
 function updateCustomerInvoiceTotal() {
@@ -5087,9 +5131,7 @@ async function paymentDialog(
   document.getElementById("payment-modal-message").textContent = `Outstanding balance is ${fmtMoney(outstanding)}.`;
   document.getElementById("payment-modal-amount").value = outstanding.toFixed(2);
   document.getElementById("payment-modal-date").value = new Date().toISOString().slice(0, 10);
-  document.getElementById("payment-modal-account").innerHTML = options
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("payment-modal-account").innerHTML = groupedAccountOptionsHtml(options, null);
   const errorEl = document.getElementById("payment-modal-error");
   errorEl.textContent = "";
   errorEl.style.display = "none";
@@ -5252,9 +5294,7 @@ async function loadEquityAccounts() {
   // a credit line). Equity accounts are refused by the API -- funding
   // equity from equity is circular.
   eqAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type));
-  document.getElementById("eq-cash").innerHTML = eqAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  document.getElementById("eq-cash").innerHTML = groupedAccountOptionsHtml(eqAccounts, null);
   updateEquityForm();
 }
 
@@ -5752,7 +5792,7 @@ function exerciseDialog(exercisable, { strike = null } = {}) {
   const accountField = document.getElementById("exercise-modal-account-field");
   accountField.style.display = strike ? "" : "none";
   document.getElementById("exercise-modal-account").innerHTML =
-    eqAccounts.map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`).join("") +
+    groupedAccountOptionsHtml(eqAccounts, null) +
     `<option value="">Don't post to the ledger</option>`;
   document.getElementById("exercise-modal-shares").value = String(exercisable);
   document.getElementById("exercise-modal-shares").max = String(exercisable);
@@ -6138,9 +6178,7 @@ async function loadAdjustmentAccounts() {
 }
 
 function recAccountOptions() {
-  return recAccounts
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
-    .join("");
+  return groupedAccountOptionsHtml(recAccounts, null);
 }
 
 function updateRecurringBalance() {

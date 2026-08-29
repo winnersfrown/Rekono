@@ -269,6 +269,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6l1.4 1.4L7.5 4.7"/><path d="M11 6h9.5"/><path d="M3.5 12l1.4 1.4 2.6-2.7"/><path d="M11 12h9.5"/><path d="M3.5 18l1.4 1.4 2.6-2.7"/><path d="M11 18h9.5"/></svg>
             Review Queue
           </button>
+            <div class="topnav-section">Queues</div>
           <button class="tab-btn" data-tab="expenses">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l3 3v17a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
             Expenses
@@ -294,6 +295,7 @@
                 <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <div class="topnav-menu" data-menu-for="workflow" hidden>
+            <div class="topnav-section">Review</div>
           <button class="tab-btn" data-tab="quickreview">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>
             Quick Review
@@ -306,6 +308,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>
             Transactions
           </button>
+            <div class="topnav-section">Month end</div>
           <button class="tab-btn" data-tab="adjustments">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
             Adjusting Entries
@@ -373,6 +376,7 @@
                 <svg class="topnav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
               </button>
               <div class="topnav-menu" data-menu-for="accounting" hidden>
+            <div class="topnav-section">Ledger</div>
           <button class="tab-btn" data-tab="chartofaccounts">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
             Chart of Accounts
@@ -385,6 +389,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 8l-3 5a4 4 0 0 0 6 0zM19 8l-3 5a4 4 0 0 0 6 0z"/><path d="M5 8h14M9 21h6"/></svg>
             Trial Balance
           </button>
+            <div class="topnav-section">Statements</div>
           <button class="tab-btn" data-tab="profitandloss">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
             Income Statement
@@ -397,6 +402,7 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 7a5 5 0 0 0-5-5 5 5 0 0 0-5 5c0 6 10 4 10 10a5 5 0 0 1-5 5 5 5 0 0 1-5-5"/></svg>
             Cash Flow
           </button>
+            <div class="topnav-section">Equity</div>
           <button class="tab-btn" data-tab="equity">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-8H4v8"/><path d="M1 21h22"/><path d="M12 3L2 9h20z"/><path d="M9 13v8M15 13v8"/></svg>
             Stockholders' Equity
@@ -705,7 +711,7 @@
 
         <section id="tab-upload" class="tab-panel">
           <h1>Upload invoices</h1>
-          <p class="hint">PDF or image (png/jpg/tiff/bmp/webp) — select one or several at once. Each is queued and processed asynchronously — check the Review Queue shortly after.</p>
+          <p class="hint">PDF or image (png/jpg/tiff/bmp/webp) — select one or several at once. Each is queued and processed asynchronously. <button type="button" class="linklike" data-tab="review">Go to the review queue →</button></p>
           <div class="panel">
             <form id="upload-form">
               <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple required />
@@ -717,6 +723,7 @@
 
         <section id="tab-review" class="tab-panel">
           <h1>Review Queue</h1>
+          <p class="hint">Documents waiting on a human. <button type="button" class="linklike" data-tab="upload">← Upload more</button></p>
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
@@ -1352,7 +1359,7 @@
 
         <section id="tab-chartofaccounts" class="tab-panel">
           <h1>Chart of Accounts</h1>
-          <p class="hint">Every account posted invoice approvals and manual journal entries can use. System accounts (bold) can be renamed but not deactivated.</p>
+          <p class="hint">Every account posted invoice approvals and manual journal entries can use. System accounts (bold) can be renamed but not deactivated. Grouped by category, and ordered within each the way a statement reads it: balance sheet accounts by liquidity, income statement accounts in the order you added them.</p>
           <div class="panel">
             <h3>Add an account</h3>
             <form id="account-create-form">
@@ -1372,7 +1379,7 @@
             <div id="account-create-status" class="hint"></div>
           </div>
           <table>
-            <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Name</th><th>Status</th><th></th></tr></thead>
             <tbody id="accounts-body"></tbody>
           </table>
         </section>

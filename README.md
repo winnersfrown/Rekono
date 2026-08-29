@@ -96,6 +96,8 @@ Two things are specific to this module rather than inherited from the other four
 
 **Stack**: Node.js 22 + Express + Sequelize (SQLite/Postgres), plain JavaScript (ESM, no build step/TypeScript compile) so `docker run`/`node src/server.js` is all it takes to run it, matching the no-build-step philosophy of the frontend it's paired with.
 
+**Chart of accounts ordering** (`ledger.js`'s `sortAccounts`): accounts come back grouped by category, and ordered within each by one of two rules. Balance sheet accounts (asset, liability, equity) sort by **liquidity** -- cash, then receivables, then everything else -- which is the order every balance sheet is printed in, and the reason the traditional 1000/1100/1500 numbering exists at all. Ranking by account *subtype* first rather than by code means an org that numbered its chart differently still gets a readable balance sheet. Income statement accounts (revenue, expense) sort by **the order they were created**, because there is no natural ordering for them; cost of revenue leads and income tax trails, matching the order the statement subtotals in. Codes compare numerically, so `900` precedes `1100`. The API sorts rather than the database: the rule is a comparator with several fallbacks, not something SQLite and Postgres would order identically on their own.
+
 **Design** ([`DESIGN.md`](DESIGN.md)): both surfaces -- the product
 (`backend/public/styles.css`) and the marketing site
 (`website/src/index.css`) -- are drawn from one token system defined there.
@@ -204,7 +206,7 @@ Every endpoint below except `/api/auth/signup`, `/api/auth/login`, `/api/auth/fo
 | `GET /api/team/invite/:token` | Public. Validates an invite link and returns the org name + invited email, for the accept-invite page |
 | `POST /api/team/invite/:token/accept` | Public. `{full_name, password}` → creates a `role: "member"` User on the inviting org, returns a bearer token |
 | `GET /api/staff/overview` | Rekono staff only (`STAFF_EMAILS`), refused with `403` for everyone else. Aggregate, cross-org usage metrics -- org/plan counts, activation funnel, document volume, subscription health. See README.md's "Staff / cross-org usage dashboard" section |
-| `GET /api/accounts` | List the org's chart of accounts, optionally filtered by `type` or `active` |
+| `GET /api/accounts` | List the org's chart of accounts, optionally filtered by `type` or `active`. Returned grouped by category and ordered within each: balance sheet accounts by liquidity, income statement accounts by the order they were added |
 | `POST /api/accounts` | `{name, type, code?}` -- add a custom account. Rejects a duplicate name |
 | `PATCH /api/accounts/:id` | Rename, re-code, or deactivate an account. A system account (the seeded defaults) can be renamed but not deactivated |
 | `GET /api/journal-entries` | Paginated list of the org's journal entries, newest first, each with its total |

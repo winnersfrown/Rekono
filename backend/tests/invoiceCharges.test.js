@@ -11,6 +11,7 @@ import request from "supertest";
 import { app } from "../src/app.js";
 import { score, adjustmentsTotal } from "../src/confidence.js";
 import { extract, normalizeOtherCharges } from "../src/extraction.js";
+import { Invoice, LineItem } from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -173,6 +174,69 @@ describe("the API", () => {
 
     const patched = await request(app).patch(`/api/invoices/${id}`).set(authHeader(token)).send({ tax: 5, total: 5 });
     expect(patched.body.tax_rate_percent).toBeNull();
+  });
+
+  // Caught by tests/quickReview.test.js when the new fields were first added
+  // to FIELD_TO_ATTR: the queue reads a missing confidence entry as zero, so
+  // every invoice suddenly grew three extra review rows for charges that
+  // were never on the document. Asking somebody to confirm a shipping
+  // amount on an invoice with no shipping line is worse than not asking.
+  async function flaggedInvoice(token, over = {}) {
+    const me = await request(app).get("/api/auth/me").set(authHeader(token));
+    const invoice = await Invoice.create({
+      orgId: me.body.org_id,
+      originalFilename: "test.pdf",
+      storagePath: "/tmp/does-not-matter.pdf",
+      contentType: "application/pdf",
+      status: "needs_review",
+      vendorName: "Acme Corp",
+      invoiceNumber: "INV-1",
+      invoiceDate: "2026-01-01",
+      subtotal: 100,
+      tax: 0,
+      total: 100,
+      overallConfidence: 0.5,
+      crossCheckPassed: true,
+      // Everything confident except what a test deliberately lowers, so the
+      // queue's contents are exactly what the test set up.
+      ...over,
+      fieldConfidence: {
+        vendor_name: 1, invoice_number: 1, invoice_date: 1, due_date: 1,
+        po_reference: 1, currency: 1, subtotal: 1, tax: 1, total: 1,
+        ...(over.fieldConfidence || {}),
+      },
+    });
+    await LineItem.create({ invoiceId: invoice.id, position: 0, description: "Widget", amount: 100, confidence: 1 });
+    return invoice;
+  }
+
+  test("quick review doesn't ask about charges the invoice doesn't have", async () => {
+    const token = await signup(app, request);
+    const inv = await flaggedInvoice(token);
+
+    const queue = await request(app).get("/api/invoices/quick-review-queue").set(authHeader(token));
+    expect(queue.status).toBe(200);
+    // The invoice is genuinely in the queue -- otherwise this would pass by
+    // asserting nothing.
+    expect(queue.body.some((i) => i.invoice_id === inv.id)).toBe(false);
+
+    const withLowVendor = await flaggedInvoice(token, { fieldConfidence: { vendor_name: 0.2 } });
+    const q2 = await request(app).get("/api/invoices/quick-review-queue").set(authHeader(token));
+    const fields = q2.body.filter((i) => i.invoice_id === withLowVendor.id).map((i) => i.field);
+    expect(fields).toContain("vendor_name");
+    expect(fields).not.toContain("shipping");
+    expect(fields).not.toContain("discount");
+    expect(fields).not.toContain("payment_terms");
+  });
+
+  test("but does ask about a charge it found and isn't sure of", async () => {
+    const token = await signup(app, request);
+    const inv = await flaggedInvoice(token, { shipping: 15, total: 115, fieldConfidence: { shipping: 0.2 } });
+
+    const queue = await request(app).get("/api/invoices/quick-review-queue").set(authHeader(token));
+    const row = queue.body.find((i) => i.invoice_id === inv.id && i.field === "shipping");
+    expect(row).toBeTruthy();
+    expect(row.value).toBe(15);
   });
 
   test("reports payment status, so nobody pays a bill twice", async () => {

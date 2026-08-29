@@ -14,6 +14,7 @@
 import { Op, fn, col, where as sequelizeWhere } from "sequelize";
 import { Account, AuditLog, JournalEntry, JournalLine } from "./models/index.js";
 import { EXPENSE_CATEGORIES } from "./models/ExpenseReceipt.js";
+import { ACCOUNT_TYPES } from "./models/Account.js";
 import { isPeriodClosed, periodMonthFor } from "./fiscalYear.js";
 import { attachVendorToInvoice } from "./vendors.js";
 
@@ -49,6 +50,7 @@ function todayIso() {
 // Expense accounts mirror ExpenseReceipt.EXPENSE_CATEGORIES exactly, so
 // the chart of accounts lines up with the category taxonomy already used
 // everywhere else (ExpenseReceipt.category, Transaction.category).
+
 // Cost of revenue: the expense of delivering what was sold, as opposed to
 // the cost of running the company. It is a *subtype* rather than a separate
 // account type because it is still an expense in every other sense -- it is
@@ -64,6 +66,87 @@ function todayIso() {
 // add to an app with live books: nothing is reclassified behind anyone's
 // back, and an existing org's reported figures do not move.
 export const COST_OF_REVENUE_SUBTYPE = "cost_of_revenue";
+
+// ---- the order a chart of accounts is read in ----
+//
+// Two different rules, because the two statements are read differently.
+//
+// **Balance sheet accounts (asset, liability, equity) sort by liquidity**:
+// how soon the thing turns into cash, or how soon the obligation comes due.
+// Cash first, then receivables, then everything else. That is the order
+// every balance sheet in the world is printed in, and it is why the
+// traditional 1000/1100/1500 numbering exists at all -- the codes encode
+// the liquidity order. Sorting by code alone gets it right only for an org
+// that follows the convention; ranking by subtype first gets it right for
+// an org that doesn't, and falls back to the code within each rank.
+//
+// **Income statement accounts (revenue, expense) sort by insertion order.**
+// There is no natural ordering for them -- one expense is not "sooner" than
+// another -- so the honest order is the one the user built, which is what
+// createdAt records. The exception is cost of revenue, which has to come
+// before operating expenses because the statement subtotals in that order
+// (see financialStatements.js).
+const LIQUIDITY_RANK = {
+  asset: { bank: 0, cash: 0, accounts_receivable: 1 },
+  liability: { accounts_payable: 0, credit_card: 1, deferred_revenue: 2 },
+  equity: {},
+  revenue: {},
+  expense: { [COST_OF_REVENUE_SUBTYPE]: 0, income_tax_expense: 9 },
+};
+
+// Unranked accounts sort after every ranked one, in code order. 5 leaves
+// room to insert ranks above it later without renumbering what exists.
+const UNRANKED = 5;
+
+export const BALANCE_SHEET_TYPES = new Set(["asset", "liability", "equity"]);
+
+export function accountSortRank(account) {
+  return LIQUIDITY_RANK[account.type]?.[account.subtype] ?? UNRANKED;
+}
+
+// Comparator for a single type's accounts. Exported so the API and any
+// caller building a picker sort identically -- an account list that appears
+// in one order on the Chart of Accounts page and another in a dropdown is
+// the kind of small inconsistency that makes software feel untrustworthy.
+export function compareAccountsWithinType(a, b) {
+  const rank = accountSortRank(a) - accountSortRank(b);
+  if (rank !== 0) return rank;
+
+  if (!BALANCE_SHEET_TYPES.has(a.type)) {
+    // Insertion order. Falls through to code/name when createdAt is absent
+    // or identical, which happens for the seeded chart: bulkCreate stamps
+    // every row in the same tick.
+    const at = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (at !== bt) return at - bt;
+  }
+
+  // Code, numerically where both are numeric, so "1100" sorts after "900"
+  // rather than before it the way a string compare would have it.
+  const ac = (a.code || "").trim();
+  const bc = (b.code || "").trim();
+  if (ac && bc) {
+    const an = Number(ac);
+    const bn = Number(bc);
+    if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+    if (ac !== bc) return ac.localeCompare(bc);
+  } else if (ac !== bc) {
+    // An account with no code sorts after one that has a code: a coded
+    // account is part of the deliberate structure, an uncoded one was
+    // added in a hurry.
+    return ac ? -1 : 1;
+  }
+
+  return (a.name || "").localeCompare(b.name || "");
+}
+
+// The full chart, grouped and ordered the way it should be read.
+export function sortAccounts(accounts) {
+  const typeOrder = Object.fromEntries(ACCOUNT_TYPES.map((t, i) => [t, i]));
+  return [...accounts].sort(
+    (a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99) || compareAccountsWithinType(a, b)
+  );
+}
 
 function defaultAccountsFor() {
   const expenseAccounts = EXPENSE_CATEGORIES.map((name, i) => ({

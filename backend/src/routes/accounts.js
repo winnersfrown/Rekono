@@ -10,6 +10,7 @@ import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { ACCOUNT_TYPES } from "../models/Account.js";
 import { Account, AuditLog } from "../models/index.js";
+import { sortAccounts } from "../ledger.js";
 import { serializeAccount } from "../serializers.js";
 
 const router = Router();
@@ -25,8 +26,12 @@ router.get("/api/accounts", requireAuth, requireActivePlan, async (req, res, nex
     if (req.query.active === "true") where.active = true;
     if (req.query.active === "false") where.active = false;
 
-    const accounts = await Account.findAll({ where, order: [["code", "ASC"], ["name", "ASC"]] });
-    res.json({ items: accounts.map(serializeAccount) });
+    // Sorted in JS rather than by ORDER BY: the rule ranks by subtype and
+    // then falls back through code (numerically) and creation order, which
+    // is a comparator, not something SQLite and Postgres would order
+    // identically on their own. See ledger.js's sortAccounts.
+    const accounts = await Account.findAll({ where });
+    res.json({ items: sortAccounts(accounts).map(serializeAccount) });
   } catch (err) {
     next(err);
   }

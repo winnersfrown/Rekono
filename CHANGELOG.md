@@ -4,6 +4,65 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.40
+
+Organize the chart of accounts, and the navigation.
+
+**The chart of accounts is grouped by category and ordered within each
+one**, by two different rules, because the two statements are read
+differently.
+
+Balance sheet accounts (asset, liability, equity) sort by **liquidity**:
+how soon the thing turns into cash, or how soon the obligation comes due.
+Cash, then receivables, then everything else. That is the order every
+balance sheet in the world is printed in, and it is why the traditional
+1000/1100/1500 numbering exists at all -- the codes encode the liquidity
+order. Sorting by code alone gets it right only for an org that follows the
+convention; ranking by subtype first gets it right for an org that doesn't,
+and falls back to the code within each rank.
+
+Income statement accounts (revenue, expense) sort by **the order they were
+added**. There is no natural ordering for them -- one expense is not
+"sooner" than another -- so the honest order is the one the user built.
+Cost of revenue leads and income tax trails, because the statement
+subtotals in that order.
+
+Two smaller things fell out of it. Codes now compare **numerically**, so
+"900" sorts before "1100" instead of after it the way a string compare had
+it. And an account with no code sorts after the ones that have codes: a
+coded account is part of a deliberate structure, an uncoded one was added
+in a hurry.
+
+The Type column is gone from the table, since it repeated on every row what
+the heading above it already said.
+
+**Every account picker is grouped too**, via `<optgroup>`, using the same
+ordering. Forty accounts in one flat `<select>` is a wall of text, and the
+type of the account you want is the first thing you know about it. All
+seven pickers now go through one helper, so the Chart of Accounts page and
+a dropdown can't disagree about the order.
+
+**The top bar menus have section headings.** Accounting held eight
+destinations spanning three different jobs -- the ledger, the statements
+that are views over it, and the equity registers that are a separate book --
+in one undifferentiated column. It is now Ledger / Statements / Equity.
+Workflow splits into Review / Month end, Documents into its action and its
+queues. Labels rather than bare dividers: a rule alone says "these are
+separate" without saying what either group is.
+
+**Upload and the review queue link to each other.** Finishing an upload now
+offers the review queue directly instead of leaving the only route there as
+reopening a menu, and the queue offers the way back.
+
+One bug found on the way, worth recording because the existing suite caught
+it and no amount of reading the diff would have. Adding shipping, discount
+and payment terms to the invoice field map in v1.39 also added them to the
+quick-review queue, which reads a *missing* confidence entry as zero. So
+every invoice grew three extra review rows for charges that were never on
+the document, and a reviewer would have been asked to confirm a shipping
+amount on an invoice with no shipping line. Optional fields are now skipped
+when they are both absent and empty. Absent and empty means absent.
+
 ## v1.39
 
 Everything between the subtotal and the total.
