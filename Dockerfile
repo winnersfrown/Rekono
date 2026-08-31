@@ -1,4 +1,8 @@
-FROM node:22-slim
+# Pinned by digest, not just tag: "node:22-slim" is a moving target that
+# repoints on every base-image rebuild, so a floating tag alone means two
+# builds of the same commit can pull different underlying images. Dependabot
+# (.github/dependabot.yml) keeps this digest current.
+FROM node:22-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
