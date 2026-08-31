@@ -4,6 +4,81 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.50
+
+Add check writing. "Record payment" on the Bill Payments tab has always
+posted a real AP payment, but there was no check number, payee, or memo
+anywhere in that flow, and the only `Check` entity in the codebase was
+scan-only (OCR upload of a check someone else wrote). `models/WrittenCheck.js`
+is a check the org writes itself: check number, payee, memo, a printable
+layout with the amount spelled out in words -- posted through the exact
+same `recordBillPayment` path "Record payment" already uses, so writing a
+check has the identical ledger effect (same validation: an approved bill,
+a valid non-AP/AR payment account, no overpay). Voiding one reverses the
+payment (a real reversing entry, same as every other void in this ledger)
+and destroys the payment row alongside the check record -- matching
+routes/payables.js's own payment-removal route, which does both, not just
+the reversal.
+
+Deliberately its own table rather than a flag on `Check`: that model's
+routes all assume an uploaded file and an OCR status machine (upload,
+extract, review, approve/reject), neither of which exists for a check
+nobody scanned. Reusing it would have meant auditing every one of those
+routes for a case they were never written to handle.
+
+## v1.49
+
+Add a tracked fixed-asset record. Straight-line depreciation used to be a
+one-shot calculator (`POST /api/recurring-entries/depreciation`) that built
+a monthly RecurringEntry template and then discarded the cost/salvage/
+useful-life/acquisition-date inputs that produced it -- nothing recorded
+that the asset existed, or how much of its life was left, and there was no
+UI for it at all. `models/FixedAsset.js` is the record that was missing: a
+FixedAsset owns exactly one RecurringEntry (the same schedule-and-post
+machinery every other adjusting entry uses -- nothing new was built for
+posting), and ties back to the actual chart-of-accounts row carrying the
+asset's cost rather than being a bare number.
+
+Two things worth calling out. First, accumulated depreciation on the Fixed
+Assets list is computed from what's *actually posted* to the ledger, not
+from schedule math -- running due entries is a separate, deliberate action
+(same as every other recurring entry), so a schedule-projected figure would
+claim depreciation that hasn't happened yet. Second, this closes a latent
+gap in `closeAutomation.js`'s undepreciated-asset suggestion: it checked
+whether any recurring template's lines touched the asset account itself,
+which a real depreciation entry never does (only Depreciation Expense and
+Accumulated Depreciation move) -- so the suggestion would have kept nagging
+about an asset forever, even with a correct schedule running against it.
+It now also checks for a FixedAsset tied to the account directly.
+
+Replaces the old one-shot endpoint outright rather than keeping both --
+it had no frontend caller and existed only as an internal calculator.
+
+## v1.48
+
+Give the chart of accounts a real sub-category taxonomy. `Account.subtype`
+was a free string with no picker anywhere in the UI -- the create-account
+form only collected name/type/code, and `models/Account.js`'s own comment
+called statement classification (current vs. fixed assets, and so on) "a
+later phase's concern, not enforced yet." This is that phase, added as a
+label-and-classify layer rather than a DB enum: `accountTaxonomy.js` defines
+a canonical subtype list per account type (built from the subtype strings
+already scattered across ledger.js/equity.js/incomeTax.js/
+revenueRecognition.js/stockCompensation.js, plus new ones -- `fixed_asset`,
+`current_asset`, `long_term_liability` -- for the gaps none of those filled),
+served at `GET /api/accounts/subtypes` and surfaced on every account as
+`subtype_label`/`classification`. An account with an unrecognized subtype
+(hand-typed before this existed, or created on demand by equity.js) still
+gets a label -- its own raw string -- rather than being rejected, so nothing
+that already has data breaks.
+
+The Chart of Accounts UI gets a Category column (a picker, populated from
+the new endpoint, editable per row) and a second-level heading within each
+balance-sheet type -- Current / Fixed / Long-term -- computed client-side
+from `classification` rather than relied on from server order, since
+ledger.js's liquidity ranking only ranks a handful of subtypes and leaves
+the rest in code order.
+
 ## v1.47
 
 Commit and PR creation no longer wait for a per-task go-ahead. Added a

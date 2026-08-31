@@ -257,7 +257,10 @@ function switchTab(name) {
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
   if (name === "staff") loadStaffOverview();
-  if (name === "chartofaccounts") loadAccounts();
+  if (name === "chartofaccounts") {
+    loadAccountSubtypes();
+    loadAccounts();
+  }
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
   if (name === "trialbalance") loadTrialBalance();
   if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
@@ -269,9 +272,18 @@ function switchTab(name) {
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
   if (name === "revenue") loadDeferredRevenue();
-  if (name === "adjustments") { loadAdjustmentAccounts(); loadRecurringEntries(); loadYearEnd(); }
+  if (name === "adjustments") {
+    loadAdjustmentAccounts();
+    loadFixedAssets();
+    loadRecurringEntries();
+    loadYearEnd();
+  }
   if (name === "vendors") loadVendors();
-  if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
+  if (name === "billpayments") {
+    loadPaymentAccounts();
+    loadBillPayments();
+    loadWrittenChecks();
+  }
   if (name === "apaging") loadApAging();
 }
 
@@ -4367,6 +4379,44 @@ async function loadAccounts() {
   await cachedLoad("__accounts__", async () => (await apiFetch("/api/accounts")).json(), renderAccounts);
 }
 
+// Static per org (it's a fixed taxonomy, not org data), so it's cached and
+// fetched once per session rather than alongside every accounts reload.
+let accountSubtypesByType = {};
+
+async function loadAccountSubtypes() {
+  await cachedLoad(
+    "__account_subtypes__",
+    async () => (await apiFetch("/api/accounts/subtypes")).json(),
+    (data) => {
+      accountSubtypesByType = data.subtypes;
+      populateAccountCreateSubtypes();
+    }
+  );
+}
+
+function subtypeOptionsHtml(type, selected) {
+  const options = accountSubtypesByType[type] || [];
+  return (
+    `<option value="" ${selected ? "" : "selected"}>Uncategorized</option>` +
+    options
+      .map((s) => `<option value="${s.value}" ${s.value === selected ? "selected" : ""}>${escapeHtml(s.label)}</option>`)
+      .join("")
+  );
+}
+
+function populateAccountCreateSubtypes() {
+  const type = document.getElementById("account-create-type").value;
+  document.getElementById("account-create-subtype").innerHTML = subtypeOptionsHtml(type, "");
+}
+
+document.getElementById("account-create-type").addEventListener("change", populateAccountCreateSubtypes);
+
+// The classification labels ledger.js's LIQUIDITY_RANK sorting already
+// implies (current before fixed before other) -- see accountTaxonomy.js.
+// Equity/revenue/expense accounts have no current/fixed split, so they
+// never get one of these sub-headers, only the type heading above them.
+const CLASSIFICATION_LABELS = { current: "Current", fixed: "Fixed", long_term: "Long-term" };
+
 function renderAccounts(data) {
   const body = document.getElementById("accounts-body");
   // Grouped under a heading per category, in the order the server returned
@@ -4375,20 +4425,34 @@ function renderAccounts(data) {
   // code-sorted list made you read forty rows to find the one liability
   // account you wanted, and gave no clue that the ordering meant anything.
   //
-  // The Type column is gone: it repeats what the heading above the row
-  // already says, on every single row.
+  // Within a balance-sheet type, a second sub-heading splits current from
+  // fixed/long-term/other -- bucketed here rather than relied on from
+  // server order, since the server only ranks a handful of subtypes for
+  // liquidity and leaves the rest in code order, which does not by itself
+  // keep every fixed asset contiguous.
   let lastType = null;
+  let lastClassification = null;
   body.innerHTML = data.items
     .map((a) => {
-      const heading =
-        a.type === lastType
-          ? ""
-          : `<tr class="account-group-row"><th colspan="4">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`;
+      const typeChanged = a.type !== lastType;
+      const classification = a.classification === "other" ? null : a.classification;
+      const classificationChanged = typeChanged || classification !== lastClassification;
       lastType = a.type;
-      return `${heading}
+      lastClassification = classification;
+
+      const typeHeading = typeChanged
+        ? `<tr class="account-group-row"><th colspan="5">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`
+        : "";
+      const classificationHeading =
+        classification && classificationChanged
+          ? `<tr class="account-subgroup-row"><th colspan="5">${escapeHtml(CLASSIFICATION_LABELS[classification] || classification)}</th></tr>`
+          : "";
+
+      return `${typeHeading}${classificationHeading}
     <tr>
       <td>${escapeHtml(a.code)}</td>
       <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
+      <td><select class="account-subtype-select" data-account-id="${a.id}">${subtypeOptionsHtml(a.type, a.subtype)}</select></td>
       <td>${a.active ? "Active" : "Inactive"}</td>
       <td>${
         a.active && !a.is_system_account
@@ -4416,6 +4480,17 @@ function renderAccounts(data) {
       loadAccounts();
     });
   });
+  body.querySelectorAll(".account-subtype-select").forEach((select) => {
+    select.addEventListener("change", async () => {
+      await apiFetch(`/api/accounts/${select.dataset.accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtype: select.value }),
+      });
+      invalidateCache("__accounts__");
+      loadAccounts();
+    });
+  });
 }
 
 document.getElementById("account-create-form").addEventListener("submit", async (e) => {
@@ -4429,6 +4504,7 @@ document.getElementById("account-create-form").addEventListener("submit", async 
       body: JSON.stringify({
         name: nameInput.value,
         type: document.getElementById("account-create-type").value,
+        subtype: document.getElementById("account-create-subtype").value,
         code: document.getElementById("account-create-code").value,
       }),
     });
@@ -6248,7 +6324,125 @@ async function loadAdjustmentAccounts() {
     addRecurringLineRow();
     addRecurringLineRow();
   }
+  populateFixedAssetAccountPickers();
 }
+
+// ---- Fixed assets ----
+// See fixedAssets.js. Reuses recAccounts (already loaded above for the
+// generic recurring-entry line builder) rather than fetching accounts a
+// second time for the same tab.
+
+function accountOptionsFilteredHtml(type) {
+  return groupedAccountOptionsHtml(
+    recAccounts.filter((a) => a.type === type),
+    null
+  );
+}
+
+function populateFixedAssetAccountPickers() {
+  document.getElementById("fa-asset-account").innerHTML = accountOptionsFilteredHtml("asset");
+  document.getElementById("fa-accum-account").innerHTML = accountOptionsFilteredHtml("asset");
+  document.getElementById("fa-expense-account").innerHTML = accountOptionsFilteredHtml("expense");
+}
+
+function updateFixedAssetMonthlyPreview() {
+  const cost = Number(document.getElementById("fa-cost").value) || 0;
+  const salvage = Number(document.getElementById("fa-salvage").value) || 0;
+  const months = Number(document.getElementById("fa-life").value) || 0;
+  const el = document.getElementById("fa-monthly-preview");
+  if (cost > 0 && months > 0 && salvage <= cost) {
+    el.textContent = `${fmtMoney((cost - salvage) / months)} a month, straight-line.`;
+  } else {
+    el.textContent = "";
+  }
+}
+["fa-cost", "fa-salvage", "fa-life"].forEach((id) =>
+  document.getElementById(id).addEventListener("input", updateFixedAssetMonthlyPreview)
+);
+
+async function loadFixedAssets() {
+  const data = await (await apiFetch("/api/fixed-assets")).json();
+  const body = document.getElementById("fixed-assets-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No fixed assets yet — add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (a) => `
+    <tr>
+      <td>${escapeHtml(a.name)}</td>
+      <td>${fmtMoney(a.cost)}</td>
+      <td>${fmtMoney(a.accumulated_depreciation)}</td>
+      <td>${fmtMoney(a.book_value)}</td>
+      <td>${fmtMoney(a.monthly_amount)}</td>
+      <td>${a.fully_depreciated ? "—" : a.next_due || "—"}</td>
+      <td>${a.fully_depreciated ? "Fully depreciated" : a.active ? "Active" : "Paused"}</td>
+      <td>
+        ${
+          a.fully_depreciated
+            ? ""
+            : `<button type="button" class="fa-toggle-btn" data-id="${a.id}" data-active="${a.active}">${
+                a.active ? "Pause" : "Resume"
+              }</button>`
+        }
+        <button type="button" class="fa-delete-btn linklike" data-id="${a.id}">Delete</button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".fa-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/fixed-assets/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      loadFixedAssets();
+    })
+  );
+  body.querySelectorAll(".fa-delete-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Delete this fixed asset?", "Depreciation it already posted stays on the books — this only stops future postings and removes the record.", {
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/fixed-assets/${btn.dataset.id}`, { method: "DELETE" });
+      loadFixedAssets();
+    })
+  );
+}
+
+document.getElementById("fixed-asset-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("fixed-asset-status");
+  const res = await apiFetch("/api/fixed-assets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("fa-name").value,
+      cost: Number(document.getElementById("fa-cost").value),
+      salvage_value: Number(document.getElementById("fa-salvage").value) || 0,
+      useful_life_months: Number(document.getElementById("fa-life").value),
+      acquisition_date: document.getElementById("fa-acquired").value,
+      asset_account_id: document.getElementById("fa-asset-account").value,
+      expense_account_id: document.getElementById("fa-expense-account").value,
+      accumulated_depreciation_account_id: document.getElementById("fa-accum-account").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Added "${parsed.name}" -- ${fmtMoney(parsed.monthly_amount)} a month.`;
+  e.target.reset();
+  updateFixedAssetMonthlyPreview();
+  loadFixedAssets();
+});
 
 function recAccountOptions() {
   return groupedAccountOptionsHtml(recAccounts, null);
@@ -6570,7 +6764,10 @@ function renderBillPayments(rows) {
       <td>${fmtMoney(r.amount_outstanding)}</td>
       <td>${
         r.amount_outstanding > 0
-          ? `<button type="button" class="bp-pay-btn" data-id="${r.invoice_id}" data-outstanding="${r.amount_outstanding}">Record payment</button>`
+          ? `<button type="button" class="bp-pay-btn" data-id="${r.invoice_id}" data-outstanding="${r.amount_outstanding}">Record payment</button>
+             <button type="button" class="bp-write-check-btn" data-id="${r.invoice_id}" data-outstanding="${r.amount_outstanding}" data-vendor="${escapeHtml(
+              r.vendor_name || ""
+            )}">Write check</button>`
           : ""
       }</td>
     </tr>
@@ -6608,9 +6805,213 @@ function renderBillPayments(rows) {
       loadBillPayments();
     })
   );
+
+  body.querySelectorAll(".bp-write-check-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!bpPaymentAccounts.length) {
+        await alertDialog("No account to pay from", "Add a bank, cash, or credit card account to your chart of accounts first.");
+        return;
+      }
+      const check = await writeCheckDialog(Number(btn.dataset.outstanding), btn.dataset.vendor);
+      if (!check) return;
+
+      const res = await apiFetch("/api/written-checks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_id: btn.dataset.id, ...check }),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't write that check", parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__ap_aging__");
+      loadBillPayments();
+      loadWrittenChecks();
+    })
+  );
 }
 
 document.getElementById("bp-filter").addEventListener("change", loadBillPayments);
+
+// ---- Writing checks ----
+// See writtenChecks.js. Each one posts the exact same bill payment
+// "Record payment" above does, with a check number, payee, and memo on
+// top, plus a printable layout.
+
+let writeCheckModalResolve = null;
+
+function writeCheckDialog(outstanding, vendorName) {
+  document.getElementById("write-check-message").textContent = `Outstanding balance is ${fmtMoney(outstanding)}.`;
+  document.getElementById("write-check-number").value = "";
+  document.getElementById("write-check-payee").value = vendorName || "";
+  document.getElementById("write-check-amount").value = outstanding.toFixed(2);
+  document.getElementById("write-check-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("write-check-account").innerHTML = groupedAccountOptionsHtml(bpPaymentAccounts, null);
+  document.getElementById("write-check-memo").value = "";
+  const errorEl = document.getElementById("write-check-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("write-check-modal").style.display = "flex";
+  document.getElementById("write-check-number").focus();
+
+  return new Promise((resolve) => {
+    writeCheckModalResolve = resolve;
+  });
+}
+
+function closeWriteCheckModal(result) {
+  document.getElementById("write-check-modal").style.display = "none";
+  if (writeCheckModalResolve) {
+    writeCheckModalResolve(result);
+    writeCheckModalResolve = null;
+  }
+}
+
+document.getElementById("write-check-cancel").addEventListener("click", () => closeWriteCheckModal(null));
+
+document.getElementById("write-check-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const amount = Number(document.getElementById("write-check-amount").value);
+  const errorEl = document.getElementById("write-check-error");
+  if (!(amount > 0)) {
+    errorEl.textContent = "Enter an amount greater than zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  closeWriteCheckModal({
+    check_number: document.getElementById("write-check-number").value,
+    payee_name: document.getElementById("write-check-payee").value,
+    amount,
+    check_date: document.getElementById("write-check-date").value,
+    payment_account_id: document.getElementById("write-check-account").value,
+    memo: document.getElementById("write-check-memo").value,
+  });
+});
+
+async function loadWrittenChecks() {
+  const data = await (await apiFetch("/api/written-checks")).json();
+  const body = document.getElementById("written-checks-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No checks written yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (c) => `
+    <tr>
+      <td>${escapeHtml(c.check_number)}</td>
+      <td>${escapeHtml(c.payee_name)}</td>
+      <td>${c.check_date}</td>
+      <td>${escapeHtml(c.vendor_name || "—")}${c.invoice_number ? ` (${escapeHtml(c.invoice_number)})` : ""}</td>
+      <td>${fmtMoney(c.amount)}</td>
+      <td>
+        <button type="button" class="wc-print-btn linklike" data-id="${c.id}">Print</button>
+        <button type="button" class="wc-void-btn linklike" data-id="${c.id}">Void</button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".wc-print-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const check = data.items.find((c) => c.id === btn.dataset.id);
+      if (check) printWrittenCheck(check);
+    })
+  );
+  body.querySelectorAll(".wc-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Void this check?", "Reverses the payment it made -- the reversal stays on the books alongside the original, same as any other void.", {
+        confirmLabel: "Void",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/written-checks/${btn.dataset.id}`, { method: "DELETE" });
+      invalidateCache("__ap_aging__");
+      loadBillPayments();
+      loadWrittenChecks();
+    })
+  );
+}
+
+// Standard check-printing convention: the amount spelled out in words is
+// what actually controls if the numerals and the words ever disagree, so a
+// printable check without it is not a usable one. Handles anything up to
+// 999,999,999.99, which is every amount this app's own zod amount schemas
+// allow through.
+const NUMBER_WORDS_ONES = [
+  "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+  "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen",
+];
+const NUMBER_WORDS_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+function threeDigitsInWords(n) {
+  const parts = [];
+  if (n >= 100) {
+    parts.push(`${NUMBER_WORDS_ONES[Math.floor(n / 100)]} Hundred`);
+    n %= 100;
+  }
+  if (n >= 20) {
+    parts.push(NUMBER_WORDS_TENS[Math.floor(n / 10)] + (n % 10 ? `-${NUMBER_WORDS_ONES[n % 10].toLowerCase()}` : ""));
+  } else if (n > 0) {
+    parts.push(NUMBER_WORDS_ONES[n]);
+  }
+  return parts.join(" ");
+}
+
+function amountInWords(amount) {
+  const wholeDollars = Math.floor(amount);
+  const cents = Math.round((amount - wholeDollars) * 100);
+
+  if (wholeDollars === 0) return `Zero and ${String(cents).padStart(2, "0")}/100 dollars`;
+
+  const groups = [];
+  let n = wholeDollars;
+  const groupNames = ["", "Thousand", "Million"];
+  let groupIndex = 0;
+  while (n > 0 && groupIndex < groupNames.length) {
+    const chunk = n % 1000;
+    if (chunk > 0) {
+      groups.unshift(`${threeDigitsInWords(chunk)}${groupNames[groupIndex] ? ` ${groupNames[groupIndex]}` : ""}`);
+    }
+    n = Math.floor(n / 1000);
+    groupIndex += 1;
+  }
+  return `${groups.join(" ")} and ${String(cents).padStart(2, "0")}/100 dollars`;
+}
+
+function printWrittenCheck(check) {
+  const win = window.open("", "_blank", "width=800,height=400");
+  if (!win) return;
+  win.document.write(`
+    <!doctype html>
+    <html>
+    <head>
+      <title>Check #${escapeHtml(check.check_number)}</title>
+      <style>
+        body { font-family: Georgia, serif; padding: 2rem; color: #101a33; }
+        .check { border: 1px solid #999; padding: 1.5rem; max-width: 640px; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 1rem; }
+        .payee-line { border-bottom: 1px solid #333; padding: 0.25rem 0; flex: 1; margin-right: 1rem; }
+        .amount-box { border: 1px solid #333; padding: 0.4rem 0.8rem; }
+        .words-line { border-bottom: 1px solid #333; padding: 0.25rem 0; }
+        .memo { margin-top: 1.5rem; font-size: 0.85rem; color: #444; }
+      </style>
+    </head>
+    <body onload="window.print()">
+      <div class="check">
+        <div class="row"><span>Check #${escapeHtml(check.check_number)}</span><span>${check.check_date}</span></div>
+        <div class="row"><span class="payee-line">Pay to the order of: ${escapeHtml(check.payee_name)}</span><span class="amount-box">${fmtMoney(check.amount)}</span></div>
+        <div class="words-line">${escapeHtml(amountInWords(check.amount))}</div>
+        ${check.memo ? `<div class="memo">Memo: ${escapeHtml(check.memo)}</div>` : ""}
+        <div class="memo">Paid from: ${escapeHtml(check.payment_account_name || "")}</div>
+      </div>
+    </body>
+    </html>
+  `);
+  win.document.close();
+}
 
 async function loadApAging() {
   const asOfEl = document.getElementById("ap-as-of");
