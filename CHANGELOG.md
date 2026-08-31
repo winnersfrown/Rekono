@@ -4,6 +4,45 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.52
+
+Close out most of what the first Scorecard run (v1.51) flagged, for real
+rather than by gaming the number.
+
+- **Fixed the 5 open vulnerabilities.** Backend: `uuid` (pulled in
+  transitively by `exceljs` and `sequelize`) was <11.1.1, vulnerable to
+  GHSA-w5hq-g745-h8pq. `npm audit fix` wanted to "fix" this by downgrading
+  `exceljs` and `sequelize` to years-old major versions -- instead, a
+  `package.json` `overrides` entry forces `uuid` to 11.1.1 everywhere
+  without touching either direct dependency. Website: `vite`/`esbuild`
+  carried 4 known CVEs (GHSA-67mh-4wv8-2f99, GHSA-4w7w-66w2-5vf9,
+  GHSA-fx2h-pf6j-xcff, GHSA-v6wh-96g9-6wx3); the fix only exists past the
+  5.x line, so `vite` moves to ^6.4.3 and `@vitejs/plugin-react` to ^4.7.0
+  (the last major compatible with vite 6). Verified: `npm audit` reports 0
+  vulnerabilities in both, and the marketing site still builds clean.
+- **Pinned the Docker base image by digest** rather than the floating
+  `node:22-slim` tag, so two builds of the same commit can't silently pull
+  different underlying images.
+- **Added `.github/dependabot.yml`** covering both npm projects, the Docker
+  image, and GitHub Actions, so none of this goes stale silently again.
+- **Added `SECURITY.md`**, pointing at GitHub's private vulnerability
+  reporting rather than an email address nobody could verify is monitored.
+- **Added `.github/workflows/codeql.yml`** (CodeQL SAST) and
+  **`.github/workflows/ci.yml`** (the backend test suite plus a marketing
+  site build check) -- this repo had no CI test workflow at all before
+  this, only Vercel's deploy check. The CI job installs the same
+  `tesseract-ocr`/`poppler-utils` packages the Dockerfile does, so the OCR
+  pipeline tests that need `pdftoppm` actually pass instead of failing on
+  a runner that doesn't have it.
+
+Left alone, deliberately: GitHub Actions themselves aren't pinned by commit
+SHA (this session's GitHub access is scoped to this repo only, so there was
+no way to verify the real SHAs behind `actions/checkout@v4` etc. without
+guessing -- Dependabot's `github-actions` ecosystem entry will track them
+going forward instead). Branch protection on `main` and enabling GitHub's
+private vulnerability reporting both need repo Settings access this session
+doesn't have either -- both are one-time manual steps, not code.
+
 ## v1.51
 
 Add the OpenSSF Scorecard GitHub Action (`.github/workflows/scorecard.yml`),

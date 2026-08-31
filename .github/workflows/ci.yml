@@ -1,0 +1,66 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions: read-all
+
+jobs:
+  backend-tests:
+    name: Backend tests (SQLite)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "Set up Node"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      # Same packages the Dockerfile installs -- without these, the OCR
+      # pipeline tests (checkPipeline, taxDocPipeline, expensePipeline, ...)
+      # fail on missing `pdftoppm`/`tesseract` rather than on anything the
+      # change under test actually did.
+      - name: "Install OCR system dependencies"
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr poppler-utils
+
+      - name: "Install dependencies"
+        working-directory: backend
+        run: npm ci
+
+      # Same gate CLAUDE.md documents for local development: the full suite
+      # against SQLite, no external services required.
+      - name: "Run tests"
+        working-directory: backend
+        run: npm test
+
+  website-build:
+    name: Marketing site build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+
+      - name: "Set up Node"
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: website/package-lock.json
+
+      - name: "Install dependencies"
+        working-directory: website
+        run: npm ci
+
+      - name: "Build"
+        working-directory: website
+        run: npm run build

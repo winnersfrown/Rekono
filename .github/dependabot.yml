@@ -1,0 +1,25 @@
+# Keeps dependencies (and the Docker digest and GitHub Actions pins) from
+# going stale silently. Four ecosystems because this repo has four
+# independent dependency surfaces: the backend, the marketing site, the
+# Docker base image, and the workflow actions themselves.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
