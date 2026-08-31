@@ -32,6 +32,16 @@ const state = {
   leaseSortField: "created_at",
   leaseSortOrder: "desc",
   leasePage: 1,
+  checkStatusFilter: "",
+  // "Not yet applied" is a filter on the link, not on the status, so it
+  // rides alongside checkStatusFilter rather than being one of its values.
+  checkUnlinkedOnly: false,
+  checkSearchQuery: "",
+  checkSortField: "created_at",
+  checkSortOrder: "desc",
+  checkPage: 1,
+  selectedCheckId: null,
+
   taxdocStatusFilter: "",
   taxdocMissingTinOnly: false,
   taxdocYearFilter: "",
@@ -50,6 +60,7 @@ let expenseDocPreviewObjectUrl = null;
 let vendordocDocPreviewObjectUrl = null;
 let leaseDocPreviewObjectUrl = null;
 let taxdocDocPreviewObjectUrl = null;
+let checkDocPreviewObjectUrl = null;
 
 function debounce(fn, delayMs) {
   let timer = null;
@@ -236,6 +247,9 @@ function switchTab(name) {
   if (name === "vendordocs") loadVendorDocs();
   if (name === "leases") loadLeases();
   if (name === "taxdocs") loadTaxDocs();
+  // Payment accounts come along because linking a check needs the "pay
+  // from" picker populated before the detail pane is ever opened.
+  if (name === "checks") { loadPaymentAccounts(); loadChecks(); }
   if (name === "quickreview") loadQuickReviewQueue();
   if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
@@ -7589,4 +7603,519 @@ function onAuthenticated() {
   // Needed early (not just when the Settings tab is opened) so the invoice
   // detail panel's "Push to QuickBooks" button knows whether to show up.
   loadQuickbooksStatus();
+}
+
+// ---------------------------------------------------------------------------
+// Checks
+//
+// The document half mirrors the tax-document tab. The part that has no
+// counterpart on the other five is linking: a check isn't filed, it's
+// applied, and applying it posts a real journal entry. So the detail pane
+// leads with the suggested bills rather than burying them under the fields,
+// and a linked check renders read-only with an Unlink button -- the server
+// refuses corrections on one anyway (its fields are what the posted payment
+// was based on), and offering inputs that will be rejected is worse than not
+// offering them.
+// ---------------------------------------------------------------------------
+
+document.getElementById("check-upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const fileInput = document.getElementById("check-file-input");
+  const files = Array.from(fileInput.files);
+  if (!files.length) return;
+
+  const statusEl = document.getElementById("check-upload-status");
+  let uploaded = 0;
+  const failures = [];
+
+  for (const [i, file] of files.entries()) {
+    statusEl.textContent =
+      files.length > 1 ? `Uploading ${i + 1} of ${files.length}: ${file.name}...` : `Uploading ${file.name}...`;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await apiFetch("/api/checks/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json();
+        failures.push(`${file.name} — ${err.detail || res.statusText}`);
+        continue;
+      }
+      uploaded += 1;
+    } catch (err) {
+      failures.push(`${file.name} — ${err.message || String(err)}`);
+      break;
+    }
+  }
+
+  if (failures.length) {
+    const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
+    statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
+  } else {
+    statusEl.textContent =
+      uploaded > 1 ? `Uploaded ${uploaded} checks — queued for extraction.` : "Uploaded — queued for extraction.";
+  }
+
+  fileInput.value = "";
+  if (uploaded) {
+    invalidateCache("/api/checks?");
+    loadChecks();
+    bootstrapApp(); // refresh the account menu's shared "documents used this month" count
+  }
+});
+
+document.querySelectorAll(".check-filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".check-filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    if (btn.dataset.status === "unlinked") {
+      state.checkUnlinkedOnly = true;
+      state.checkStatusFilter = "";
+    } else {
+      state.checkUnlinkedOnly = false;
+      state.checkStatusFilter = btn.dataset.status;
+    }
+    state.checkPage = 1;
+    loadChecks();
+  });
+});
+
+async function loadChecks() {
+  const params = new URLSearchParams();
+  if (state.checkUnlinkedOnly) {
+    params.set("linked", "false");
+  } else if (state.checkStatusFilter) {
+    params.set("status", state.checkStatusFilter);
+  }
+  if (state.checkSearchQuery) params.set("q", state.checkSearchQuery);
+  params.set("sort", state.checkSortField);
+  params.set("order", state.checkSortOrder);
+  params.set("page", state.checkPage);
+  params.set("page_size", QUEUE_PAGE_SIZE);
+
+  const url = `/api/checks?${params.toString()}`;
+  return cachedLoad(url, async () => (await apiFetch(url)).json(), renderCheckList);
+}
+
+function renderCheckList({ items, total, totals }) {
+  const totalsEl = document.getElementById("check-totals");
+  if (totals && totals.unlinked_count) {
+    // The number that matters on this tab: money that left the account
+    // with nothing on the books yet accounting for it.
+    totalsEl.textContent = `${totals.unlinked_count} not yet applied — ${fmtMoney(totals.unlinked_amount)} of ${fmtMoney(totals.amount)} total.`;
+  } else if (totals) {
+    totalsEl.textContent = total ? `${total} check${total === 1 ? "" : "s"} — all applied to bills.` : "";
+  }
+
+  const tbody = document.querySelector("#check-table tbody");
+  tbody.innerHTML = (items || [])
+    .map(
+      (c) => `
+    <tr data-id="${c.id}" class="${c.id === state.selectedCheckId ? "selected" : ""}">
+      <td>${escapeHtml(c.check_date || "—")}</td>
+      <td>${escapeHtml(c.check_number || "—")}</td>
+      <td>${escapeHtml(c.payee_name || "—")}</td>
+      <td class="num">${c.amount == null ? "—" : fmtMoney(c.amount)}</td>
+      <td><span class="badge status-${c.status}">${c.status === "approved" ? "linked" : c.status.replace("_", " ")}</span></td>
+      <td class="num">${fmtPct(c.overall_confidence)}</td>
+    </tr>`
+    )
+    .join("");
+
+  tbody.querySelectorAll("tr").forEach((row) => {
+    row.addEventListener("click", () => selectCheck(row.dataset.id));
+  });
+
+  document.querySelectorAll("#check-table th.check-sortable").forEach((th) => {
+    th.classList.toggle("sort-active", th.dataset.sort === state.checkSortField);
+    th.dataset.order = th.dataset.sort === state.checkSortField ? state.checkSortOrder : "";
+  });
+
+  const start = total === 0 ? 0 : (state.checkPage - 1) * QUEUE_PAGE_SIZE + 1;
+  const end = Math.min(total, state.checkPage * QUEUE_PAGE_SIZE);
+  document.getElementById("check-queue-page-info").textContent = `${start}–${end} of ${total}`;
+  document.getElementById("check-queue-prev-page").disabled = state.checkPage <= 1;
+  document.getElementById("check-queue-next-page").disabled = end >= total;
+}
+
+document.querySelectorAll("#check-table th.check-sortable").forEach((th) => {
+  th.addEventListener("click", () => {
+    const field = th.dataset.sort;
+    if (state.checkSortField === field) {
+      state.checkSortOrder = state.checkSortOrder === "asc" ? "desc" : "asc";
+    } else {
+      state.checkSortField = field;
+      state.checkSortOrder = "desc";
+    }
+    state.checkPage = 1;
+    loadChecks();
+  });
+});
+
+document.getElementById("check-search").addEventListener(
+  "input",
+  debounce(() => {
+    state.checkSearchQuery = document.getElementById("check-search").value.trim();
+    state.checkPage = 1;
+    loadChecks();
+  }, 250)
+);
+
+document.getElementById("check-queue-prev-page").addEventListener("click", () => {
+  if (state.checkPage <= 1) return;
+  state.checkPage -= 1;
+  loadChecks();
+});
+
+document.getElementById("check-queue-next-page").addEventListener("click", () => {
+  state.checkPage += 1;
+  loadChecks();
+});
+
+async function selectCheck(id) {
+  state.selectedCheckId = id;
+  const res = await apiFetch(`/api/checks/${id}`);
+  const check = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't open this check", errorText(check.detail, "Could not load this check."));
+    return;
+  }
+  renderCheckDetail(check);
+}
+
+function checkFieldConf(c, name) {
+  return (c.field_confidence && c.field_confidence[name]) ?? 0;
+}
+
+function renderCheckDetail(c) {
+  const el = document.getElementById("check-queue-detail");
+
+  if (c.status === "queued" || c.status === "processing") {
+    const isPdf = (c.content_type || "").includes("pdf");
+    el.innerHTML = `
+      <div class="cross-check processing">⏳ Still processing this check — this updates automatically. Most documents finish in well under a minute, but a slow OCR pass or AI response can occasionally take a couple of minutes.</div>
+      <div class="doc-preview">
+        <h3>Source document</h3>
+        <div class="doc-preview-frame">
+          ${isPdf ? `<iframe id="check-doc-preview-media"></iframe>` : `<img id="check-doc-preview-media" />`}
+        </div>
+      </div>
+    `;
+    loadCheckPreview(c);
+    pollCheckWhileProcessing(c.id);
+    return;
+  }
+
+  const lowConf = (name) => (checkFieldConf(c, name) < 0.85 ? "low-confidence" : "");
+  const isPdf = (c.content_type || "").includes("pdf");
+  const preview = isPdf ? `<iframe id="check-doc-preview-media"></iframe>` : `<img id="check-doc-preview-media" />`;
+  const linked = Boolean(c.invoice_id);
+
+  const statusBanner =
+    c.status === "failed"
+      ? `<div class="cross-check fail">⚠ Extraction failed: ${escapeHtml(c.error_message) || "Unknown error."} You can still fill in the fields below by hand.</div>`
+      : `<div class="cross-check pass">✓ extraction method: ${c.extraction_method} &nbsp;·&nbsp; overall confidence: ${fmtPct(c.overall_confidence)}</div>`;
+
+  // A linked check has moved money. Say so plainly at the top, because
+  // every action below it behaves differently as a result.
+  const linkBanner = linked
+    ? `<div class="cross-check pass">✓ Applied to a bill — a payment of ${fmtMoney(c.amount)} has posted against Accounts Payable. Unlink to reverse it.</div>`
+    : `<div class="cross-check warn">This check hasn't been applied to a bill yet, so nothing on the books accounts for it. Pick a bill below to record the payment.</div>`;
+
+  // Read-only once linked: the server refuses corrections on a linked
+  // check, so rendering editable inputs would only invite a 409.
+  const ro = linked ? " disabled" : "";
+
+  el.innerHTML = `
+    ${linkBanner}
+    ${statusBanner}
+
+    <div class="detail-grid">
+      <div class="field ${lowConf("payee_name")}"><label>Payee</label><input id="cf-payee_name" value="${escapeHtml(c.payee_name)}"${ro} /></div>
+      <div class="field ${lowConf("amount")}"><label>Amount</label><input id="cf-amount" value="${c.amount ?? ""}"${ro} /></div>
+      <div class="field ${lowConf("check_date")}"><label>Date</label><input id="cf-check_date" type="date" value="${c.check_date || ""}"${ro} /></div>
+      <div class="field ${lowConf("check_number")}"><label>Check #</label><input id="cf-check_number" value="${escapeHtml(c.check_number)}"${ro} /></div>
+      <div class="field ${lowConf("memo")}"><label>Memo</label><input id="cf-memo" value="${escapeHtml(c.memo)}"${ro} /></div>
+      <div class="field ${lowConf("bank_name")}"><label>Bank</label><input id="cf-bank_name" value="${escapeHtml(c.bank_name)}"${ro} /></div>
+      <!-- Deliberately no maxlength, same trap as the tax module's TIN
+           field: a reviewer reads the check and types the whole account
+           number, and a 4-character cap would keep the FIRST four digits.
+           Let the full value through and let the server narrow it. -->
+      <div class="field ${lowConf("account_last4")}"><label>Account</label><input id="cf-account_last4" inputmode="numeric" placeholder="Last 4, or paste the full number" value="${escapeHtml(c.account_last4)}"${ro} /></div>
+      <div class="field"><label>Note</label><input id="cf-note" value="${escapeHtml(c.note)}"${ro} /></div>
+    </div>
+    ${linked ? "" : `<p class="hint">Rekono stores only the last four digits of the account number, and never stores the routing number — type or paste the whole number and it's narrowed on save. The full number stays in the source document.</p>`}
+
+    <h3>${linked ? "Applied to" : "Apply to a bill"}</h3>
+    <div id="check-link-area"><p class="hint">Loading bills…</p></div>
+
+    <div class="actions">
+      ${
+        linked
+          ? `<button class="reject" id="cbtn-unlink">Unlink and reverse payment</button>`
+          : `<button class="save" id="cbtn-save">Save Corrections</button>
+             <button class="reject" id="cbtn-reject">Reject</button>
+             <button class="retry" id="cbtn-retry">Retry Extraction</button>
+             <button class="delete" id="cbtn-delete">Delete</button>`
+      }
+    </div>
+
+    <div class="doc-preview">
+      <h3>Source document</h3>
+      <div class="doc-preview-frame">
+        ${preview}
+      </div>
+    </div>
+  `;
+
+  if (linked) {
+    document.getElementById("cbtn-unlink").addEventListener("click", () => unlinkCheck(c.id));
+  } else {
+    document.getElementById("cbtn-save").addEventListener("click", () => saveCheckCorrections(c.id));
+    document.getElementById("cbtn-reject").addEventListener("click", () => rejectCheck(c.id));
+    document.getElementById("cbtn-retry").addEventListener("click", () => retryCheck(c.id));
+    document.getElementById("cbtn-delete").addEventListener("click", () => deleteCheck(c.id));
+  }
+
+  loadCheckPreview(c);
+  renderCheckLinkArea(c);
+}
+
+async function renderCheckLinkArea(c) {
+  const area = document.getElementById("check-link-area");
+  if (!area) return;
+
+  if (c.invoice_id) {
+    const res = await apiFetch(`/api/invoices/${c.invoice_id}`);
+    const inv = await res.json();
+    area.innerHTML = res.ok
+      ? `<p>${escapeHtml(inv.vendor_name || "—")} &nbsp;·&nbsp; ${escapeHtml(inv.invoice_number || "no number")} &nbsp;·&nbsp; ${fmtMoney(inv.total)}</p>`
+      : `<p class="hint">The linked bill could not be loaded.</p>`;
+    return;
+  }
+
+  const res = await apiFetch(`/api/checks/${c.id}/match-suggestions`);
+  const body = await res.json();
+  if (!res.ok) {
+    area.innerHTML = `<p class="hint">${escapeHtml(errorText(body.detail, "Could not load suggestions."))}</p>`;
+    return;
+  }
+
+  if (!body.open_bill_count) {
+    area.innerHTML = `<p class="hint">No open bills to apply this check to. A bill has to be approved (and not already paid in full) before a payment can relieve it.</p>`;
+    return;
+  }
+  if (!body.suggestions.length) {
+    area.innerHTML = `<p class="hint">None of your ${body.open_bill_count} open bills look like a match for this check. Check the payee and amount above, or record the payment from the Bill Payments tab instead.</p>`;
+    return;
+  }
+
+  // The account picker is shared with the Bill Payments tab -- same filter,
+  // same reasoning (see loadPaymentAccounts).
+  const accountOptions = bpPaymentAccounts
+    .map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`)
+    .join("");
+
+  if (!accountOptions) {
+    area.innerHTML = `<p class="hint">Add a bank, cash, or credit card account to your chart of accounts before applying a check.</p>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="field"><label for="check-pay-from">Pay from</label><select id="check-pay-from">${accountOptions}</select></div>
+    <table class="line-items-table">
+      <thead><tr><th>Vendor</th><th>Bill</th><th>Outstanding</th><th>Why</th><th></th></tr></thead>
+      <tbody>
+        ${body.suggestions
+          .map(
+            (s) => `
+          <tr>
+            <td>${escapeHtml(s.vendor_name || "—")}</td>
+            <td>${escapeHtml(s.invoice_number || "—")}</td>
+            <td class="num">${fmtMoney(s.outstanding)}</td>
+            <td><span class="badge match-${s.status}">${s.status}</span> ${escapeHtml(s.reasoning)}</td>
+            <td><button class="approve check-link-btn" data-invoice="${escapeHtml(s.invoice_id)}">Apply</button></td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+    <p class="hint">Applying records a payment dated ${escapeHtml(c.check_date || "today")} against the bill, and posts it to the ledger.</p>
+  `;
+
+  area.querySelectorAll(".check-link-btn").forEach((btn) => {
+    btn.addEventListener("click", () => linkCheck(c.id, btn.dataset.invoice));
+  });
+}
+
+async function linkCheck(id, invoiceId) {
+  const accountEl = document.getElementById("check-pay-from");
+  if (!accountEl) return;
+
+  const confirmed = await confirmDialog(
+    "Apply this check to the bill?",
+    "This records a payment against the bill and posts it to the ledger. You can reverse it by unlinking."
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch(`/api/checks/${id}/link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invoice_id: invoiceId, payment_account_id: accountEl.value }),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't apply this check", errorText(body.detail, "Could not apply this check to that bill."));
+    return;
+  }
+  renderCheckDetail(body);
+  invalidateCache("/api/checks?");
+  invalidateCache("__ap_aging__");
+  loadChecks();
+}
+
+async function unlinkCheck(id) {
+  const confirmed = await confirmDialog(
+    "Unlink this check?",
+    "The payment is reversed with an opposing journal entry — both stay on the books and cancel — and the bill goes back to outstanding."
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch(`/api/checks/${id}/unlink`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't unlink this check", errorText(body.detail, "Could not unlink this check."));
+    return;
+  }
+  renderCheckDetail(body);
+  invalidateCache("/api/checks?");
+  invalidateCache("__ap_aging__");
+  loadChecks();
+}
+
+const CHECK_POLL_MAX_ATTEMPTS = 120;
+
+function pollCheckWhileProcessing(id, attempt = 0) {
+  if (attempt >= CHECK_POLL_MAX_ATTEMPTS) {
+    if (state.selectedCheckId === id) {
+      const banner = document.querySelector("#check-queue-detail .cross-check.processing");
+      if (banner) {
+        banner.textContent =
+          "⏳ Still processing — this is taking much longer than usual. It will keep updating automatically; feel free to check back later.";
+      }
+    }
+    return;
+  }
+  setTimeout(async () => {
+    if (state.selectedCheckId !== id) return;
+    const res = await apiFetch(`/api/checks/${id}`);
+    const c = await res.json();
+    if (state.selectedCheckId !== id) return;
+    // A failed poll is almost always transient -- keep waiting rather than
+    // rendering an error body as a finished check with every field empty.
+    if (!res.ok) {
+      pollCheckWhileProcessing(id, attempt + 1);
+      return;
+    }
+    if (c.status === "queued" || c.status === "processing") {
+      pollCheckWhileProcessing(id, attempt + 1);
+    } else {
+      renderCheckDetail(c);
+      invalidateCache("/api/checks?");
+      loadChecks();
+    }
+  }, 3000);
+}
+
+async function loadCheckPreview(c) {
+  const media = document.getElementById("check-doc-preview-media");
+  if (!media) return;
+  if (checkDocPreviewObjectUrl) {
+    URL.revokeObjectURL(checkDocPreviewObjectUrl);
+    checkDocPreviewObjectUrl = null;
+  }
+  try {
+    const res = await apiFetch(`/api/checks/${c.id}/file`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || "Could not load the source document.");
+    }
+    const blob = await res.blob();
+    checkDocPreviewObjectUrl = URL.createObjectURL(blob);
+    media.src = checkDocPreviewObjectUrl;
+  } catch (err) {
+    media.replaceWith(
+      Object.assign(document.createElement("p"), { className: "hint", textContent: String(err.message || err) })
+    );
+  }
+}
+
+async function saveCheckCorrections(id) {
+  const payload = {
+    payee_name: document.getElementById("cf-payee_name").value,
+    amount: numOrNull(document.getElementById("cf-amount").value),
+    check_date: document.getElementById("cf-check_date").value || null,
+    check_number: document.getElementById("cf-check_number").value,
+    memo: document.getElementById("cf-memo").value,
+    bank_name: document.getElementById("cf-bank_name").value,
+    account_last4: document.getElementById("cf-account_last4").value,
+    note: document.getElementById("cf-note").value,
+  };
+
+  const res = await apiFetch(`/api/checks/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json();
+  // Returning before renderCheckDetail keeps the typing on screen when a
+  // save is rejected -- see saveCorrections above for what happens when
+  // this is skipped.
+  if (!res.ok) {
+    await alertDialog("Couldn't save your changes", errorText(body.detail, "Could not save these corrections."));
+    return;
+  }
+  renderCheckDetail(body);
+  invalidateCache("/api/checks?");
+  loadChecks();
+}
+
+async function rejectCheck(id) {
+  const res = await apiFetch(`/api/checks/${id}/reject`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't reject this check", errorText(body.detail, "Could not reject this check."));
+    return;
+  }
+  renderCheckDetail(body);
+  invalidateCache("/api/checks?");
+  loadChecks();
+}
+
+async function retryCheck(id) {
+  const res = await apiFetch(`/api/checks/${id}/retry`, { method: "POST" });
+  const body = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't retry extraction", errorText(body.detail, "Could not retry this check."));
+    return;
+  }
+  renderCheckDetail(body);
+  invalidateCache("/api/checks?");
+  loadChecks();
+}
+
+async function deleteCheck(id) {
+  const confirmed = await confirmDialog("Delete this check?", "The stored image is removed. This can't be undone.");
+  if (!confirmed) return;
+
+  const res = await apiFetch(`/api/checks/${id}`, { method: "DELETE" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await alertDialog("Couldn't delete this check", errorText(body.detail, "Could not delete this check."));
+    return;
+  }
+  state.selectedCheckId = null;
+  document.getElementById("check-queue-detail").innerHTML =
+    `<div class="empty-state"><p class="hint">Select a check from the list to review it.</p></div>`;
+  invalidateCache("/api/checks?");
+  loadChecks();
 }

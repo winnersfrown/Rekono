@@ -17,7 +17,8 @@ import { processExpense, markFailedIfStuck as markExpenseFailedIfStuck } from ".
 import { processVendorDocument, markFailedIfStuck as markVendorDocFailedIfStuck } from "./vendorDocPipeline.js";
 import { processLease, markFailedIfStuck as markLeaseFailedIfStuck } from "./leasePipeline.js";
 import { processTaxDocument, markFailedIfStuck as markTaxDocFailedIfStuck } from "./taxDocPipeline.js";
-import { Invoice, ExpenseReceipt, VendorDocument, Lease, TaxDocument } from "./models/index.js";
+import { processCheck, markFailedIfStuck as markCheckFailedIfStuck } from "./checkPipeline.js";
+import { Invoice, ExpenseReceipt, VendorDocument, Lease, TaxDocument, Check } from "./models/index.js";
 import { runWithOrgContext, runWithSystemContext } from "./rls.js";
 
 const PROCESSORS = {
@@ -26,6 +27,7 @@ const PROCESSORS = {
   vendor_document: { process: processVendorDocument, markFailedIfStuck: markVendorDocFailedIfStuck, model: VendorDocument },
   lease: { process: processLease, markFailedIfStuck: markLeaseFailedIfStuck, model: Lease },
   tax_document: { process: processTaxDocument, markFailedIfStuck: markTaxDocFailedIfStuck, model: TaxDocument },
+  check: { process: processCheck, markFailedIfStuck: markCheckFailedIfStuck, model: Check },
 };
 
 const queue = [];
@@ -139,5 +141,18 @@ async function recoverOrphanedJobsInContext() {
     enqueue(doc.id, "tax_document");
   }
 
-  return stuckInvoices.length + stuckReceipts.length + stuckVendorDocs.length + stuckLeases.length + stuckTaxDocs.length;
+  const stuckChecks = await Check.findAll({ where: { status: ["queued", "processing"] } });
+  for (const check of stuckChecks) {
+    console.warn(`Recovering orphaned check ${check.id} (was "${check.status}" from a previous process)`);
+    enqueue(check.id, "check");
+  }
+
+  return (
+    stuckInvoices.length +
+    stuckReceipts.length +
+    stuckVendorDocs.length +
+    stuckLeases.length +
+    stuckTaxDocs.length +
+    stuckChecks.length
+  );
 }

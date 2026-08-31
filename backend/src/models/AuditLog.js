@@ -12,6 +12,7 @@ export const AuditLog = sequelize.define(
     vendorDocumentId: { type: DataTypes.STRING(32), allowNull: true },
     leaseId: { type: DataTypes.STRING(32), allowNull: true },
     taxDocumentId: { type: DataTypes.STRING(32), allowNull: true },
+    checkId: { type: DataTypes.STRING(32), allowNull: true },
     userId: { type: DataTypes.STRING(32), allowNull: true },
     action: { type: DataTypes.STRING(128), allowNull: false },
     actor: { type: DataTypes.STRING(256), allowNull: false, defaultValue: "system" },

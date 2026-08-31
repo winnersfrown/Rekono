@@ -38,6 +38,7 @@ const DIRECT_ORG_TABLES = [
   "accounts",
   "audit_logs",
   "bill_payments",
+  "checks",
   "close_periods",
   "close_tasks",
   "customer_invoices",

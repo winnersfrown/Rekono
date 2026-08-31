@@ -286,6 +286,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h3"/></svg>
             Tax Docs
           </button>
+          <button class="tab-btn" data-tab="checks">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h6M6 14h3"/><path d="M16 14h2"/></svg>
+            Checks
+          </button>
               </div>
             </div>
 
@@ -973,6 +977,58 @@
               <div class="empty-state">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h3"/></svg>
                 <p class="hint">Select a tax document from the list to review it.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-checks" class="tab-panel">
+          <h1>Checks</h1>
+          <p class="hint">Upload a scanned or photographed check — payee, amount, date, check number and memo are read automatically, then link it to the bill it pays. Linking records the payment against Accounts Payable for real. Only the last four digits of the account number are ever stored, and the routing number never is.</p>
+          <div class="panel">
+            <form id="check-upload-form">
+              <input type="file" id="check-file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple required />
+              <button type="submit">Upload</button>
+            </form>
+            <div id="check-upload-status" class="hint"></div>
+          </div>
+
+          <div class="queue-layout">
+            <div class="queue-list">
+              <div class="queue-filters">
+                <button class="check-filter-btn active" data-status="">All</button>
+                <button class="check-filter-btn" data-status="unlinked">Not yet applied</button>
+                <button class="check-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="check-filter-btn" data-status="extracted">Extracted</button>
+                <button class="check-filter-btn" data-status="approved">Linked</button>
+                <button class="check-filter-btn" data-status="queued">Queued</button>
+                <button class="check-filter-btn" data-status="failed">Failed</button>
+              </div>
+              <div id="check-totals" class="hint"></div>
+              <input type="search" id="check-search" class="queue-search" placeholder="Search payee…" aria-label="Search checks" />
+              <table id="check-table">
+                <thead>
+                  <tr>
+                    <th class="check-sortable" data-sort="check_date">Date</th>
+                    <th class="check-sortable" data-sort="check_number">No.</th>
+                    <th class="check-sortable" data-sort="payee_name">Payee</th>
+                    <th class="check-sortable" data-sort="amount">Amount</th>
+                    <th>Status</th>
+                    <th class="check-sortable" data-sort="overall_confidence">Conf.</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <div class="queue-pagination" id="check-queue-pagination">
+                <button type="button" id="check-queue-prev-page" class="btn-logout">Prev</button>
+                <span id="check-queue-page-info" class="hint"></span>
+                <button type="button" id="check-queue-next-page" class="btn-logout">Next</button>
+              </div>
+            </div>
+            <div class="queue-detail" id="check-queue-detail">
+              <div class="empty-state">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h6M6 14h3"/><path d="M16 14h2"/></svg>
+                <p class="hint">Select a check from the list to review it.</p>
               </div>
             </div>
           </div>

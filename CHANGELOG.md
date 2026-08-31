@@ -4,6 +4,95 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.45
+
+Scan checks and apply them to the bills they pay.
+
+A sixth document pipeline, same shape as the five before it (upload → OCR →
+LLM/heuristic extraction → confidence-gated review), with a second half none
+of the others have. A lease or a tax form gets filed. A check gets
+*applied*: `POST /api/checks/:id/link` records a real `BillPayment` and posts
+a real journal entry, Debit Accounts Payable / Credit whatever the money left
+from.
+
+That posting goes through `accountsPayable.js`'s `recordBillPayment` rather
+than writing a payment of its own. It already refuses to relieve a payable
+that never posted, already unwinds its own row when the ledger rejects the
+entry, and is already what the manual payments screen and the QuickBooks
+bank-match confirmation call. A check arriving by camera instead of by
+keyboard is not a reason for the money to reach the books down a second road
+that has to be kept in step by hand.
+
+Three decisions are specific to this document type.
+
+**The MICR line is narrowed to four digits and the routing number is not
+stored at all.** The strip along the bottom of every check carries the full
+routing and account number, and that pair is the whole of what someone needs
+to draft an ACH debit against the account. Keeping it would make this one
+table a more attractive target than the rest of the app combined, for no
+product benefit -- last-four is what a human uses to confirm which account a
+check was drawn on, and the full number is still in the stored image. The
+narrowing happens at the same three points the tax module narrows a TIN:
+extraction (applied to the model's output too), the correction route (a
+reviewer types what's printed, and the field deliberately has no `maxlength`
+because a 4-character cap keeps the *first* four digits), and the raw OCR
+text before it's persisted.
+
+**The payment is dated from the check, not from the scan.** A check written
+on the 28th and photographed on the 3rd belongs in the month it was written.
+Using the upload date would move real money across a period boundary quietly,
+which is the kind of error nobody finds until a close doesn't tie.
+
+**Suggestions score against the outstanding balance, not the bill's face
+value.** A $500 check against a $2,000 bill with $1,500 already paid is an
+exact match; scored against the total it ranks below a coincidence. Fully
+paid bills drop out of the list entirely rather than being offered and then
+refused as an overpayment. The scoring reuses `matching.js`'s `scorePair`
+(now exported) so the amount tolerance and date window stay one
+configuration rather than two that drift -- and the check's memo line is
+passed as the reference, since that is where people write the invoice number
+they're paying.
+
+Linking is the only way a check reaches `approved`, so the status can never
+claim a payment that isn't on the books. Once linked it can't be corrected,
+re-extracted, or deleted -- its fields are what the posted payment was based
+on. Unlinking reverses the journal entry (both halves stay on the books and
+cancel, same as every other correction in this ledger) and sends the check
+back to `needs_review` rather than to `extracted`: a link that had to be
+undone is evidence something was misread.
+
+## v1.44
+
+Say when a correction doesn't save, and stop wiping the form when it doesn't.
+
+`saveCorrections` never checked whether the `PATCH` succeeded. It handed the
+response body straight to `renderDetail`, and on a rejected save that body is
+an error, not an invoice -- so every field read back `undefined`, `escapeHtml`
+rendered each one as `""`, and the review form redrew completely blank with
+no message anywhere.
+
+What that looks like from the outside is the fields refusing to accept input.
+Fill in the invoice number and the PO reference, save, and both are empty
+again, with nothing on screen saying why. Worse, the save really had failed,
+so the typing wasn't only erased -- it was never stored. The correction route
+validates the whole payload at once, so a single bad field takes the rest of
+the form down with it: `payment_terms` over its 64-character limit is enough
+to lose an invoice number typed correctly in a different box.
+
+Three changes. The handler checks `res.ok` and reports the failure. It
+returns *before* `renderDetail`, which is the substantive half -- leaving the
+DOM untouched keeps the user's typing on screen so they can fix the one named
+field rather than re-entering the form from the document. And `errorText`
+renders a zod issue array as "Terms: string must contain at most 64
+characters" instead of the `[object Object]` that `body.detail || "..."`
+produces on a 422.
+
+The same unchecked pattern was in `approveInvoice`, `rejectInvoice`,
+`selectInvoice`, and the processing poll -- four more places that could blank
+the panel the same silent way, against an app that already checks `res.ok` at
+99 other call sites. `retryInvoice`, directly adjacent, was already doing it
+correctly.
+
 ## v1.43
 
 Read the purchase-order reference off documents that don't say "PO".

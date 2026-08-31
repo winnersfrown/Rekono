@@ -21,7 +21,18 @@ export function findBestMatch(invoiceVendor, invoiceAmount, invoiceDate, invoice
   return best;
 }
 
-function scorePair(invoiceVendor, invoiceAmount, invoiceDate, invoicePoReference, entry) {
+// Exported so routes/checks.js can rank a scanned check against the org's
+// open bills without a second copy of the tolerance/threshold rules -- the
+// amount tolerance and date window are configuration (see config.js), and
+// two matchers disagreeing about them is exactly the kind of drift that
+// makes a reconciliation result impossible to explain.
+//
+// The parameter names are from this function's original caller (an invoice
+// against uploaded PO/bank entries) and are left alone rather than
+// generalised: renaming them would touch every line of the scoring maths
+// for no behavioural gain. Read them as "the document being matched" and
+// "the candidate it's being matched against".
+export function scorePair(invoiceVendor, invoiceAmount, invoiceDate, invoicePoReference, entry) {
   const vendorScore = fuzzball.token_sort_ratio(invoiceVendor || "", entry.vendor || "");
   const vendorOk = vendorScore >= settings.matchVendorScoreThreshold;
 
