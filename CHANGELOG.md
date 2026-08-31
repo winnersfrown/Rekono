@@ -4,6 +4,16 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.46
+
+Fix the repo's LICENSE, which contradicted its own package.json. The root
+`LICENSE` file was BSD 2-Clause -- a permissive open-source grant -- while
+`backend/package.json` declared `"license": "UNLICENSED"`, npm's convention
+for "proprietary, no rights granted." Rekono is closed-source commercial
+software, so the BSD text was the wrong one: replaced it with an
+all-rights-reserved proprietary notice, and added the matching
+`"license": "UNLICENSED"` field to `website/package.json`, which had none.
+
 ## v1.45
 
 Scan checks and apply them to the bills they pay, and close two gaps in
