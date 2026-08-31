@@ -16,6 +16,7 @@ import { ExpenseReceipt } from "./ExpenseReceipt.js";
 import { VendorDocument } from "./VendorDocument.js";
 import { Lease } from "./Lease.js";
 import { TaxDocument } from "./TaxDocument.js";
+import { Check } from "./Check.js";
 import { ClosePeriod } from "./ClosePeriod.js";
 import { CloseTask } from "./CloseTask.js";
 import { Transaction } from "./Transaction.js";
@@ -65,6 +66,14 @@ AuditLog.belongsTo(Lease, { foreignKey: "leaseId" });
 
 TaxDocument.hasMany(AuditLog, { foreignKey: "taxDocumentId", as: "auditLogs", onDelete: "CASCADE", hooks: true });
 AuditLog.belongsTo(TaxDocument, { foreignKey: "taxDocumentId" });
+
+Check.hasMany(AuditLog, { foreignKey: "checkId", as: "auditLogs", onDelete: "CASCADE", hooks: true });
+AuditLog.belongsTo(Check, { foreignKey: "checkId" });
+
+// A check points at the bill it pays. Deliberately without a constraint:
+// the bill long outlives the check image, and unlinking a check is a
+// reversal (see routes/checks.js), never a deletion of either side.
+Check.belongsTo(Invoice, { foreignKey: "invoiceId", constraints: false });
 
 // Deleting a close period takes its checklist with it -- a task has no
 // meaning outside the month it belongs to.
@@ -293,6 +302,7 @@ export {
   VendorDocument,
   Lease,
   TaxDocument,
+  Check,
   ClosePeriod,
   CloseTask,
   Transaction,

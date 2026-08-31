@@ -4,6 +4,90 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.45
+
+Scan checks and apply them to the bills they pay, and close two gaps in
+document reading along the way. One squash covering three changes that
+landed together: a contributor's first PR to this codebase.
+
+**Read more PO and invoice-number label variants, on top of v1.44's fix.**
+v1.44 taught the heuristic extractor to recognize `Purchase Order` spelled
+out and to skip a vendor's own `PO Box` return address. This goes further:
+`Order No.`, `Your Order #`, `Customer PO`, and `Order Reference` are all
+purchase-order labels real invoices use, and none of them matched. Bare
+`Order` is too common a word to accept on a label alone, so it requires an
+explicit marker after it (`Order No.`, `Order #`) -- which is how it's
+printed when it does name a PO -- and a captured value must contain a
+digit, which is what keeps a `Purchase Order Terms` heading from extracting
+`Terms`. The invoice number gained `Invoice ID`/`Invoice Ref` as labels,
+and `/` in its character class: an invoice numbered `2026/0007` was being
+truncated to `2026`, which every other invoice that vendor sent in 2026
+also truncates to, and duplicate detection matches on vendor plus invoice
+number. On the LLM path, both fields now carry a description naming the
+label variants and naming the other field as what it is *not* -- a model
+reading a document with two similar-looking numbers doesn't fail by being
+unable to read them, it fails by spending one on the other's field and
+leaving that one blank.
+
+**Say when a correction doesn't save, instead of silently wiping the
+form.** `saveCorrections` never checked whether the `PATCH` succeeded. It
+handed the response body straight to `renderDetail`, and on a rejected save
+that body is an error, not an invoice -- so every field read back
+`undefined`, `escapeHtml` rendered each one as `""`, and the review form
+redrew completely blank with no message anywhere. What that looks like from
+the outside is the fields refusing to accept input: fill in the invoice
+number and the PO reference, save, and both are empty again, with nothing
+on screen saying why -- and the typing wasn't only erased, it was never
+stored, since the correction route validates the whole payload at once and
+one field over its limit takes the rest down with it. The handler now
+checks `res.ok`, reports the failure, and returns *before* `renderDetail` --
+leaving the DOM untouched keeps the user's typing on screen instead of
+forcing a re-entry from the document. `errorText` renders a zod issue array
+as "Terms: string must contain at most 64 characters" instead of the
+`[object Object]` a bare `body.detail || "..."` produced on a 422. The same
+unchecked pattern was in `approveInvoice`, `rejectInvoice`, `selectInvoice`,
+and the processing poll -- four more places that could blank the panel the
+same silent way.
+
+**Scan checks and apply them to the bills they pay.** A sixth document
+pipeline, same shape as the five before it (upload → OCR → LLM/heuristic
+extraction → confidence-gated review), with a second half none of the
+others have. A lease or a tax form gets filed. A check gets *applied*:
+`POST /api/checks/:id/link` records a real `BillPayment` and posts a real
+journal entry, Debit Accounts Payable / Credit whatever the money left
+from. That posting goes through `accountsPayable.js`'s `recordBillPayment`
+rather than writing a payment of its own -- the same function the manual
+payments screen and the QuickBooks bank-match confirmation call, which
+already refuses to relieve a payable that never posted and already unwinds
+its own row when the ledger rejects the entry. A check arriving by camera
+instead of by keyboard is not a reason for the money to reach the books
+down a second road that has to be kept in step by hand.
+
+Three decisions are specific to this document type. **The MICR line is
+narrowed to four digits and the routing number is not stored at all** --
+that pair is the whole of what someone needs to draft an ACH debit against
+the account, narrowed at the same three points the tax module narrows a
+TIN: extraction, the correction route (no `maxlength`, since a 4-character
+cap keeps the *first* four digits), and the raw OCR text before it's
+persisted. **The payment is dated from the check, not from the scan** -- a
+check written on the 28th and photographed on the 3rd belongs in the month
+it was written, and using the upload date would move real money across a
+period boundary quietly. **Suggestions score against the outstanding
+balance, not the bill's face value** -- a $500 check against a $2,000 bill
+with $1,500 already paid is an exact match, and fully paid bills drop out
+of the list rather than being offered and then refused as an overpayment.
+The scoring reuses `matching.js`'s `scorePair` (now exported) so the amount
+tolerance and date window stay one configuration rather than two that
+drift.
+
+Linking is the only way a check reaches `approved`, so the status can never
+claim a payment that isn't on the books. Once linked it can't be corrected,
+re-extracted, or deleted -- its fields are what the posted payment was
+based on. Unlinking reverses the journal entry (both halves stay on the
+books and cancel, same as every other correction in this ledger) and sends
+the check back to `needs_review` rather than to `extracted`: a link that
+had to be undone is evidence something was misread.
+
 ## v1.44
 
 The heuristic PO-reference extractor recognized the abbreviation and

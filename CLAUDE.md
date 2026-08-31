@@ -12,6 +12,7 @@ matter most, and the order to look in:
 | Fiscal years, period locking | `fiscalYear.js` |
 | AR: customer invoices, payments, aging | `accountsReceivable.js` |
 | AP: bill payments, aging | `accountsPayable.js` |
+| Scanned checks, and applying one to a bill | `checkPipeline.js`, `routes/checks.js` |
 | Vendor identity + merging | `vendors.js` |
 | Deferred revenue, ASC 606 | `revenueRecognition.js` |
 | Adjusting entries (depreciation, accruals) | `recurringEntries.js` |
@@ -24,9 +25,16 @@ matter most, and the order to look in:
 | Close suggestions (missing entries) | `closeAutomation.js` |
 | Row-level security policy list | `rls.js` |
 
-Frontend is vanilla JS, no build step: `backend/public/app.js` (~6.4k
+Frontend is vanilla JS, no build step: `backend/public/app.js` (~8.1k
 lines), `index.html`, `styles.css`. Tabs are `data-tab` buttons plus a
 `#tab-<name>` section, wired in `switchTab`.
+
+Nothing in `backend/public/` has automated test coverage — the whole suite
+is backend. A frontend change is verified by `node --check` and by opening
+the UI, so "the tests pass" says nothing about it. Two bugs that shipped
+here were invisible to a green suite for exactly that reason: a save
+handler that never checked `res.ok` and redrew the form blank on a
+rejected save (v1.45), and the same omission in four sibling handlers.
 
 ## Accounting conventions
 

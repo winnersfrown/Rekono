@@ -42,13 +42,28 @@ const INVOICE_TOOL = {
     properties: {
       vendor_name: { type: "string" },
       vendor_name_confidence: { type: "number" },
-      invoice_number: { type: "string" },
+      // Both identifying numbers are described rather than left bare, and
+      // each one names the other as what it is *not*. A document carries
+      // two numbers that look alike, and the failure isn't that a model
+      // can't read them -- it's that it puts the PO number in
+      // invoice_number, or leaves one blank having spent it on the other.
+      // Naming the label variants is what makes "Order No." findable at
+      // all; naming the exclusion is what keeps them apart.
+      invoice_number: {
+        type: "string",
+        description:
+          "The invoice's own identifying number, however it is labelled -- 'Invoice #', 'Invoice No.', 'Invoice ID', 'Invoice Ref', 'Bill No.', 'Document No.'. Empty string if absent. Never the purchase-order number, an account number, or a date.",
+      },
       invoice_number_confidence: { type: "number" },
       invoice_date: { type: "string", description: "ISO format YYYY-MM-DD, empty string if unknown" },
       invoice_date_confidence: { type: "number" },
       due_date: { type: "string", description: "ISO format YYYY-MM-DD, empty string if unknown/absent" },
       due_date_confidence: { type: "number" },
-      po_reference: { type: "string", description: "Purchase order number/reference, empty string if absent" },
+      po_reference: {
+        type: "string",
+        description:
+          "The buyer's purchase-order number, however it is labelled -- 'PO', 'P.O. No.', 'PO #', 'Purchase Order', 'Order No.', 'Order Reference', 'Customer PO', 'Your Order #'. Empty string if absent. Never the invoice's own number.",
+      },
       po_reference_confidence: { type: "number" },
       currency: { type: "string", description: "ISO currency code, e.g. USD" },
       subtotal: { type: "number" },
@@ -224,11 +239,20 @@ function extractHeuristic(ocrText) {
     }
   }
 
-  // Requires an explicit marker (#, "no", "number", or a colon/dash) between
-  // "invoice" and the captured value -- without this, "invoice" matching the
-  // page's own title (with nothing but a line break after it) would capture
-  // whatever word starts the next line instead of the real invoice number.
-  const invMatch = ocrText.match(/invoice\s*(?:#|no\.?|number|[:\-])\s*[:\-]?\s*([A-Za-z0-9\-]{2,})/i);
+  // Requires an explicit marker (#, "no", "number", "id", "ref", or a
+  // colon/dash) between "invoice" and the captured value -- without this,
+  // "invoice" matching the page's own title (with nothing but a line break
+  // after it) would capture whatever word starts the next line instead of
+  // the real invoice number.
+  //
+  // "/" is in the character class for the same reason it is in the PO
+  // reference's below: an invoice numbered "2026/0007" is an ordinary
+  // sequence/year format, and a class without the separator silently
+  // truncates it to "2026" -- which then collides with every other invoice
+  // that vendor sent the same year, including in duplicate detection.
+  const invMatch = ocrText.match(
+    /invoice\s*(?:#|no\.?|number|id|ref(?:erence)?|[:\-])\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i
+  );
   if (invMatch) {
     fields.invoice_number = invMatch[1];
     fieldConfidence.invoice_number = HEURISTIC_FIELD_CONFIDENCE;
@@ -259,26 +283,46 @@ function extractHeuristic(ocrText) {
     }
   }
 
-  // Character class includes "/" -- a common separator in real PO
-  // references (e.g. "2312/2019", an order-number/year format), which the
-  // previous class silently truncated at.
+  // Two patterns rather than one, because the labels split into two groups
+  // with genuinely different risk.
   //
-  // Two alternatives: the abbreviation ("P.O."/"PO", marker optional --
-  // "PO: 4471" is already specific enough on its own) or the label spelled
-  // out in full ("Purchase Order"), which real invoices use just as often
-  // and which the abbreviation-only pattern used to miss entirely. The
-  // spelled-out form requires a `:`/`-` (a marker word like "Number" alone
-  // isn't enough without one either) -- "purchase order" alone is generic
-  // enough to show up in body prose ("the purchase order was approved..."),
-  // and nothing here should mistake that for a labelled value. `(?!\s*box)`
-  // keeps a vendor's own return address ("PO Box 5000") from matching the
-  // same shape as a real reference.
-  const poMatch = ocrText.match(
-    /\bP\.?O\.?(?!\s*box\b)\s*(?:#|no\.?|number)?\s*[:\-]?\s*([A-Za-z0-9\-\/]{2,})|\bpurchase\s+order\s*(?:#|no\.?|number)?\s*[:\-]\s*([A-Za-z0-9\-\/]{2,})/i
-  );
-  if (poMatch) {
-    fields.po_reference = poMatch[1] ?? poMatch[2];
-    fieldConfidence.po_reference = HEURISTIC_FIELD_CONFIDENCE;
+  // "PO"/"P.O."/"Purchase Order" are unambiguous, so they're accepted with
+  // nothing but whitespace after them ("Purchase Order 4421" prints
+  // without punctuation often enough to matter). The `(?![a-z])` is what
+  // makes that safe: the previous pattern made *every* part after "PO"
+  // optional, so any word beginning with those two letters matched the
+  // label and captured its own tail -- a "Postage 12.00" line extracted
+  // "stage" as the purchase-order number, on an invoice that had no PO at
+  // all. Case-insensitivity means this covers OCR's all-caps output too.
+  // `(?!\s*box\b)` sits alongside it for the same reason: a vendor's own
+  // return address ("PO Box 5000") matches the label just as well as a
+  // real reference, and it commonly appears earlier in the document than
+  // the buyer's actual PO field -- so without the exclusion, the *real*
+  // reference lower down is never reached at all, not merely misread.
+  //
+  // Bare "Order" is a common enough English word that accepting it on a
+  // label alone would reintroduce the same class of false positive, so it
+  // requires an explicit marker after it ("Order No. 4421", "Your Order #
+  // 5567") -- which is how it's actually printed when it names a PO.
+  //
+  // Character classes include "/" -- a common separator in real PO
+  // references (e.g. "2312/2019", an order-number/year format), which an
+  // earlier class silently truncated at.
+  const PO_PATTERNS = [
+    /\b(?:(?:customer|client|buyer|your|our)\s+)?(?:p\.?\s?o\.?(?![a-z])(?!\s*box\b)|purchase\s+order)\s*(?:#|no\.?|number|ref(?:erence)?)?\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i,
+    /\border\s*(?:#|no\.?|number|ref(?:erence)?)\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i,
+  ];
+  for (const pattern of PO_PATTERNS) {
+    const poMatch = ocrText.match(pattern);
+    // A purchase-order reference always carries a digit. Requiring one is
+    // what separates a real reference from the label's own following word,
+    // so a "Purchase Order Terms" heading doesn't extract "Terms" -- the
+    // label is identical in both cases and nothing else distinguishes them.
+    if (poMatch && /\d/.test(poMatch[1])) {
+      fields.po_reference = poMatch[1];
+      fieldConfidence.po_reference = HEURISTIC_FIELD_CONFIDENCE;
+      break;
+    }
   }
 
   const totalMatch = ocrText.match(

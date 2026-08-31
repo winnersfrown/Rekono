@@ -285,6 +285,55 @@ export function serializeTaxDocumentDetail(t) {
   };
 }
 
+export function serializeCheckDetail(c) {
+  return {
+    id: c.id,
+    original_filename: c.originalFilename,
+    content_type: c.contentType,
+    status: c.status,
+    error_message: c.errorMessage,
+
+    check_number: c.checkNumber,
+    check_date: c.checkDate,
+    payee_name: c.payeeName,
+    amount: c.amount,
+    memo: c.memo,
+    bank_name: c.bankName,
+    // Already only four digits by the time it's stored -- see Check.js's
+    // accountLast4 comment. Nothing is masked on the way out here because
+    // there's nothing left to mask, and the routing number was never
+    // stored at all.
+    account_last4: c.accountLast4,
+
+    invoice_id: c.invoiceId,
+    bill_payment_id: c.billPaymentId,
+    note: c.note,
+
+    extraction_method: c.extractionMethod,
+    field_confidence: c.fieldConfidence,
+    overall_confidence: c.overallConfidence,
+
+    created_at: c.createdAt,
+    updated_at: c.updatedAt,
+  };
+}
+
+export function serializeCheckListItem(c) {
+  return {
+    id: c.id,
+    original_filename: c.originalFilename,
+    status: c.status,
+    check_number: c.checkNumber,
+    check_date: c.checkDate,
+    payee_name: c.payeeName,
+    amount: c.amount,
+    memo: c.memo,
+    invoice_id: c.invoiceId,
+    overall_confidence: c.overallConfidence,
+    created_at: c.createdAt,
+  };
+}
+
 export function serializeTaxDocumentListItem(t) {
   return {
     id: t.id,

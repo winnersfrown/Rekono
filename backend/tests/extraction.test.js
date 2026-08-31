@@ -109,6 +109,49 @@ test("heuristic extraction doesn't truncate a PO reference containing a slash", 
   expect(result.fields.po_reference).toBe("2312/2019");
 });
 
+// The label variants below all name a purchase order on real invoices. The
+// pattern used to accept only a literal "PO"/"P.O.", so every one of these
+// came back blank on a document that stated its PO plainly.
+test.each([
+  ["Purchase Order, spelled out", "Purchase Order: 4421", "4421"],
+  ["Purchase Order with no punctuation", "Purchase Order 4421", "4421"],
+  ["Order No.", "Order No. 4421", "4421"],
+  ["Your Order #", "Your Order #: 5567", "5567"],
+  ["Customer PO", "Customer PO: 88231", "88231"],
+  ["Order Reference", "Order Reference: A-9910", "A-9910"],
+])("heuristic extraction reads a PO reference labelled as %s", async (_label, line, expected) => {
+  const result = await extract(`Acme Supplies Inc\n\nInvoice #: INV-1\n${line}\n\nTotal Due: $10.00\n`);
+  expect(result.fields.po_reference).toBe(expected);
+});
+
+// The regression this pattern was rewritten for: every part after "PO" was
+// optional, so the label matched the first two letters of any word starting
+// "Po" and captured the rest of it. "Postage" on an invoice with no PO at
+// all produced a po_reference of "stage".
+test("heuristic extraction doesn't read a word beginning with 'po' as a PO reference", async () => {
+  const result = await extract("Acme Supplies Inc\n\nInvoice #: INV-1\n\nPostage 12.00\nTotal Due: $62.00\n");
+  expect(result.fields.po_reference).toBe("");
+});
+
+test("heuristic extraction doesn't take the word after a PO heading as the reference", async () => {
+  const result = await extract("Acme Supplies Inc\n\nInvoice #: INV-1\n\nPurchase Order Terms\nTotal Due: $10.00\n");
+  expect(result.fields.po_reference).toBe("");
+});
+
+// Same truncation the PO reference was already fixed for, on the other
+// identifying number: "2026/0007" is a sequence/year format, and stopping
+// at the slash leaves every invoice that vendor sent in 2026 sharing one
+// number -- which duplicate detection then reads as a repeat submission.
+test("heuristic extraction doesn't truncate an invoice number containing a slash", async () => {
+  const result = await extract("Acme Supplies Inc\n\nInvoice No: 2026/0007\n\nTotal Due: $10.00\n");
+  expect(result.fields.invoice_number).toBe("2026/0007");
+});
+
+test("heuristic extraction reads an invoice number labelled 'Invoice ID'", async () => {
+  const result = await extract("Acme Supplies Inc\n\nInvoice ID: INV-2026-0042\n\nTotal Due: $10.00\n");
+  expect(result.fields.invoice_number).toBe("INV-2026-0042");
+});
+
 test("heuristic extraction finds a PO reference spelled out in full, not just abbreviated", async () => {
   const spelledOut = SAMPLE_OCR_TEXT.replace("PO Number: PO-4421", "Purchase Order Number: PO-4421");
   const result = await extract(spelledOut);
@@ -121,13 +164,22 @@ test("heuristic extraction accepts a bare 'Purchase Order:' label with no Number
   expect(result.fields.po_reference).toBe("PO-4421");
 });
 
-test("heuristic extraction doesn't mistake a vendor's PO Box address for a PO reference", async () => {
+// A vendor's own return address ("PO Box 5000") sits on nearly every
+// invoice and matches the PO label's shape just as well as a real
+// reference -- and it commonly appears *before* the buyer's actual PO
+// field in reading order. The two-pattern loop's first candidate match
+// isn't retried past a failure, so if the PO Box match weren't excluded
+// from matching the label at all, it would consume the first (and only)
+// attempt at the abbreviation pattern and the genuine "Order Ref" lower in
+// the document would never be reached -- not merely misread, but never
+// looked at.
+test("heuristic extraction skips a vendor's PO Box address and finds the real reference below it", async () => {
   const withPoBox = SAMPLE_OCR_TEXT.replace(
     "123 Main St, Springfield",
     "PO Box 5000, Springfield"
   ).replace("PO Number: PO-4421", "Order Ref: 4421");
   const result = await extract(withPoBox);
-  expect(result.fields.po_reference).toBe("");
+  expect(result.fields.po_reference).toBe("4421");
 });
 
 test("heuristic extraction doesn't mistake 'purchase order' in body text for a labelled reference", async () => {
