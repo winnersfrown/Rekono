@@ -4,6 +4,15 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.47
+
+Commit and PR creation no longer wait for a per-task go-ahead. Added a
+standing authorization to `CLAUDE.md`'s shipping section: once a change is
+verified, commit and open the PR following the existing rebase-then-push
+workflow without asking first. Destructive or irreversible git operations
+(force-push over someone else's history, merging, deleting a branch) are
+carved out and still need a person's sign-off.
+
 ## v1.46
 
 Fix the repo's LICENSE, which contradicted its own package.json. The root
