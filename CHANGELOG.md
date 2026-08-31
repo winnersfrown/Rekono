@@ -4,6 +4,15 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.51
+
+Add the OpenSSF Scorecard GitHub Action (`.github/workflows/scorecard.yml`),
+run weekly and on push to `main`. Publishes results to the public
+Scorecard API (`api.securityscorecards.dev`) -- safe to do here since the
+repo is already public, and it's the only way a criticality score shows up
+in the dataset some maintainer-eligibility criteria (e.g. Claude for OSS's
+"critical infrastructure" bar) check against.
+
 ## v1.50
 
 Add check writing. "Record payment" on the Bill Payments tab has always

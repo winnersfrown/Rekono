@@ -1,0 +1,54 @@
+name: Scorecard supply-chain security
+on:
+  # To guarantee Maintained badge and OpenSSF criticality data stay
+  # current: a rule change is exactly the kind of event Scorecard's
+  # Branch-Protection check needs to see promptly.
+  branch_protection_rule:
+  schedule:
+    - cron: "30 1 * * 6"
+  push:
+    branches: ["main"]
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      # Needed for Code scanning upload.
+      security-events: write
+      # Needed for Sigstore keyless signing (publish_results: true).
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      - name: "Checkout code"
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: "Run analysis"
+        uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # This repo is public, so publishing to the OpenSSF Scorecard API
+          # (api.securityscorecards.dev) discloses nothing beyond what's
+          # already visible on GitHub -- and it's the only way the score
+          # shows up in the public dataset the "Claude for OSS" criticality
+          # criterion is checked against.
+          publish_results: true
+
+      - name: "Upload artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: "Upload to code-scanning"
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
