@@ -4,6 +4,48 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.43
+
+Read the purchase-order reference off documents that don't say "PO".
+
+Two identifying numbers on an invoice were being missed, and for the
+heuristic extractor the reason was the same in both cases: the pattern
+recognised one spelling of the label and nothing else.
+
+The PO reference required a literal `PO`/`P.O.`, so `Purchase Order: 4421`,
+`Order No. 4421`, `Customer PO: 88231` and `Your Order #: 5567` -- all of
+them a purchase order stated plainly on the page -- came back empty. Worse,
+the pattern made *every* part after the label optional, which meant the
+label matched the first two letters of any word beginning "po" and captured
+the rest of it: an invoice with a `Postage 12.00` line and no purchase order
+anywhere extracted a po_reference of `stage`. That is the more damaging
+half, because a blank field routes to review and a confidently wrong one
+does not.
+
+The label now splits by how ambiguous it is. `PO`, `P.O.` and
+`Purchase Order` are unmistakable, so they're accepted with only whitespace
+after them -- `Purchase Order 4421` prints without punctuation often enough
+to matter -- guarded by a negative lookahead that stops `Postage`, `Postal`
+and `Polaris` from reading as the label at all. Bare `Order` is too common a
+word to accept on a label alone, so it requires an explicit marker after it
+(`Order No.`, `Order #`), which is how it's printed when it does name a PO.
+A captured value must contain a digit, which is what keeps a
+`Purchase Order Terms` heading from extracting `Terms`; the label is
+identical in both cases and nothing else separates them.
+
+The invoice number gained `Invoice ID`/`Invoice Ref` as labels, and `/` in
+its character class -- the same truncation the PO reference was fixed for
+earlier, still present on the other number. An invoice numbered `2026/0007`
+was being stored as `2026`, which every other invoice that vendor sent in
+2026 also truncates to, and duplicate detection matches on vendor plus
+invoice number.
+
+On the LLM path -- the one production actually uses -- both fields now carry
+a description naming the label variants, and each names the other as what it
+is *not*. A model reading a document with two similar-looking numbers on it
+doesn't fail by being unable to read them; it fails by spending one on the
+other's field and leaving that one blank.
+
 ## v1.42
 
 Point the OpenAI-dialect adapter at any endpoint, not just OpenRouter.

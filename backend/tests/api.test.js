@@ -460,3 +460,35 @@ test("cannot delete another org's matching source", async () => {
   const sourcesA = await request(app).get("/api/matching/sources").set(authHeader(tokenA));
   expect(sourcesA.body).toHaveLength(1);
 });
+
+// The frontend's save handler renders whatever comes back from this route
+// straight into the review form, so the *shape* of a rejection is part of
+// this route's contract, not just its status code. `detail` arriving as an
+// array of zod issues rather than a string is what made the old
+// `body.detail || "..."` render "[object Object]" -- and the reason the
+// form redrew blank instead of reporting anything at all.
+test("a rejected correction answers 422 with per-field detail and saves nothing", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeInvoice(org, { invoiceNumber: "INV-1", poReference: "PO-1" });
+
+  const res = await request(app)
+    .patch(`/api/invoices/${invoice.id}`)
+    .set(authHeader(token))
+    .send({
+      invoice_number: "INV-2026-0007",
+      po_reference: "PO-4421",
+      payment_terms: "x".repeat(65), // paymentTerms is STRING(64)
+    });
+
+  expect(res.status).toBe(422);
+  expect(Array.isArray(res.body.detail)).toBe(true);
+  expect(res.body.detail[0].path).toContain("payment_terms");
+
+  // Nothing partially applied: the two fields the user did fill in
+  // correctly are not saved either, which is exactly why losing them off
+  // the screen with no message reads as the form refusing the input.
+  await invoice.reload();
+  expect(invoice.invoiceNumber).toBe("INV-1");
+  expect(invoice.poReference).toBe("PO-1");
+});

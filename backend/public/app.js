@@ -104,6 +104,26 @@ function alertDialog(title, message) {
   return confirmDialog(title, message, { hideCancel: true });
 }
 
+// A route that validates its body with zod answers 422 with `detail` as an
+// array of issues, not a string -- so the usual `body.detail || "..."`
+// renders "[object Object]" and tells the user nothing. Name the field that
+// actually failed instead: the only reason to surface a validation error is
+// to say which box to go fix. Falls through unchanged for the string
+// `detail` every hand-written error response uses.
+function errorText(detail, fallback) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail
+      .map((issue) => {
+        const path = Array.isArray(issue?.path) ? issue.path.join(".") : "";
+        const label = QUICK_REVIEW_FIELD_LABELS[path] || path;
+        return label ? `${label}: ${issue.message}` : issue.message;
+      })
+      .join("\n");
+  }
+  return fallback;
+}
+
 function closeConfirmModal(result) {
   const passwordInput = document.getElementById("confirm-modal-password");
   const wantsPassword = document.getElementById("confirm-modal-password-row").style.display !== "none";
@@ -584,6 +604,13 @@ async function selectInvoice(id) {
   state.selectedInvoiceId = id;
   const res = await apiFetch(`/api/invoices/${id}`);
   const inv = await res.json();
+  // Same reason as saveCorrections below: handing renderDetail an error
+  // body draws an empty form that looks like a successfully-loaded invoice
+  // with nothing on it.
+  if (!res.ok) {
+    await alertDialog("Couldn't open this invoice", errorText(inv.detail, "Could not load this invoice."));
+    return;
+  }
   renderDetail(inv);
 }
 
@@ -800,6 +827,15 @@ function pollWhileProcessing(id, attempt = 0) {
     const res = await apiFetch(`/api/invoices/${id}`);
     const inv = await res.json();
     if (state.selectedInvoiceId !== id) return;
+    // A failed poll is almost always transient (a dropped connection, a
+    // redeploy mid-extraction), so keep waiting rather than tearing the
+    // banner down -- an error body has no `status`, which would otherwise
+    // fall through to the branch below and render it as a finished invoice
+    // with every field empty.
+    if (!res.ok) {
+      pollWhileProcessing(id, attempt + 1);
+      return;
+    }
     if (inv.status === "queued" || inv.status === "processing") {
       pollWhileProcessing(id, attempt + 1);
     } else {
@@ -894,6 +930,19 @@ async function saveCorrections(id) {
     body: JSON.stringify(payload),
   });
   const inv = await res.json();
+  // Returning *before* renderDetail is the point, not just tidiness. On a
+  // rejected save the response body is an error, not an invoice, and
+  // renderDetail reads it as one -- every field comes back undefined, which
+  // escapeHtml renders as "", so the form redraws completely blank with no
+  // message. What that looks like from the outside is the fields refusing
+  // to accept what you typed: you fill in the invoice number and the PO
+  // reference, save, and both are empty again. Leaving the DOM untouched
+  // keeps the user's typing on screen so they can fix the named field and
+  // save again, rather than re-entering the whole form from the document.
+  if (!res.ok) {
+    await alertDialog("Couldn't save your changes", errorText(inv.detail, "Could not save this invoice."));
+    return;
+  }
   renderDetail(inv);
   invalidateCache("/api/invoices?");
   loadInvoices();
@@ -902,6 +951,10 @@ async function saveCorrections(id) {
 async function approveInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}/approve`, { method: "POST" });
   const inv = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't approve this invoice", errorText(inv.detail, "Could not approve this invoice."));
+    return;
+  }
   renderDetail(inv);
   invalidateCache("/api/invoices?");
   loadInvoices();
@@ -910,6 +963,10 @@ async function approveInvoice(id) {
 async function rejectInvoice(id) {
   const res = await apiFetch(`/api/invoices/${id}/reject`, { method: "POST" });
   const inv = await res.json();
+  if (!res.ok) {
+    await alertDialog("Couldn't reject this invoice", errorText(inv.detail, "Could not reject this invoice."));
+    return;
+  }
   renderDetail(inv);
   invalidateCache("/api/invoices?");
   loadInvoices();
