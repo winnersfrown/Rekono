@@ -4,6 +4,25 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.47
+
+Commit and PR creation no longer wait for a per-task go-ahead. Added a
+standing authorization to `CLAUDE.md`'s shipping section: once a change is
+verified, commit and open the PR following the existing rebase-then-push
+workflow without asking first. Destructive or irreversible git operations
+(force-push over someone else's history, merging, deleting a branch) are
+carved out and still need a person's sign-off.
+
+## v1.46
+
+Fix the repo's LICENSE, which contradicted its own package.json. The root
+`LICENSE` file was BSD 2-Clause -- a permissive open-source grant -- while
+`backend/package.json` declared `"license": "UNLICENSED"`, npm's convention
+for "proprietary, no rights granted." Rekono is closed-source commercial
+software, so the BSD text was the wrong one: replaced it with an
+all-rights-reserved proprietary notice, and added the matching
+`"license": "UNLICENSED"` field to `website/package.json`, which had none.
+
 ## v1.45
 
 Scan checks and apply them to the bills they pay, and close two gaps in

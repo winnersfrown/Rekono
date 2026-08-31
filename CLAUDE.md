@@ -223,6 +223,15 @@ git push --force-with-lease -u origin <branch>
 
 Squash-merge, with the commit title `v1.X: <subject> (#<pr>)`.
 
+### Commit and PR autonomy
+
+Standing authorization, not per-task: once a change is complete and
+verified (tests pass, or the relevant boot/smoke check runs clean), commit
+and open the PR using the workflow above without stopping to ask first.
+This does not extend to anything destructive or irreversible -- force-push
+over history you didn't just create yourself, merging a PR, or deleting a
+branch still need a person's go-ahead.
+
 ## Writing style
 
 Comments and changelog entries explain **why**, especially where the code
