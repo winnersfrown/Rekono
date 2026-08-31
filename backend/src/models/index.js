@@ -34,6 +34,7 @@ import { BillPayment } from "./BillPayment.js";
 import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
+import { FixedAsset } from "./FixedAsset.js";
 import { EquityTransaction } from "./EquityTransaction.js";
 import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
 import { AwardEvent, EquityAward, EquityPlan } from "./EquityAward.js";
@@ -156,6 +157,15 @@ RevenueScheduleEntry.belongsTo(Account, { foreignKey: "revenueAccountId", as: "r
 RecurringEntry.hasMany(RecurringEntryLine, { foreignKey: "recurringEntryId", as: "lines", onDelete: "CASCADE", hooks: true });
 RecurringEntryLine.belongsTo(RecurringEntry, { foreignKey: "recurringEntryId" });
 RecurringEntryLine.belongsTo(Account, { foreignKey: "accountId" });
+
+// A fixed asset owns the one RecurringEntry that posts its depreciation --
+// see models/FixedAsset.js. No cascade from RecurringEntry to FixedAsset:
+// the route deletes the FixedAsset first and its own template second, so
+// there's exactly one path that ever removes both.
+FixedAsset.belongsTo(RecurringEntry, { foreignKey: "recurringEntryId" });
+FixedAsset.belongsTo(Account, { foreignKey: "assetAccountId", as: "assetAccount" });
+FixedAsset.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
+FixedAsset.belongsTo(Account, { foreignKey: "accumulatedDepreciationAccountId", as: "accumulatedDepreciationAccount" });
 
 // The cash account an equity event moved through. No cascade: deleting
 // an account is not offered, and an equity transaction outlives any
@@ -321,6 +331,7 @@ export {
   RevenueScheduleEntry,
   RecurringEntry,
   RecurringEntryLine,
+  FixedAsset,
   EquityTransaction,
   ShareClass,
   Shareholder,

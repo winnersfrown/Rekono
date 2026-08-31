@@ -15,7 +15,6 @@ import {
   loadTemplateLines,
   previewRecurringEntries,
   runRecurringEntries,
-  straightLineDepreciationCents,
 } from "../recurringEntries.js";
 import {
   closedFiscalYears,
@@ -225,77 +224,6 @@ router.post("/api/recurring-entries/run", requireAuth, requireActivePlan, async 
     next(err);
   }
 });
-
-// Straight-line depreciation is the commonest adjusting entry there is, so
-// it gets a helper that turns an asset's cost and life into the monthly
-// amount rather than making everyone do the division by hand.
-router.post("/api/recurring-entries/depreciation", requireAuth, requireActivePlan, async (req, res, next) => {
-  try {
-    const parsed = z
-      .object({
-        name: z.string().min(1).max(256),
-        cost: z.number().positive(),
-        salvage_value: z.number().min(0).default(0),
-        useful_life_months: z.number().int().positive(),
-        start_date: z.string().regex(ISO_DATE),
-        expense_account_id: z.string().min(1),
-        accumulated_depreciation_account_id: z.string().min(1),
-      })
-      .safeParse(req.body);
-    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
-    const orgId = req.currentUser.orgId;
-    const d = parsed.data;
-
-    if (!(await accountsExist(orgId, [d.expense_account_id, d.accumulated_depreciation_account_id]))) {
-      return res.status(422).json({ detail: "Both accounts must be ones you own." });
-    }
-
-    const monthlyCents = straightLineDepreciationCents(
-      dollarsToCents(d.cost),
-      dollarsToCents(d.salvage_value),
-      d.useful_life_months
-    );
-    if (monthlyCents <= 0) {
-      return res.status(422).json({ detail: "That works out to less than a cent a month." });
-    }
-
-    const template = await RecurringEntry.create({
-      orgId,
-      name: d.name,
-      memo: `Depreciation -- ${d.name}`,
-      frequency: "monthly",
-      startDate: d.start_date,
-      // Ends on its own once the asset is fully depreciated, rather than
-      // running forever and depreciating past cost.
-      endDate: addMonths(d.start_date, d.useful_life_months - 1),
-    });
-    await RecurringEntryLine.bulkCreate([
-      { recurringEntryId: template.id, accountId: d.expense_account_id, debitCents: monthlyCents, position: 0 },
-      {
-        recurringEntryId: template.id,
-        accountId: d.accumulated_depreciation_account_id,
-        creditCents: monthlyCents,
-        position: 1,
-      },
-    ]);
-
-    res.status(201).json({
-      ...serializeTemplate(template, await loadTemplateLines(template.id)),
-      monthly_amount: centsToDollars(monthlyCents),
-    });
-  } catch (err) {
-    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
-    next(err);
-  }
-});
-
-function addMonths(isoDate, months) {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + months, 1));
-  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  const day = String(Math.min(d.getUTCDate(), lastDay)).padStart(2, "0");
-  return `${target.getUTCFullYear()}-${String(target.getUTCMonth() + 1).padStart(2, "0")}-${day}`;
-}
 
 // ---- Year-end closing entries ----
 

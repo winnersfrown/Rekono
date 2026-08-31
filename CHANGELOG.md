@@ -4,6 +4,34 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.49
+
+Add a tracked fixed-asset record. Straight-line depreciation used to be a
+one-shot calculator (`POST /api/recurring-entries/depreciation`) that built
+a monthly RecurringEntry template and then discarded the cost/salvage/
+useful-life/acquisition-date inputs that produced it -- nothing recorded
+that the asset existed, or how much of its life was left, and there was no
+UI for it at all. `models/FixedAsset.js` is the record that was missing: a
+FixedAsset owns exactly one RecurringEntry (the same schedule-and-post
+machinery every other adjusting entry uses -- nothing new was built for
+posting), and ties back to the actual chart-of-accounts row carrying the
+asset's cost rather than being a bare number.
+
+Two things worth calling out. First, accumulated depreciation on the Fixed
+Assets list is computed from what's *actually posted* to the ledger, not
+from schedule math -- running due entries is a separate, deliberate action
+(same as every other recurring entry), so a schedule-projected figure would
+claim depreciation that hasn't happened yet. Second, this closes a latent
+gap in `closeAutomation.js`'s undepreciated-asset suggestion: it checked
+whether any recurring template's lines touched the asset account itself,
+which a real depreciation entry never does (only Depreciation Expense and
+Accumulated Depreciation move) -- so the suggestion would have kept nagging
+about an asset forever, even with a correct schedule running against it.
+It now also checks for a FixedAsset tied to the account directly.
+
+Replaces the old one-shot endpoint outright rather than keeping both --
+it had no frontend caller and existed only as an internal calculator.
+
 ## v1.48
 
 Give the chart of accounts a real sub-category taxonomy. `Account.subtype`

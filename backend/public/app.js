@@ -272,7 +272,12 @@ function switchTab(name) {
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
   if (name === "araging") loadArAging();
   if (name === "revenue") loadDeferredRevenue();
-  if (name === "adjustments") { loadAdjustmentAccounts(); loadRecurringEntries(); loadYearEnd(); }
+  if (name === "adjustments") {
+    loadAdjustmentAccounts();
+    loadFixedAssets();
+    loadRecurringEntries();
+    loadYearEnd();
+  }
   if (name === "vendors") loadVendors();
   if (name === "billpayments") { loadPaymentAccounts(); loadBillPayments(); }
   if (name === "apaging") loadApAging();
@@ -6315,7 +6320,125 @@ async function loadAdjustmentAccounts() {
     addRecurringLineRow();
     addRecurringLineRow();
   }
+  populateFixedAssetAccountPickers();
 }
+
+// ---- Fixed assets ----
+// See fixedAssets.js. Reuses recAccounts (already loaded above for the
+// generic recurring-entry line builder) rather than fetching accounts a
+// second time for the same tab.
+
+function accountOptionsFilteredHtml(type) {
+  return groupedAccountOptionsHtml(
+    recAccounts.filter((a) => a.type === type),
+    null
+  );
+}
+
+function populateFixedAssetAccountPickers() {
+  document.getElementById("fa-asset-account").innerHTML = accountOptionsFilteredHtml("asset");
+  document.getElementById("fa-accum-account").innerHTML = accountOptionsFilteredHtml("asset");
+  document.getElementById("fa-expense-account").innerHTML = accountOptionsFilteredHtml("expense");
+}
+
+function updateFixedAssetMonthlyPreview() {
+  const cost = Number(document.getElementById("fa-cost").value) || 0;
+  const salvage = Number(document.getElementById("fa-salvage").value) || 0;
+  const months = Number(document.getElementById("fa-life").value) || 0;
+  const el = document.getElementById("fa-monthly-preview");
+  if (cost > 0 && months > 0 && salvage <= cost) {
+    el.textContent = `${fmtMoney((cost - salvage) / months)} a month, straight-line.`;
+  } else {
+    el.textContent = "";
+  }
+}
+["fa-cost", "fa-salvage", "fa-life"].forEach((id) =>
+  document.getElementById(id).addEventListener("input", updateFixedAssetMonthlyPreview)
+);
+
+async function loadFixedAssets() {
+  const data = await (await apiFetch("/api/fixed-assets")).json();
+  const body = document.getElementById("fixed-assets-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No fixed assets yet — add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (a) => `
+    <tr>
+      <td>${escapeHtml(a.name)}</td>
+      <td>${fmtMoney(a.cost)}</td>
+      <td>${fmtMoney(a.accumulated_depreciation)}</td>
+      <td>${fmtMoney(a.book_value)}</td>
+      <td>${fmtMoney(a.monthly_amount)}</td>
+      <td>${a.fully_depreciated ? "—" : a.next_due || "—"}</td>
+      <td>${a.fully_depreciated ? "Fully depreciated" : a.active ? "Active" : "Paused"}</td>
+      <td>
+        ${
+          a.fully_depreciated
+            ? ""
+            : `<button type="button" class="fa-toggle-btn" data-id="${a.id}" data-active="${a.active}">${
+                a.active ? "Pause" : "Resume"
+              }</button>`
+        }
+        <button type="button" class="fa-delete-btn linklike" data-id="${a.id}">Delete</button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".fa-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/fixed-assets/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      loadFixedAssets();
+    })
+  );
+  body.querySelectorAll(".fa-delete-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Delete this fixed asset?", "Depreciation it already posted stays on the books — this only stops future postings and removes the record.", {
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/fixed-assets/${btn.dataset.id}`, { method: "DELETE" });
+      loadFixedAssets();
+    })
+  );
+}
+
+document.getElementById("fixed-asset-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("fixed-asset-status");
+  const res = await apiFetch("/api/fixed-assets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: document.getElementById("fa-name").value,
+      cost: Number(document.getElementById("fa-cost").value),
+      salvage_value: Number(document.getElementById("fa-salvage").value) || 0,
+      useful_life_months: Number(document.getElementById("fa-life").value),
+      acquisition_date: document.getElementById("fa-acquired").value,
+      asset_account_id: document.getElementById("fa-asset-account").value,
+      expense_account_id: document.getElementById("fa-expense-account").value,
+      accumulated_depreciation_account_id: document.getElementById("fa-accum-account").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Added "${parsed.name}" -- ${fmtMoney(parsed.monthly_amount)} a month.`;
+  e.target.reset();
+  updateFixedAssetMonthlyPreview();
+  loadFixedAssets();
+});
 
 function recAccountOptions() {
   return groupedAccountOptionsHtml(recAccounts, null);

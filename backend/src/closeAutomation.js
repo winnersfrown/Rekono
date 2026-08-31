@@ -24,7 +24,7 @@ import { Op } from "sequelize";
 import { centsToDollars } from "./ledger.js";
 import { straightLineDepreciationCents } from "./recurringEntries.js";
 import { previewRecurringEntries } from "./recurringEntries.js";
-import { Account, JournalEntry, JournalLine, RecurringEntry, RecurringEntryLine } from "./models/index.js";
+import { Account, FixedAsset, JournalEntry, JournalLine, RecurringEntry, RecurringEntryLine } from "./models/index.js";
 
 // How far back to look for a pattern, and how much of that window an
 // expense has to fill before its absence counts as a suggestion.
@@ -222,6 +222,17 @@ export async function suggestDepreciation(orgId, periodMonth) {
     });
     for (const line of templateLines) scheduled.add(line.accountId);
   }
+  // A FixedAsset's own depreciation entry never touches the asset account
+  // itself (a real entry only moves Depreciation Expense and Accumulated
+  // Depreciation), so the template-lines check above can never see it --
+  // this asset needs its own lookup, checked directly against
+  // assetAccountId rather than through the template's lines.
+  const fixedAssets = await FixedAsset.findAll({
+    where: { orgId, assetAccountId: { [Op.in]: candidates.map((a) => a.id) } },
+    attributes: ["assetAccountId"],
+    raw: true,
+  });
+  for (const fa of fixedAssets) scheduled.add(fa.assetAccountId);
 
   const balances = new Map();
   for (const line of lines) {

@@ -209,29 +209,9 @@ test("a deactivated template stops posting, and deleting one leaves its history 
   expect(tb.balanced).toBe(true);
 });
 
-test("the depreciation helper works out the monthly amount and stops at the asset's life", async () => {
-  const token = await signup(app, request);
-  const exp = await accountId(token, "Uncategorized Expense");
-  const asset = await accountId(token, "Uncategorized Asset");
-
-  const res = await request(app)
-    .post("/api/recurring-entries/depreciation")
-    .set(authHeader(token))
-    .send({
-      name: "Delivery van",
-      cost: 30000,
-      salvage_value: 6000,
-      useful_life_months: 48,
-      start_date: "2026-01-31",
-      expense_account_id: exp,
-      accumulated_depreciation_account_id: asset,
-    });
-  expect(res.status).toBe(201);
-  // (30000 - 6000) / 48
-  expect(res.body.monthly_amount).toBe(500);
-  // Ends on its own rather than depreciating past cost forever.
-  expect(res.body.end_date).toBe("2029-12-31");
-});
+// The one-shot depreciation calculator that used to live at
+// POST /api/recurring-entries/depreciation was replaced by a tracked
+// FixedAsset record -- see tests/fixedAssets.test.js.
 
 // ---- Year-end closing entries ----
 
