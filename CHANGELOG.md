@@ -4,6 +4,31 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.48
+
+Give the chart of accounts a real sub-category taxonomy. `Account.subtype`
+was a free string with no picker anywhere in the UI -- the create-account
+form only collected name/type/code, and `models/Account.js`'s own comment
+called statement classification (current vs. fixed assets, and so on) "a
+later phase's concern, not enforced yet." This is that phase, added as a
+label-and-classify layer rather than a DB enum: `accountTaxonomy.js` defines
+a canonical subtype list per account type (built from the subtype strings
+already scattered across ledger.js/equity.js/incomeTax.js/
+revenueRecognition.js/stockCompensation.js, plus new ones -- `fixed_asset`,
+`current_asset`, `long_term_liability` -- for the gaps none of those filled),
+served at `GET /api/accounts/subtypes` and surfaced on every account as
+`subtype_label`/`classification`. An account with an unrecognized subtype
+(hand-typed before this existed, or created on demand by equity.js) still
+gets a label -- its own raw string -- rather than being rejected, so nothing
+that already has data breaks.
+
+The Chart of Accounts UI gets a Category column (a picker, populated from
+the new endpoint, editable per row) and a second-level heading within each
+balance-sheet type -- Current / Fixed / Long-term -- computed client-side
+from `classification` rather than relied on from server order, since
+ledger.js's liquidity ranking only ranks a handful of subtypes and leaves
+the rest in code order.
+
 ## v1.47
 
 Commit and PR creation no longer wait for a per-task go-ahead. Added a

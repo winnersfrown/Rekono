@@ -2,6 +2,8 @@
 // snake_case JSON shapes the frontend (ported as-is from the Python
 // backend) expects.
 
+import { accountClassification, subtypeLabel } from "./accountTaxonomy.js";
+
 export function serializeLineItem(li) {
   return {
     id: li.id,
@@ -401,6 +403,8 @@ export function serializeAccount(a) {
     name: a.name,
     type: a.type,
     subtype: a.subtype,
+    subtype_label: subtypeLabel(a.type, a.subtype),
+    classification: accountClassification(a.type, a.subtype),
     is_system_account: a.isSystemAccount,
     active: a.active,
   };

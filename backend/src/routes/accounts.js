@@ -11,9 +11,17 @@ import { requireActivePlan } from "../plan.js";
 import { ACCOUNT_TYPES } from "../models/Account.js";
 import { Account, AuditLog } from "../models/index.js";
 import { sortAccounts } from "../ledger.js";
+import { ACCOUNT_SUBTYPES } from "../accountTaxonomy.js";
 import { serializeAccount } from "../serializers.js";
 
 const router = Router();
+
+// Static, but served from an endpoint rather than duplicated into app.js:
+// one list, so a subtype added here shows up in the picker without anyone
+// having to remember to update the frontend's copy of it too.
+router.get("/api/accounts/subtypes", requireAuth, requireActivePlan, (req, res) => {
+  res.json({ subtypes: ACCOUNT_SUBTYPES });
+});
 
 async function getOwnedAccount(id, orgId) {
   return Account.findOne({ where: { id, orgId } });

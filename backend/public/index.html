@@ -1432,13 +1432,18 @@
                   <option value="expense">Expense</option>
                 </select>
               </label>
+              <label>Category (optional)
+                <select id="account-create-subtype">
+                  <option value="">Uncategorized</option>
+                </select>
+              </label>
               <label>Code (optional)<input type="text" id="account-create-code" maxlength="16" placeholder="e.g. 1050" /></label>
               <button type="submit">Add account</button>
             </form>
             <div id="account-create-status" class="hint"></div>
           </div>
           <table>
-            <thead><tr><th>Code</th><th>Name</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Status</th><th></th></tr></thead>
             <tbody id="accounts-body"></tbody>
           </table>
         </section>

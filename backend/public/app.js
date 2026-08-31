@@ -257,7 +257,10 @@ function switchTab(name) {
   if (name === "close") loadClose();
   if (name === "transactions") loadTransactions();
   if (name === "staff") loadStaffOverview();
-  if (name === "chartofaccounts") loadAccounts();
+  if (name === "chartofaccounts") {
+    loadAccountSubtypes();
+    loadAccounts();
+  }
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
   if (name === "trialbalance") loadTrialBalance();
   if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
@@ -4367,6 +4370,44 @@ async function loadAccounts() {
   await cachedLoad("__accounts__", async () => (await apiFetch("/api/accounts")).json(), renderAccounts);
 }
 
+// Static per org (it's a fixed taxonomy, not org data), so it's cached and
+// fetched once per session rather than alongside every accounts reload.
+let accountSubtypesByType = {};
+
+async function loadAccountSubtypes() {
+  await cachedLoad(
+    "__account_subtypes__",
+    async () => (await apiFetch("/api/accounts/subtypes")).json(),
+    (data) => {
+      accountSubtypesByType = data.subtypes;
+      populateAccountCreateSubtypes();
+    }
+  );
+}
+
+function subtypeOptionsHtml(type, selected) {
+  const options = accountSubtypesByType[type] || [];
+  return (
+    `<option value="" ${selected ? "" : "selected"}>Uncategorized</option>` +
+    options
+      .map((s) => `<option value="${s.value}" ${s.value === selected ? "selected" : ""}>${escapeHtml(s.label)}</option>`)
+      .join("")
+  );
+}
+
+function populateAccountCreateSubtypes() {
+  const type = document.getElementById("account-create-type").value;
+  document.getElementById("account-create-subtype").innerHTML = subtypeOptionsHtml(type, "");
+}
+
+document.getElementById("account-create-type").addEventListener("change", populateAccountCreateSubtypes);
+
+// The classification labels ledger.js's LIQUIDITY_RANK sorting already
+// implies (current before fixed before other) -- see accountTaxonomy.js.
+// Equity/revenue/expense accounts have no current/fixed split, so they
+// never get one of these sub-headers, only the type heading above them.
+const CLASSIFICATION_LABELS = { current: "Current", fixed: "Fixed", long_term: "Long-term" };
+
 function renderAccounts(data) {
   const body = document.getElementById("accounts-body");
   // Grouped under a heading per category, in the order the server returned
@@ -4375,20 +4416,34 @@ function renderAccounts(data) {
   // code-sorted list made you read forty rows to find the one liability
   // account you wanted, and gave no clue that the ordering meant anything.
   //
-  // The Type column is gone: it repeats what the heading above the row
-  // already says, on every single row.
+  // Within a balance-sheet type, a second sub-heading splits current from
+  // fixed/long-term/other -- bucketed here rather than relied on from
+  // server order, since the server only ranks a handful of subtypes for
+  // liquidity and leaves the rest in code order, which does not by itself
+  // keep every fixed asset contiguous.
   let lastType = null;
+  let lastClassification = null;
   body.innerHTML = data.items
     .map((a) => {
-      const heading =
-        a.type === lastType
-          ? ""
-          : `<tr class="account-group-row"><th colspan="4">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`;
+      const typeChanged = a.type !== lastType;
+      const classification = a.classification === "other" ? null : a.classification;
+      const classificationChanged = typeChanged || classification !== lastClassification;
       lastType = a.type;
-      return `${heading}
+      lastClassification = classification;
+
+      const typeHeading = typeChanged
+        ? `<tr class="account-group-row"><th colspan="5">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`
+        : "";
+      const classificationHeading =
+        classification && classificationChanged
+          ? `<tr class="account-subgroup-row"><th colspan="5">${escapeHtml(CLASSIFICATION_LABELS[classification] || classification)}</th></tr>`
+          : "";
+
+      return `${typeHeading}${classificationHeading}
     <tr>
       <td>${escapeHtml(a.code)}</td>
       <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
+      <td><select class="account-subtype-select" data-account-id="${a.id}">${subtypeOptionsHtml(a.type, a.subtype)}</select></td>
       <td>${a.active ? "Active" : "Inactive"}</td>
       <td>${
         a.active && !a.is_system_account
@@ -4416,6 +4471,17 @@ function renderAccounts(data) {
       loadAccounts();
     });
   });
+  body.querySelectorAll(".account-subtype-select").forEach((select) => {
+    select.addEventListener("change", async () => {
+      await apiFetch(`/api/accounts/${select.dataset.accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtype: select.value }),
+      });
+      invalidateCache("__accounts__");
+      loadAccounts();
+    });
+  });
 }
 
 document.getElementById("account-create-form").addEventListener("submit", async (e) => {
@@ -4429,6 +4495,7 @@ document.getElementById("account-create-form").addEventListener("submit", async 
       body: JSON.stringify({
         name: nameInput.value,
         type: document.getElementById("account-create-type").value,
+        subtype: document.getElementById("account-create-subtype").value,
         code: document.getElementById("account-create-code").value,
       }),
     });

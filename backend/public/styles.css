@@ -545,6 +545,23 @@ tbody tr { height: 52px; }
 tbody tr.account-group-row { height: auto; }
 tbody tr.account-group-row:hover th { background: var(--paper-sunk); cursor: default; }
 
+/* Second-level heading nested under a .account-group-row -- current vs.
+   fixed vs. long-term within a balance-sheet type. Lighter than the type
+   heading (no top rule, muted ink, smaller) so it reads as subordinate
+   rather than a second peer category. */
+.account-subgroup-row th {
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding-top: 0.4rem;
+}
+tbody tr.account-subgroup-row { height: auto; }
+tbody tr.account-subgroup-row:hover th { background: none; cursor: default; }
+
 /* Report tables (anything with a total row in a <tfoot>): the money
    columns right-align and the total carries a double rule. Both are real
    conventions from the printed statement this whole system is drawn from,
