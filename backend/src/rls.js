@@ -59,6 +59,7 @@ const DIRECT_ORG_TABLES = [
   "vendor_aliases",
   "recurring_entries",
   "fixed_assets",
+  "written_checks",
   "revenue_schedule_entries",
   "award_events",
   "equity_awards",

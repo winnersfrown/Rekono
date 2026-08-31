@@ -35,6 +35,7 @@ import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
 import { FixedAsset } from "./FixedAsset.js";
+import { WrittenCheck } from "./WrittenCheck.js";
 import { EquityTransaction } from "./EquityTransaction.js";
 import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
 import { AwardEvent, EquityAward, EquityPlan } from "./EquityAward.js";
@@ -136,6 +137,14 @@ CustomerPayment.belongsTo(Account, { foreignKey: "depositAccountId", as: "deposi
 Invoice.hasMany(BillPayment, { foreignKey: "invoiceId", as: "billPayments", onDelete: "CASCADE", hooks: true });
 BillPayment.belongsTo(Invoice, { foreignKey: "invoiceId" });
 BillPayment.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+
+// A written check is the paper trail around one BillPayment (see
+// writtenChecks.js) -- no cascade from BillPayment, since voidWrittenCheck
+// always removes the check first and the payment it made second, the same
+// single path that ever removes both.
+WrittenCheck.belongsTo(Invoice, { foreignKey: "invoiceId" });
+WrittenCheck.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+WrittenCheck.belongsTo(BillPayment, { foreignKey: "billPaymentId" });
 
 // A vendor's bills outlive any edit to the vendor. No cascade delete:
 // merging repoints the bills first and only then removes the losing
@@ -332,6 +341,7 @@ export {
   RecurringEntry,
   RecurringEntryLine,
   FixedAsset,
+  WrittenCheck,
   EquityTransaction,
   ShareClass,
   Shareholder,

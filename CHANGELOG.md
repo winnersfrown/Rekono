@@ -4,6 +4,28 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.50
+
+Add check writing. "Record payment" on the Bill Payments tab has always
+posted a real AP payment, but there was no check number, payee, or memo
+anywhere in that flow, and the only `Check` entity in the codebase was
+scan-only (OCR upload of a check someone else wrote). `models/WrittenCheck.js`
+is a check the org writes itself: check number, payee, memo, a printable
+layout with the amount spelled out in words -- posted through the exact
+same `recordBillPayment` path "Record payment" already uses, so writing a
+check has the identical ledger effect (same validation: an approved bill,
+a valid non-AP/AR payment account, no overpay). Voiding one reverses the
+payment (a real reversing entry, same as every other void in this ledger)
+and destroys the payment row alongside the check record -- matching
+routes/payables.js's own payment-removal route, which does both, not just
+the reversal.
+
+Deliberately its own table rather than a flag on `Check`: that model's
+routes all assume an uploaded file and an OCR status machine (upload,
+extract, review, approve/reject), neither of which exists for a check
+nobody scanned. Reusing it would have meant auditing every one of those
+routes for a case they were never written to handle.
+
 ## v1.49
 
 Add a tracked fixed-asset record. Straight-line depreciation used to be a

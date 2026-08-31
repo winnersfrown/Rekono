@@ -1426,6 +1426,13 @@
             <thead><tr><th>Vendor</th><th>Bill</th><th>Due</th><th>Total</th><th>Paid</th><th>Outstanding</th><th></th></tr></thead>
             <tbody id="bill-payments-body"></tbody>
           </table>
+
+          <h3>Checks you've written</h3>
+          <p class="hint">Each one is a real bill payment (same as "Record payment" above) with a check number and payee on top -- print it, or void it to reverse the payment.</p>
+          <table>
+            <thead><tr><th>Check #</th><th>Payee</th><th>Date</th><th>Bill</th><th>Amount</th><th></th></tr></thead>
+            <tbody id="written-checks-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-apaging" class="tab-panel">
@@ -2272,6 +2279,32 @@
         <div class="confirm-modal-actions">
           <button type="button" id="payment-modal-cancel" class="modal-btn-cancel">Cancel</button>
           <button type="submit">Record payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Writing a check posts the exact same bill payment "Record payment"
+       above does -- see writtenChecks.js -- with the paper-trail fields a
+       real check carries on top: a check number, a payee (which may not be
+       the vendor's account name), and a memo. -->
+  <div id="write-check-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Write a check</h2>
+      <p id="write-check-message"></p>
+      <form id="write-check-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Check number<input type="text" id="write-check-number" maxlength="32" required /></label>
+          <label>Pay to the order of<input type="text" id="write-check-payee" maxlength="256" required /></label>
+          <label>Amount<input type="number" id="write-check-amount" step="0.01" min="0.01" required /></label>
+          <label>Date<input type="date" id="write-check-date" required /></label>
+          <label>Pay from<select id="write-check-account" required></select></label>
+          <label>Memo (optional)<input type="text" id="write-check-memo" maxlength="512" /></label>
+        </div>
+        <p id="write-check-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="write-check-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Write check</button>
         </div>
       </form>
     </div>
