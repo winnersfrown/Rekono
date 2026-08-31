@@ -1374,12 +1374,14 @@
               <label>Name<input type="text" id="vendor-create-name" maxlength="256" required /></label>
               <label>Email<input type="email" id="vendor-create-email" maxlength="320" placeholder="Optional" /></label>
               <label>Net terms (days)<input type="number" id="vendor-create-terms" min="0" max="365" value="30" /></label>
+              <label>Early-pay discount (%)<input type="number" id="vendor-create-discount-pct" min="0" max="100" step="0.1" placeholder="Optional" /></label>
+              <label>Discount window (days)<input type="number" id="vendor-create-discount-days" min="0" max="365" placeholder="Optional" /></label>
               <button type="submit">Add vendor</button>
             </form>
             <div id="vendor-create-status" class="hint"></div>
           </div>
           <table>
-            <thead><tr><th>Name</th><th>Also known as</th><th>Terms</th><th>Bills</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Also known as</th><th>Terms</th><th>Early-pay discount</th><th>Bills</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
             <tbody id="vendors-body"></tbody>
           </table>
         </section>
@@ -1402,6 +1404,7 @@
         <section id="tab-apaging" class="tab-panel">
           <h1>AP Aging</h1>
           <p class="hint">What you owe vendors, bucketed by how far past due. Counted from the due date, and only approved bills count.</p>
+          <p id="ap-aging-discount-summary" class="hint"></p>
           <form id="ap-aging-form" class="statement-period">
             <label>As of<input type="date" id="ap-as-of" /></label>
             <button type="submit">Update</button>

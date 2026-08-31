@@ -34,7 +34,7 @@ is backend. A frontend change is verified by `node --check` and by opening
 the UI, so "the tests pass" says nothing about it. Two bugs that shipped
 here were invisible to a green suite for exactly that reason: a save
 handler that never checked `res.ok` and redrew the form blank on a
-rejected save (v1.44), and the same omission in four sibling handlers.
+rejected save (v1.45), and the same omission in four sibling handlers.
 
 ## Accounting conventions
 

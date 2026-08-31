@@ -72,24 +72,33 @@ export async function buildVendorResolver(orgId) {
   const byAlias = new Map();
   for (const a of aliases) byAlias.set(a.rawVendorName, byId.get(a.vendorId));
 
+  // Carries the resolved Vendor's own fields alongside its identity, for
+  // callers that need more than a name -- computeApAging's early-payment
+  // discount is the first of these, so rather than re-querying Vendor a
+  // second time it just reads off the row this function already has.
+  function withDiscountTerms(v) {
+    return { earlyPayDiscountPct: v.earlyPayDiscountPct, earlyPayDiscountDays: v.earlyPayDiscountDays };
+  }
+
   return function resolve(invoice) {
     const raw = normalizeVendorName(invoice.vendorName);
 
     const direct = invoice.vendorId ? byId.get(invoice.vendorId) : null;
-    if (direct) return { key: `id:${direct.id}`, vendorId: direct.id, name: direct.name };
+    if (direct) return { key: `id:${direct.id}`, vendorId: direct.id, name: direct.name, ...withDiscountTerms(direct) };
 
     const aliased = byAlias.get(raw);
-    if (aliased) return { key: `id:${aliased.id}`, vendorId: aliased.id, name: aliased.name };
+    if (aliased) return { key: `id:${aliased.id}`, vendorId: aliased.id, name: aliased.name, ...withDiscountTerms(aliased) };
 
     const named = byNormalizedName.get(raw);
-    if (named) return { key: `id:${named.id}`, vendorId: named.id, name: named.name };
+    if (named) return { key: `id:${named.id}`, vendorId: named.id, name: named.name, ...withDiscountTerms(named) };
 
     // No vendor row at all -- a bill approved before this release, or one
     // whose vendor was deleted. Grouped by name so it still appears, which
     // is exactly the pre-v1.25 behavior for exactly the rows that predate
-    // v1.25.
+    // v1.25. No terms to offer a discount against either, for the same
+    // reason.
     const display = (invoice.vendorName || "").trim() || "(unknown vendor)";
-    return { key: `name:${raw}`, vendorId: null, name: display };
+    return { key: `name:${raw}`, vendorId: null, name: display, earlyPayDiscountPct: null, earlyPayDiscountDays: null };
   };
 }
 

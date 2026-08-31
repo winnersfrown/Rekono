@@ -6627,7 +6627,11 @@ function renderApAging(data) {
       .map(
         (row) => `
       <tr>
-        <td>${escapeHtml(row.vendor_name)}</td>
+        <td>${escapeHtml(row.vendor_name)}${
+          row.discount_available
+            ? `<div class="ap-aging-discount">Save ${fmtMoney(row.discount_available)} by ${row.discount_deadline}</div>`
+            : ""
+        }</td>
         ${AGING_BUCKET_KEYS.map((k) => `<td>${row[k] ? fmtMoney(row[k]) : ""}</td>`).join("")}
         <td>${fmtMoney(row.total)}</td>
       </tr>
@@ -6639,6 +6643,11 @@ function renderApAging(data) {
     `<th>Total</th>${AGING_BUCKET_KEYS.map((k) => `<th>${fmtMoney(data.totals[k])}</th>`).join("")}<th>${fmtMoney(
       data.totals.total
     )}</th>`;
+
+  const summaryEl = document.getElementById("ap-aging-discount-summary");
+  summaryEl.textContent = data.totals.discount_available
+    ? `${fmtMoney(data.totals.discount_available)} available in early-payment discounts if paid within their windows.`
+    : "";
 }
 
 document.getElementById("ap-aging-form").addEventListener("submit", (e) => {
@@ -6663,7 +6672,7 @@ async function loadVendors() {
 function renderVendors(items) {
   const body = document.getElementById("vendors-body");
   if (!items.length) {
-    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No vendors yet — approve a bill, or add one above.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No vendors yet — approve a bill, or add one above.</td></tr>`;
     return;
   }
   body.innerHTML = items
@@ -6673,6 +6682,7 @@ function renderVendors(items) {
       <td>${escapeHtml(v.name)}</td>
       <td class="hint">${v.aliases.length ? escapeHtml(v.aliases.join(", ")) : "—"}</td>
       <td>Net ${v.payment_terms_days}</td>
+      <td>${v.early_pay_discount_pct && v.early_pay_discount_days ? `${v.early_pay_discount_pct}% / ${v.early_pay_discount_days}d` : "—"}</td>
       <td>${v.bill_count}</td>
       <td>${fmtMoney(v.amount_outstanding)}</td>
       <td>${v.active ? "Active" : "Inactive"}</td>
@@ -6730,6 +6740,12 @@ document.getElementById("vendor-create-form").addEventListener("submit", async (
       name: document.getElementById("vendor-create-name").value,
       email: document.getElementById("vendor-create-email").value,
       payment_terms_days: Number(document.getElementById("vendor-create-terms").value) || 30,
+      early_pay_discount_pct: document.getElementById("vendor-create-discount-pct").value
+        ? Number(document.getElementById("vendor-create-discount-pct").value)
+        : null,
+      early_pay_discount_days: document.getElementById("vendor-create-discount-days").value
+        ? Number(document.getElementById("vendor-create-discount-days").value)
+        : null,
     }),
   });
   const parsed = await res.json().catch(() => ({}));

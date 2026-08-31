@@ -294,6 +294,11 @@ function extractHeuristic(ocrText) {
   // label and captured its own tail -- a "Postage 12.00" line extracted
   // "stage" as the purchase-order number, on an invoice that had no PO at
   // all. Case-insensitivity means this covers OCR's all-caps output too.
+  // `(?!\s*box\b)` sits alongside it for the same reason: a vendor's own
+  // return address ("PO Box 5000") matches the label just as well as a
+  // real reference, and it commonly appears earlier in the document than
+  // the buyer's actual PO field -- so without the exclusion, the *real*
+  // reference lower down is never reached at all, not merely misread.
   //
   // Bare "Order" is a common enough English word that accepting it on a
   // label alone would reintroduce the same class of false positive, so it
@@ -304,7 +309,7 @@ function extractHeuristic(ocrText) {
   // references (e.g. "2312/2019", an order-number/year format), which an
   // earlier class silently truncated at.
   const PO_PATTERNS = [
-    /\b(?:(?:customer|client|buyer|your|our)\s+)?(?:p\.?\s?o\.?(?![a-z])|purchase\s+order)\s*(?:#|no\.?|number|ref(?:erence)?)?\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i,
+    /\b(?:(?:customer|client|buyer|your|our)\s+)?(?:p\.?\s?o\.?(?![a-z])(?!\s*box\b)|purchase\s+order)\s*(?:#|no\.?|number|ref(?:erence)?)?\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i,
     /\border\s*(?:#|no\.?|number|ref(?:erence)?)\s*[:#\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/]+)/i,
   ];
   for (const pattern of PO_PATTERNS) {

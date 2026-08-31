@@ -151,3 +151,42 @@ test("heuristic extraction reads an invoice number labelled 'Invoice ID'", async
   const result = await extract("Acme Supplies Inc\n\nInvoice ID: INV-2026-0042\n\nTotal Due: $10.00\n");
   expect(result.fields.invoice_number).toBe("INV-2026-0042");
 });
+
+test("heuristic extraction finds a PO reference spelled out in full, not just abbreviated", async () => {
+  const spelledOut = SAMPLE_OCR_TEXT.replace("PO Number: PO-4421", "Purchase Order Number: PO-4421");
+  const result = await extract(spelledOut);
+  expect(result.fields.po_reference).toBe("PO-4421");
+});
+
+test("heuristic extraction accepts a bare 'Purchase Order:' label with no Number/# marker", async () => {
+  const spelledOut = SAMPLE_OCR_TEXT.replace("PO Number: PO-4421", "Purchase Order: PO-4421");
+  const result = await extract(spelledOut);
+  expect(result.fields.po_reference).toBe("PO-4421");
+});
+
+// A vendor's own return address ("PO Box 5000") sits on nearly every
+// invoice and matches the PO label's shape just as well as a real
+// reference -- and it commonly appears *before* the buyer's actual PO
+// field in reading order. The two-pattern loop's first candidate match
+// isn't retried past a failure, so if the PO Box match weren't excluded
+// from matching the label at all, it would consume the first (and only)
+// attempt at the abbreviation pattern and the genuine "Order Ref" lower in
+// the document would never be reached -- not merely misread, but never
+// looked at.
+test("heuristic extraction skips a vendor's PO Box address and finds the real reference below it", async () => {
+  const withPoBox = SAMPLE_OCR_TEXT.replace(
+    "123 Main St, Springfield",
+    "PO Box 5000, Springfield"
+  ).replace("PO Number: PO-4421", "Order Ref: 4421");
+  const result = await extract(withPoBox);
+  expect(result.fields.po_reference).toBe("4421");
+});
+
+test("heuristic extraction doesn't mistake 'purchase order' in body text for a labelled reference", async () => {
+  const prose = SAMPLE_OCR_TEXT.replace(
+    "PO Number: PO-4421",
+    "Note: the purchase order was approved yesterday by finance."
+  );
+  const result = await extract(prose);
+  expect(result.fields.po_reference).toBe("");
+});

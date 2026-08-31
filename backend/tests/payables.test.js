@@ -277,6 +277,7 @@ test("AP aging buckets what's owed by how far past due it is", async () => {
     d61_90: 800,
     d90_plus: 1600,
     total: 3100,
+    discount_available: 0, // none of these vendors have early-payment terms
   });
 });
 

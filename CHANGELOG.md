@@ -6,134 +6,139 @@ merged change, and its commit subject carries the number (`v1.1: ...`), so
 
 ## v1.45
 
-Scan checks and apply them to the bills they pay.
+Scan checks and apply them to the bills they pay, and close two gaps in
+document reading along the way. One squash covering three changes that
+landed together: a contributor's first PR to this codebase.
 
-A sixth document pipeline, same shape as the five before it (upload → OCR →
-LLM/heuristic extraction → confidence-gated review), with a second half none
-of the others have. A lease or a tax form gets filed. A check gets
-*applied*: `POST /api/checks/:id/link` records a real `BillPayment` and posts
-a real journal entry, Debit Accounts Payable / Credit whatever the money left
-from.
+**Read more PO and invoice-number label variants, on top of v1.44's fix.**
+v1.44 taught the heuristic extractor to recognize `Purchase Order` spelled
+out and to skip a vendor's own `PO Box` return address. This goes further:
+`Order No.`, `Your Order #`, `Customer PO`, and `Order Reference` are all
+purchase-order labels real invoices use, and none of them matched. Bare
+`Order` is too common a word to accept on a label alone, so it requires an
+explicit marker after it (`Order No.`, `Order #`) -- which is how it's
+printed when it does name a PO -- and a captured value must contain a
+digit, which is what keeps a `Purchase Order Terms` heading from extracting
+`Terms`. The invoice number gained `Invoice ID`/`Invoice Ref` as labels,
+and `/` in its character class: an invoice numbered `2026/0007` was being
+truncated to `2026`, which every other invoice that vendor sent in 2026
+also truncates to, and duplicate detection matches on vendor plus invoice
+number. On the LLM path, both fields now carry a description naming the
+label variants and naming the other field as what it is *not* -- a model
+reading a document with two similar-looking numbers doesn't fail by being
+unable to read them, it fails by spending one on the other's field and
+leaving that one blank.
 
-That posting goes through `accountsPayable.js`'s `recordBillPayment` rather
-than writing a payment of its own. It already refuses to relieve a payable
-that never posted, already unwinds its own row when the ledger rejects the
-entry, and is already what the manual payments screen and the QuickBooks
-bank-match confirmation call. A check arriving by camera instead of by
-keyboard is not a reason for the money to reach the books down a second road
-that has to be kept in step by hand.
+**Say when a correction doesn't save, instead of silently wiping the
+form.** `saveCorrections` never checked whether the `PATCH` succeeded. It
+handed the response body straight to `renderDetail`, and on a rejected save
+that body is an error, not an invoice -- so every field read back
+`undefined`, `escapeHtml` rendered each one as `""`, and the review form
+redrew completely blank with no message anywhere. What that looks like from
+the outside is the fields refusing to accept input: fill in the invoice
+number and the PO reference, save, and both are empty again, with nothing
+on screen saying why -- and the typing wasn't only erased, it was never
+stored, since the correction route validates the whole payload at once and
+one field over its limit takes the rest down with it. The handler now
+checks `res.ok`, reports the failure, and returns *before* `renderDetail` --
+leaving the DOM untouched keeps the user's typing on screen instead of
+forcing a re-entry from the document. `errorText` renders a zod issue array
+as "Terms: string must contain at most 64 characters" instead of the
+`[object Object]` a bare `body.detail || "..."` produced on a 422. The same
+unchecked pattern was in `approveInvoice`, `rejectInvoice`, `selectInvoice`,
+and the processing poll -- four more places that could blank the panel the
+same silent way.
 
-Three decisions are specific to this document type.
+**Scan checks and apply them to the bills they pay.** A sixth document
+pipeline, same shape as the five before it (upload → OCR → LLM/heuristic
+extraction → confidence-gated review), with a second half none of the
+others have. A lease or a tax form gets filed. A check gets *applied*:
+`POST /api/checks/:id/link` records a real `BillPayment` and posts a real
+journal entry, Debit Accounts Payable / Credit whatever the money left
+from. That posting goes through `accountsPayable.js`'s `recordBillPayment`
+rather than writing a payment of its own -- the same function the manual
+payments screen and the QuickBooks bank-match confirmation call, which
+already refuses to relieve a payable that never posted and already unwinds
+its own row when the ledger rejects the entry. A check arriving by camera
+instead of by keyboard is not a reason for the money to reach the books
+down a second road that has to be kept in step by hand.
 
-**The MICR line is narrowed to four digits and the routing number is not
-stored at all.** The strip along the bottom of every check carries the full
-routing and account number, and that pair is the whole of what someone needs
-to draft an ACH debit against the account. Keeping it would make this one
-table a more attractive target than the rest of the app combined, for no
-product benefit -- last-four is what a human uses to confirm which account a
-check was drawn on, and the full number is still in the stored image. The
-narrowing happens at the same three points the tax module narrows a TIN:
-extraction (applied to the model's output too), the correction route (a
-reviewer types what's printed, and the field deliberately has no `maxlength`
-because a 4-character cap keeps the *first* four digits), and the raw OCR
-text before it's persisted.
-
-**The payment is dated from the check, not from the scan.** A check written
-on the 28th and photographed on the 3rd belongs in the month it was written.
-Using the upload date would move real money across a period boundary quietly,
-which is the kind of error nobody finds until a close doesn't tie.
-
-**Suggestions score against the outstanding balance, not the bill's face
-value.** A $500 check against a $2,000 bill with $1,500 already paid is an
-exact match; scored against the total it ranks below a coincidence. Fully
-paid bills drop out of the list entirely rather than being offered and then
-refused as an overpayment. The scoring reuses `matching.js`'s `scorePair`
-(now exported) so the amount tolerance and date window stay one
-configuration rather than two that drift -- and the check's memo line is
-passed as the reference, since that is where people write the invoice number
-they're paying.
+Three decisions are specific to this document type. **The MICR line is
+narrowed to four digits and the routing number is not stored at all** --
+that pair is the whole of what someone needs to draft an ACH debit against
+the account, narrowed at the same three points the tax module narrows a
+TIN: extraction, the correction route (no `maxlength`, since a 4-character
+cap keeps the *first* four digits), and the raw OCR text before it's
+persisted. **The payment is dated from the check, not from the scan** -- a
+check written on the 28th and photographed on the 3rd belongs in the month
+it was written, and using the upload date would move real money across a
+period boundary quietly. **Suggestions score against the outstanding
+balance, not the bill's face value** -- a $500 check against a $2,000 bill
+with $1,500 already paid is an exact match, and fully paid bills drop out
+of the list rather than being offered and then refused as an overpayment.
+The scoring reuses `matching.js`'s `scorePair` (now exported) so the amount
+tolerance and date window stay one configuration rather than two that
+drift.
 
 Linking is the only way a check reaches `approved`, so the status can never
 claim a payment that isn't on the books. Once linked it can't be corrected,
-re-extracted, or deleted -- its fields are what the posted payment was based
-on. Unlinking reverses the journal entry (both halves stay on the books and
-cancel, same as every other correction in this ledger) and sends the check
-back to `needs_review` rather than to `extracted`: a link that had to be
-undone is evidence something was misread.
+re-extracted, or deleted -- its fields are what the posted payment was
+based on. Unlinking reverses the journal entry (both halves stay on the
+books and cancel, same as every other correction in this ledger) and sends
+the check back to `needs_review` rather than to `extracted`: a link that
+had to be undone is evidence something was misread.
 
 ## v1.44
 
-Say when a correction doesn't save, and stop wiping the form when it doesn't.
+The heuristic PO-reference extractor recognized the abbreviation and
+nothing else.
 
-`saveCorrections` never checked whether the `PATCH` succeeded. It handed the
-response body straight to `renderDetail`, and on a rejected save that body is
-an error, not an invoice -- so every field read back `undefined`, `escapeHtml`
-rendered each one as `""`, and the review form redrew completely blank with
-no message anywhere.
+`PO Number: 4471` matched; `Purchase Order Number: 4471` -- spelled out in
+full, which real invoices do just as often -- silently came back empty.
+Only the no-LLM fallback path was affected (the LLM path already
+understands either phrasing from context), which is exactly the path a
+fresh local install with no API key, or CI, exercises by default.
 
-What that looks like from the outside is the fields refusing to accept input.
-Fill in the invoice number and the PO reference, save, and both are empty
-again, with nothing on screen saying why. Worse, the save really had failed,
-so the typing wasn't only erased -- it was never stored. The correction route
-validates the whole payload at once, so a single bad field takes the rest of
-the form down with it: `payment_terms` over its 64-character limit is enough
-to lose an invoice number typed correctly in a different box.
-
-Three changes. The handler checks `res.ok` and reports the failure. It
-returns *before* `renderDetail`, which is the substantive half -- leaving the
-DOM untouched keeps the user's typing on screen so they can fix the one named
-field rather than re-entering the form from the document. And `errorText`
-renders a zod issue array as "Terms: string must contain at most 64
-characters" instead of the `[object Object]` that `body.detail || "..."`
-produces on a 422.
-
-The same unchecked pattern was in `approveInvoice`, `rejectInvoice`,
-`selectInvoice`, and the processing poll -- four more places that could blank
-the panel the same silent way, against an app that already checks `res.ok` at
-99 other call sites. `retryInvoice`, directly adjacent, was already doing it
-correctly.
+Added as a second alternative on the same regex rather than loosening the
+first: the spelled-out form still requires a `:`, `-`, `#`, "No.", or
+"Number" right after it, so "the purchase order was approved..." in body
+prose can't turn into a false match. `(?!\s*box)` came along for the same
+reason -- a vendor's own "PO Box 5000" return address matches the original
+pattern's shape exactly, and nothing was excluding it.
 
 ## v1.43
 
-Read the purchase-order reference off documents that don't say "PO".
+Early-payment discount terms on vendors, surfaced on AP Aging.
 
-Two identifying numbers on an invoice were being missed, and for the
-heuristic extractor the reason was the same in both cases: the pattern
-recognised one spelling of the label and nothing else.
+A vendor offering "2/10 net 30" -- 2% off if paid within 10 days of the
+invoice, full amount due in 30 -- had nowhere to record that: `Vendor`
+carried net terms and nothing else. It now also carries
+`earlyPayDiscountPct` and `earlyPayDiscountDays`, and the AP Aging report
+computes, per vendor and in total, what's still available to save and the
+date the window closes -- money a controller would otherwise leave on the
+table simply because nothing was watching for it.
 
-The PO reference required a literal `PO`/`P.O.`, so `Purchase Order: 4421`,
-`Order No. 4421`, `Customer PO: 88231` and `Your Order #: 5567` -- all of
-them a purchase order stated plainly on the page -- came back empty. Worse,
-the pattern made *every* part after the label optional, which meant the
-label matched the first two letters of any word beginning "po" and captured
-the rest of it: an invoice with a `Postage 12.00` line and no purchase order
-anywhere extracted a po_reference of `stage`. That is the more damaging
-half, because a blank field routes to review and a confidently wrong one
-does not.
+- **Anchored to the invoice date, not the due date.** That's what the
+  terms actually count from. The two are deliberately independent: a bill
+  can be squarely "current" in the aging sense, due date weeks out, while
+  its discount window already closed.
+- **Computed off the outstanding balance, not the original total.** A
+  partial payment already made isn't eligible for a discount on money
+  that's already gone.
+- **Nullable columns, no default** -- same reasoning as every column added
+  to an existing table since this app's schema-drift incidents (see
+  `Invoice.quickbooksBillId`): a NOT NULL default fails to add against a
+  `vendors` table that already has rows, on Postgres's 23502. Null on
+  either field means no discount is offered; the aging computation treats
+  that exactly like an explicit zero, so there's nothing to keep in sync.
+- `buildVendorResolver` now carries a resolved vendor's own fields
+  alongside its identity instead of just `{key, vendorId, name}` -- the
+  first caller (AP Aging's discount calculation) that needed more than a
+  name, so re-querying `Vendor` a second time wasn't worth it.
 
-The label now splits by how ambiguous it is. `PO`, `P.O.` and
-`Purchase Order` are unmistakable, so they're accepted with only whitespace
-after them -- `Purchase Order 4421` prints without punctuation often enough
-to matter -- guarded by a negative lookahead that stops `Postage`, `Postal`
-and `Polaris` from reading as the label at all. Bare `Order` is too common a
-word to accept on a label alone, so it requires an explicit marker after it
-(`Order No.`, `Order #`), which is how it's printed when it does name a PO.
-A captured value must contain a digit, which is what keeps a
-`Purchase Order Terms` heading from extracting `Terms`; the label is
-identical in both cases and nothing else separates them.
-
-The invoice number gained `Invoice ID`/`Invoice Ref` as labels, and `/` in
-its character class -- the same truncation the PO reference was fixed for
-earlier, still present on the other number. An invoice numbered `2026/0007`
-was being stored as `2026`, which every other invoice that vendor sent in
-2026 also truncates to, and duplicate detection matches on vendor plus
-invoice number.
-
-On the LLM path -- the one production actually uses -- both fields now carry
-a description naming the label variants, and each names the other as what it
-is *not*. A model reading a document with two similar-looking numbers on it
-doesn't fail by being unable to read them; it fails by spending one on the
-other's field and leaving that one blank.
+No new column on `Invoice`, no new journal entries: this is a read-time
+report enhancement over data the ledger already has, same shape as the
+rest of AP Aging.
 
 ## v1.42
 
