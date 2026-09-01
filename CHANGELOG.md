@@ -4,6 +4,26 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.57
+
+New logomark, on both surfaces. The previous mark was an "R" traced from
+Bitter Bold's own glyph in a blue-gradient badge; the new one is a ledger
+cell with its top-right corner cut like a closed page, closed off by the
+two rules a real statement ends on -- a thin one, then the heavier rule
+beneath it, with the accent spent on exactly that closing rule. White
+fill with an ink outline rather than a filled badge, sized (chamfer and
+corner radius both scaled up from the first sketch) to hold its shape
+down to a 16px browser tab.
+
+`website/src/components/Logomark.jsx` no longer needs the per-instance
+gradient-id plumbing the old mark carried (Nav and Footer both render it
+on the same page at once) -- no gradient, nothing to collide. Regenerated
+`favicon.svg`, `favicon-16.png`, `favicon-32.png` and `apple-touch-icon.png`
+on both `backend/public/` and `website/public/` from the same source SVG
+via a headless-Chromium rasterize (no image tooling installed in this
+container otherwise); `website/dist/` picks up the new marks on next
+build, unrelated to this commit since it's gitignored.
+
 ## v1.56
 
 Manual payroll and the traditional special-purpose journals, plus two
