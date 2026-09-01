@@ -369,7 +369,7 @@ See `.env.example`. Notable knobs: `REVIEW_CONFIDENCE_THRESHOLD` (below this, an
 
 ### Secrets & API keys
 
-Every secret this app uses (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
+Every secret this app uses (`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `GOOGLE_CLIENT_SECRET`, `QUICKBOOKS_CLIENT_SECRET`, `PLAID_SECRET`, `SECRET_KEY`, `DATABASE_URL`) is read from the environment in exactly one place (`config.js`) and never leaves the server:
 
 - They're never sent to the browser. `backend/public/` is plain static HTML/JS with no build/bundling step, so there's no risk of a secret accidentally getting compiled into client-side code the way there can be in a bundled frontend -- the server-side `config.js` module is never loaded there in the first place.
 - They're never echoed back in an API response, including error responses -- an unexpected server error (a DB failure, a bug) logs its full detail server-side but only ever returns a generic `"Internal server error"` to the caller (`app.js`'s `handleUnexpectedError`), so a stray internal error message can't leak connection strings or other detail. Every deliberate error response (validation, auth, plan gating) is written by hand in its own route and never includes secret material.
@@ -540,6 +540,18 @@ The Matching tab also surfaces **bank reconciliation** once connected: QuickBook
 3. Under **Redirect URIs**, add `https://<your-deployed-url>/api/integrations/quickbooks/callback` (and `http://localhost:8000/api/integrations/quickbooks/callback` for local dev). This has to match exactly what the backend sends, which is always `<request origin>/api/integrations/quickbooks/callback`.
 4. The Developer Portal also provides a free Sandbox company file (**Sandbox** tab) to connect against and inspect pushed Bills in.
 5. Connecting stores tokens per-org on `Organization` (`quickbooksAccessToken`/`quickbooksRefreshToken`, both nullable so a disconnected org just has `null`s -- see `models/Organization.js`); access tokens auto-refresh on use (`ensureFreshToken` in `quickbooks.js`). Going to Production later means switching `QUICKBOOKS_ENVIRONMENT=production`, swapping in Production keys, and passing Intuit's app-assessment review (token storage/data retention, roughly 2-3 weeks) -- Sandbox needs none of that.
+
+### Bank connections (Plaid)
+
+The Matching/Reconciliation tab's "Connected bank accounts" panel needs `PLAID_CLIENT_ID`/`PLAID_SECRET` set, or it shows "Bank connections aren't set up on this deployment yet" with the connect button disabled (every other route works regardless -- same graceful-degradation shape as every other paid integration here). Where QuickBooks reconciliation reads transactions QuickBooks already synced from its own bank feed, this connects a bank account directly, for orgs without (or in addition to) a QuickBooks connection.
+
+Connecting opens Plaid's own hosted Link widget (`https://cdn.plaid.com/link/v2/stable/link-initialize.js`, allowlisted in the CSP) -- the actual bank-login step happens in an iframe Plaid controls, so bank credentials never reach this app at all, only the resulting `public_token` does. `POST /api/integrations/plaid/exchange` trades that for a long-lived `access_token` (encrypted at rest on `BankConnection`, same `secretBox.js` pattern as QuickBooks' tokens) and fetches every account behind it into `BankAccount` rows.
+
+Clicking "Sync now" on an account (`POST /api/integrations/plaid/accounts/:id/sync`) pulls its last 90 days of transactions and appends any not already pulled as `MatchEntry` rows on a `MatchSource` (`sourceType: "bank"`) created for it on first sync -- deliberately riding the same matching engine a CSV upload feeds, rather than a second reconciliation path, so a connected account's transactions show up in the same "Uploaded sources" list and `POST /api/matching/run` matches against them exactly the same way. Re-syncing dedupes by Plaid's own `transaction_id`, so it's safe to click repeatedly.
+
+1. Create an app at the [Plaid Dashboard](https://dashboard.plaid.com) and copy its **Sandbox** `client_id`/`secret` into `PLAID_CLIENT_ID`/`PLAID_SECRET`. Leave `PLAID_ENV` unset (defaults to `sandbox`) -- Sandbox uses fake test institutions with no real bank credentials and needs no Plaid approval, only Production does.
+2. In Sandbox, Link's search accepts any institution name and any username/password; a couple of default test credentials (documented on Plaid's own Sandbox docs) log straight into fake test accounts with seeded transaction history.
+3. Going to Production means switching `PLAID_ENV=production`, swapping in Production keys, and passing Plaid's own app-review process for real bank connections.
 
 ### General ledger
 

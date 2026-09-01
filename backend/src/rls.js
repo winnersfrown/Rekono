@@ -37,6 +37,8 @@ const SYSTEM_GUC = "rekono.system";
 const DIRECT_ORG_TABLES = [
   "accounts",
   "audit_logs",
+  "bank_accounts",
+  "bank_connections",
   "bill_payments",
   "checks",
   "close_periods",

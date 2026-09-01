@@ -27,6 +27,7 @@ import settingsRoutes from "./routes/settings.js";
 import teamRoutes from "./routes/team.js";
 import staffRoutes from "./routes/staff.js";
 import integrationsRoutes from "./routes/integrations.js";
+import plaidRoutes from "./routes/plaid.js";
 import netWorthRoutes from "./routes/netWorth.js";
 import accountsRoutes from "./routes/accounts.js";
 import journalEntriesRoutes from "./routes/journalEntries.js";
@@ -108,13 +109,20 @@ app.options(/.*/, (req, res) => {
 // src="..." attribute can't carry), so app.js fetches it with the token and
 // hands the element a URL.createObjectURL(blob) blob: URL instead (see
 // public/app.js's own comment above loadDocPreview).
+// Plaid Link (connecting a bank account for reconciliation, see
+// routes/plaid.js) is the one piece of this app's UI that isn't served by
+// this app itself: it's a hosted widget loaded from Plaid's own CDN,
+// rendering the actual bank-login step in an iframe Plaid controls -- the
+// bank credentials a user types there never touch this app's origin at
+// all, only the resulting token does. script-src needs Plaid's loader
+// script; frame-src needs Plaid's own origin for that iframe.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' https://cdn.plaid.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob:",
-  "frame-src 'self' blob:",
+  "frame-src 'self' blob: https://cdn.plaid.com",
   "connect-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
@@ -232,6 +240,7 @@ app.use(settingsRoutes);
 app.use(teamRoutes);
 app.use(staffRoutes);
 app.use(integrationsRoutes);
+app.use(plaidRoutes);
 app.use(netWorthRoutes);
 app.use(accountsRoutes);
 app.use(journalEntriesRoutes);
