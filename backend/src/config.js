@@ -102,6 +102,17 @@ export const settings = {
   quickbooksClientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || "",
   quickbooksEnvironment: process.env.QUICKBOOKS_ENVIRONMENT || "sandbox",
 
+  // Plaid: live bank-account connections for reconciliation (plaid.js,
+  // routes/plaid.js). Same graceful-degradation pattern as every other
+  // paid integration here -- unset PLAID_CLIENT_ID means those routes
+  // respond 503 instead of crashing. Defaults to Plaid's Sandbox
+  // environment (fake test institutions, no real bank credentials, no
+  // approval needed) -- set PLAID_ENV=production only once Plaid has
+  // approved the app for real bank connections.
+  plaidClientId: process.env.PLAID_CLIENT_ID || "",
+  plaidSecret: process.env.PLAID_SECRET || "",
+  plaidEnv: process.env.PLAID_ENV || "sandbox",
+
   // Origins allowed to make cross-origin browser requests (app.js's CORS
   // setup) -- the marketing site's own origin (its login/signup calls) and
   // the app's own deployed origin (the review UI's own fetch calls

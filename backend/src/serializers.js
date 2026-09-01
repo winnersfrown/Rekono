@@ -373,6 +373,33 @@ export function serializeMatchSource(source, entryCount) {
   };
 }
 
+export function serializeBankAccount(a) {
+  return {
+    id: a.id,
+    connection_id: a.connectionId,
+    name: a.name,
+    official_name: a.officialName,
+    mask: a.mask,
+    type: a.accountType,
+    subtype: a.accountSubtype,
+    current_balance: a.currentBalance,
+    available_balance: a.availableBalance,
+    currency: a.currency,
+    last_synced_at: a.lastSyncedAt,
+    match_source_id: a.matchSourceId,
+  };
+}
+
+export function serializeBankConnection(c) {
+  return {
+    id: c.id,
+    institution_name: c.institutionName,
+    status: c.status,
+    created_at: c.createdAt,
+    accounts: (c.accounts || []).map(serializeBankAccount),
+  };
+}
+
 export function serializeUser(user) {
   return {
     id: user.id,

@@ -4,6 +4,42 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.54
+
+Connect a real bank account for reconciliation, via Plaid, instead of only
+uploading a bank statement CSV by hand.
+
+A new "Connected bank accounts" panel on the Matching/Reconciliation tab
+lets a user link a bank through Plaid's hosted Link widget (the actual
+bank-login step happens in an iframe Plaid controls -- credentials never
+touch this app). On success, every account behind that login gets its own
+row (name, mask, live balance) with a "Sync now" button. Syncing pulls the
+last 90 days of transactions and appends them as `MatchEntry` rows on a
+`MatchSource` created for that account the same way a CSV upload would --
+a Plaid-connected account rides the existing matching engine rather than
+needing a second reconciliation path, and shows up in the same "Uploaded
+sources" list a CSV creates. Re-syncing dedupes by Plaid's own transaction
+id, so clicking it again only appends what's new.
+
+New `BankConnection` (one row per Plaid Item/login, its access token
+encrypted at rest the same way QuickBooks' is) and `BankAccount` (one row
+per real account under it) models. `plaid.js` wraps the Plaid SDK the same
+way `quickbooks.js` wraps Intuit's API -- every network call takes an
+injectable client, "expected" failures (not configured, Plaid rejected the
+request, the connection needs re-authing) come back as `{ error }` rather
+than throwing. Degrades the same way every other paid integration here
+does: no `PLAID_CLIENT_ID`/`PLAID_SECRET` set means a clean 503 instead of
+a crash. Content-Security-Policy's `script-src`/`frame-src` extended for
+Plaid's own CDN and Link iframe, the one piece of this app's UI not served
+by itself.
+
+27 new tests: `plaid.test.js` exercises every Plaid API call directly
+against an injected fake client (link token creation, the public-token
+exchange, account/transaction fetching including pagination, the
+ITEM_LOGIN_REQUIRED reconnect-needed path), `plaidRoutes.test.js` covers
+the route surface (the 503 gates, org isolation, that the encrypted access
+token never serializes out, connect/disconnect).
+
 ## v1.53
 
 Two independent additions landed on this branch together: the `graphify`

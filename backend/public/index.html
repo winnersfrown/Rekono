@@ -1064,6 +1064,15 @@
         <section id="tab-matching" class="tab-panel">
           <h1>Matching / Reconciliation</h1>
           <p class="hint">Upload a PO list, goods receipts, or a bank statement as CSV (needs a vendor/payee column and an amount column; date and reference columns are optional), then run matching against extracted invoices. Upload goods receipts and matching automatically becomes a three-way check — ordered, received, and billed — so an invoice for goods that never arrived gets flagged instead of paid.</p>
+
+          <div class="panel" id="plaid-section">
+            <h3>Connected bank accounts</h3>
+            <p class="hint">Connect a real bank account to pull its transactions in automatically for matching, instead of uploading a bank statement CSV by hand.</p>
+            <div id="plaid-unconfigured" class="hint" style="display: none;">Bank connections aren't set up on this deployment yet.</div>
+            <button type="button" id="plaid-connect-btn">+ Connect a bank account</button>
+            <div id="plaid-connections-list"></div>
+          </div>
+
           <div class="panel">
             <form id="source-form">
               <select id="source-type">
@@ -2355,6 +2364,10 @@
     </div>
   </div>
 
+  <!-- Plaid Link's hosted widget: renders the actual bank-login step in an
+       iframe Plaid controls, so bank credentials never touch this page's
+       own JS. See routes/plaid.js and app.js's connectPlaidAccount. -->
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
   <script src="/auth.js"></script>
   <script src="/app.js"></script>
 </body>

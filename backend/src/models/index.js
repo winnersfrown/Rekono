@@ -39,6 +39,8 @@ import { WrittenCheck } from "./WrittenCheck.js";
 import { EquityTransaction } from "./EquityTransaction.js";
 import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
 import { AwardEvent, EquityAward, EquityPlan } from "./EquityAward.js";
+import { BankConnection } from "./BankConnection.js";
+import { BankAccount } from "./BankAccount.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -208,6 +210,14 @@ EquityAward.hasMany(AwardEvent, { foreignKey: "equityAwardId", as: "events", onD
 AwardEvent.belongsTo(EquityAward, { foreignKey: "equityAwardId" });
 AwardEvent.belongsTo(ShareTransaction, { foreignKey: "shareTransactionId", as: "shareTransaction" });
 
+// A connection (one Plaid Item/login) owns the real accounts underneath
+// it. Removing a connection also removes the accounts Plaid told us about
+// through it -- the accounts have no independent existence once the
+// credential that reads them is gone.
+BankConnection.hasMany(BankAccount, { foreignKey: "connectionId", as: "accounts", onDelete: "CASCADE", hooks: true });
+BankAccount.belongsTo(BankConnection, { foreignKey: "connectionId", as: "connection" });
+BankAccount.belongsTo(MatchSource, { foreignKey: "matchSourceId", as: "matchSource" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -349,4 +359,6 @@ export {
   EquityPlan,
   EquityAward,
   AwardEvent,
+  BankConnection,
+  BankAccount,
 };

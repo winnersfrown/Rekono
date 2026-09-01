@@ -251,7 +251,7 @@ function switchTab(name) {
   // from" picker populated before the detail pane is ever opened.
   if (name === "checks") { loadPaymentAccounts(); loadChecks(); }
   if (name === "quickreview") loadQuickReviewQueue();
-  if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); }
+  if (name === "matching") { loadSources(); loadMatchResults(); loadQuickbooksReconciliation(); loadPlaidSection(); }
   if (name === "settings") { loadOrgSettings(); loadQuickbooksStatus(); }
   if (name === "team") loadTeam();
   if (name === "close") loadClose();
@@ -2754,6 +2754,132 @@ async function deleteSource(id) {
   invalidateCache("/api/matching/sources");
   loadSources();
 }
+
+// ---- Connected bank accounts (Plaid) ----
+// A connected account's transactions land in the same MatchSource/
+// MatchEntry rows a CSV upload would (see routes/plaid.js's sync route),
+// so they show up in loadSources() above automatically -- this section
+// only manages the connections themselves and the "sync now" action.
+async function loadPlaidSection() {
+  await cachedLoad(
+    "__plaid_status__",
+    async () => (await apiFetch("/api/integrations/plaid/status")).json(),
+    renderPlaidStatus
+  );
+  await cachedLoad(
+    "/api/integrations/plaid/connections",
+    async () => (await apiFetch("/api/integrations/plaid/connections")).json(),
+    renderPlaidConnections
+  );
+}
+
+function renderPlaidStatus(status) {
+  document.getElementById("plaid-unconfigured").style.display = status.configured ? "none" : "block";
+  document.getElementById("plaid-connect-btn").disabled = !status.configured;
+}
+
+function renderPlaidConnections(connections) {
+  const el = document.getElementById("plaid-connections-list");
+  if (!connections.length) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = connections
+    .map(
+      (c) => `
+    <div class="plaid-connection">
+      <div class="plaid-connection-head">
+        <strong>${escapeHtml(c.institution_name || "Connected bank")}</strong>
+        ${c.status !== "active" ? `<span class="badge badge-warn">Needs reconnect</span>` : ""}
+        <button type="button" class="plaid-disconnect" data-id="${c.id}">Disconnect</button>
+      </div>
+      ${c.accounts
+        .map(
+          (a) => `
+        <div class="plaid-account">
+          <span>${escapeHtml(a.name)}${a.mask ? ` ••${escapeHtml(a.mask)}` : ""}</span>
+          <span>${a.current_balance != null ? `$${Number(a.current_balance).toFixed(2)}` : ""}</span>
+          <span class="hint">${a.last_synced_at ? `Synced ${escapeHtml(String(a.last_synced_at).slice(0, 10))}` : "Never synced"}</span>
+          <button type="button" class="plaid-sync" data-id="${a.id}">Sync now</button>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `
+    )
+    .join("");
+
+  document.querySelectorAll(".plaid-sync").forEach((btn) => {
+    btn.addEventListener("click", () => syncPlaidAccount(btn.dataset.id));
+  });
+  document.querySelectorAll(".plaid-disconnect").forEach((btn) => {
+    btn.addEventListener("click", () => disconnectPlaidConnection(btn.dataset.id));
+  });
+}
+
+async function syncPlaidAccount(accountId) {
+  const res = await apiFetch(`/api/integrations/plaid/accounts/${accountId}/sync`, { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await alertDialog("Sync failed", body.detail || "Could not sync this account.");
+    return;
+  }
+  invalidateCache("/api/integrations/plaid/connections");
+  invalidateCache("/api/matching/sources");
+  await loadPlaidSection();
+  loadSources();
+}
+
+async function disconnectPlaidConnection(connectionId) {
+  const ok = await confirmDialog(
+    "Disconnect this bank?",
+    "You can reconnect at any time. Already-synced transactions stay in your matching history.",
+    { confirmLabel: "Disconnect", danger: true }
+  );
+  if (!ok) return;
+  const res = await apiFetch(`/api/integrations/plaid/connections/${connectionId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't disconnect", body.detail || "Failed to disconnect this bank.");
+    return;
+  }
+  invalidateCache("/api/integrations/plaid/connections");
+  loadPlaidSection();
+}
+
+document.getElementById("plaid-connect-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("plaid-connect-btn");
+  btn.disabled = true;
+  try {
+    const res = await apiFetch("/api/integrations/plaid/link-token", { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "Could not start a bank connection.");
+
+    const handler = Plaid.create({
+      token: body.link_token,
+      onSuccess: async (public_token) => {
+        const exchangeRes = await apiFetch("/api/integrations/plaid/exchange", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ public_token }),
+        });
+        const exchangeBody = await exchangeRes.json().catch(() => ({}));
+        if (!exchangeRes.ok) {
+          await alertDialog("Connection failed", exchangeBody.detail || "Could not finish connecting that bank.");
+          return;
+        }
+        invalidateCache("/api/integrations/plaid/connections");
+        loadPlaidSection();
+      },
+    });
+    handler.open();
+  } catch (err) {
+    await alertDialog("Could not connect a bank", err.message || String(err));
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById("run-matching-btn").addEventListener("click", async () => {
   const res = await apiFetch("/api/matching/run", { method: "POST" });
