@@ -262,6 +262,7 @@ function switchTab(name) {
     loadAccounts();
   }
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
+  if (name === "payroll") { loadPayrollAccounts(); loadEmployees(); loadPayrollRuns(); }
   if (name === "trialbalance") loadTrialBalance();
   if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
   if (name === "balancesheet") loadBalanceSheet();
@@ -289,6 +290,17 @@ function switchTab(name) {
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+// "Add an account" from Home jumps to the real Chart of Accounts form
+// (code, and the full asset/liability/equity/revenue/expense type set) --
+// deliberately not the Net Worth widget's own simpler add-account form
+// just above, which only ever tracks personal assets/liabilities and has
+// no notion of code/equity/revenue/expense at all. Focusing the name
+// field on arrival means the click actually lands you ready to type,
+// not just on the right page.
+document.getElementById("dash-add-account-btn").addEventListener("click", () => {
+  setTimeout(() => document.getElementById("account-create-name")?.focus(), 0);
 });
 
 function fmtMoney(v) {
@@ -4556,15 +4568,24 @@ function renderAccounts(data) {
   // server order, since the server only ranks a handful of subtypes for
   // liquidity and leaves the rest in code order, which does not by itself
   // keep every fixed asset contiguous.
+  // A third level below type/classification: the subtype itself
+  // (accountTaxonomy.js's ACCOUNT_SUBTYPES, e.g. "Bank & Cash",
+  // "Accounts Receivable") gets its own heading too, rather than being
+  // visible only in each row's own subtype dropdown -- so "what accounts
+  // fit under which categories" reads straight off the page instead of
+  // needing every row opened to find out.
   let lastType = null;
   let lastClassification = null;
+  let lastSubtype = null;
   body.innerHTML = data.items
     .map((a) => {
       const typeChanged = a.type !== lastType;
       const classification = a.classification === "other" ? null : a.classification;
       const classificationChanged = typeChanged || classification !== lastClassification;
+      const subtypeChanged = typeChanged || classificationChanged || a.subtype !== lastSubtype;
       lastType = a.type;
       lastClassification = classification;
+      lastSubtype = a.subtype;
 
       const typeHeading = typeChanged
         ? `<tr class="account-group-row"><th colspan="5">${escapeHtml(ACCOUNT_TYPE_LABELS[a.type] || a.type)}</th></tr>`
@@ -4573,8 +4594,12 @@ function renderAccounts(data) {
         classification && classificationChanged
           ? `<tr class="account-subgroup-row"><th colspan="5">${escapeHtml(CLASSIFICATION_LABELS[classification] || classification)}</th></tr>`
           : "";
+      const subtypeHeading =
+        a.subtype_label && subtypeChanged
+          ? `<tr class="account-subtype-row"><th colspan="5">${escapeHtml(a.subtype_label)}</th></tr>`
+          : "";
 
-      return `${typeHeading}${classificationHeading}
+      return `${typeHeading}${classificationHeading}${subtypeHeading}
     <tr>
       <td>${escapeHtml(a.code)}</td>
       <td>${a.is_system_account ? `<strong>${escapeHtml(a.name)}</strong>` : escapeHtml(a.name)}</td>
@@ -4788,11 +4813,36 @@ document.getElementById("journal-entry-form").addEventListener("submit", async (
   }
 });
 
+// Which special-purpose journal is showing -- mirrors
+// routes/journalEntries.js's SPECIAL_JOURNAL_SOURCES exactly, since these
+// are filters over the one ledger by JournalEntry.source, not a second
+// place transactions get written to. "" means unfiltered (every entry).
+let activeJournalFilter = "";
+
 async function loadJournalEntries() {
-  await cachedLoad("__journal_entries__", async () => (await apiFetch("/api/journal-entries")).json(), renderJournalEntries);
+  const q = activeJournalFilter ? `?journal=${activeJournalFilter}` : "";
+  await cachedLoad(
+    `/api/journal-entries${q}`,
+    async () => (await apiFetch(`/api/journal-entries${q}`)).json(),
+    renderJournalEntries
+  );
 }
 
-const JOURNAL_ENTRY_SOURCE_LABELS = { manual: "Manual", invoice_approval: "Invoice approval", void: "Void" };
+const JOURNAL_ENTRY_SOURCE_LABELS = {
+  manual: "Manual",
+  invoice_approval: "Invoice approval",
+  bill_payment: "Bill payment",
+  customer_invoice: "Customer invoice",
+  customer_payment: "Customer payment",
+  revenue_recognition: "Revenue recognition",
+  recurring_entry: "Recurring entry",
+  closing_entry: "Closing entry",
+  equity_transaction: "Equity transaction",
+  stock_compensation: "Stock compensation",
+  income_tax: "Income tax",
+  payroll_run: "Payroll",
+  void: "Void",
+};
 
 function renderJournalEntries(data) {
   const body = document.getElementById("journal-entries-body");
@@ -4823,6 +4873,190 @@ function renderJournalEntries(data) {
       loadJournalEntries();
     });
   });
+}
+
+document.querySelectorAll("#journal-filter-tabs .filter-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activeJournalFilter = btn.dataset.journal;
+    document.querySelectorAll("#journal-filter-tabs .filter-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    loadJournalEntries();
+  });
+});
+
+// ---- Payroll ----
+// See payroll.js: this records a pay run's already-computed numbers
+// (gross, withholding, employer taxes) and posts the journal entry they
+// imply -- Rekono doesn't calculate tax tables itself.
+
+async function loadPayrollAccounts() {
+  const data = await (await apiFetch("/api/accounts?active=true")).json();
+  const cashAccounts = data.items.filter((a) => ["asset", "liability"].includes(a.type));
+  const expenseAccounts = data.items.filter((a) => a.type === "expense");
+  const liabilityAccounts = data.items.filter((a) => a.type === "liability");
+  document.getElementById("pr-payment-account").innerHTML = groupedAccountOptionsHtml(cashAccounts, null);
+  document.getElementById("pr-wages-account").innerHTML = groupedAccountOptionsHtml(expenseAccounts, null);
+  document.getElementById("pr-payroll-tax-account").innerHTML = groupedAccountOptionsHtml(expenseAccounts, null);
+  document.getElementById("pr-liability-account").innerHTML = groupedAccountOptionsHtml(liabilityAccounts, null);
+}
+
+async function loadEmployees() {
+  await cachedLoad("__employees__", async () => (await apiFetch("/api/employees")).json(), renderEmployees);
+}
+
+function renderEmployees(employees) {
+  const list = document.getElementById("employees-list");
+  list.innerHTML = employees.length
+    ? `<table><thead><tr><th>Name</th><th>Status</th><th></th></tr></thead><tbody>${employees
+        .map(
+          (e) => `
+    <tr>
+      <td>${escapeHtml(e.name)}</td>
+      <td>${e.active ? "Active" : "Inactive"}</td>
+      <td><button type="button" class="employee-toggle-btn linklike" data-id="${e.id}" data-active="${e.active}">${
+            e.active ? "Deactivate" : "Activate"
+          }</button></td>
+    </tr>`
+        )
+        .join("")}</tbody></table>`
+    : `<p class="hint">No employees yet -- add one above before recording a pay run.</p>`;
+
+  list.querySelectorAll(".employee-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/employees/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      invalidateCache("__employees__");
+      loadEmployees();
+    })
+  );
+
+  const active = employees.filter((e) => e.active);
+  document.getElementById("pr-employee").innerHTML = active.length
+    ? active.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join("")
+    : `<option value="">No active employees</option>`;
+}
+
+document.getElementById("employee-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const nameInput = document.getElementById("employee-create-name");
+  const res = await apiFetch("/api/employees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: nameInput.value }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    await alertDialog("Couldn't add that employee", body.detail?.[0]?.message || body.detail || "Something went wrong.");
+    return;
+  }
+  nameInput.value = "";
+  invalidateCache("__employees__");
+  loadEmployees();
+});
+
+// A live preview only -- the server computes and validates the real net
+// pay from the same fields on submit, this just saves a round trip to
+// notice a withholding total that doesn't add up.
+function updatePayrollNetPayPreview() {
+  const gross = Number(document.getElementById("pr-gross-wages").value) || 0;
+  const federal = Number(document.getElementById("pr-federal-tax").value) || 0;
+  const state = Number(document.getElementById("pr-state-tax").value) || 0;
+  const ficaEmployee = Number(document.getElementById("pr-fica-employee").value) || 0;
+  const other = Number(document.getElementById("pr-other-deductions").value) || 0;
+  const net = gross - federal - state - ficaEmployee - other;
+  const preview = document.getElementById("pr-net-pay-preview");
+  preview.textContent = gross ? `Net pay: ${fmtMoney(net)}` : "";
+  preview.className = net < 0 ? "hint kpi-sub-warning" : "hint";
+}
+
+["pr-gross-wages", "pr-federal-tax", "pr-state-tax", "pr-fica-employee", "pr-other-deductions"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", updatePayrollNetPayPreview);
+});
+
+document.getElementById("payroll-run-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("payroll-run-status");
+  const res = await apiFetch("/api/payroll-runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      employee_id: document.getElementById("pr-employee").value,
+      pay_date: document.getElementById("pr-pay-date").value,
+      gross_wages: Number(document.getElementById("pr-gross-wages").value) || 0,
+      federal_tax_withheld: Number(document.getElementById("pr-federal-tax").value) || 0,
+      state_tax_withheld: Number(document.getElementById("pr-state-tax").value) || 0,
+      fica_employee_withheld: Number(document.getElementById("pr-fica-employee").value) || 0,
+      other_deductions: Number(document.getElementById("pr-other-deductions").value) || 0,
+      employer_fica_match: Number(document.getElementById("pr-fica-employer").value) || 0,
+      employer_unemployment_tax: Number(document.getElementById("pr-unemployment-tax").value) || 0,
+      payment_account_id: document.getElementById("pr-payment-account").value,
+      wages_expense_account_id: document.getElementById("pr-wages-account").value,
+      payroll_tax_expense_account_id: document.getElementById("pr-payroll-tax-account").value,
+      liability_account_id: document.getElementById("pr-liability-account").value,
+      memo: document.getElementById("pr-memo").value,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = body.detail?.[0]?.message || body.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = "";
+  e.target.reset();
+  document.getElementById("pr-net-pay-preview").textContent = "";
+  invalidateCache("__payroll_runs__");
+  invalidateCache("__trial_balance__");
+  invalidateCache("__journal_entries__");
+  loadPayrollRuns();
+});
+
+async function loadPayrollRuns() {
+  await cachedLoad("__payroll_runs__", async () => (await apiFetch("/api/payroll-runs")).json(), renderPayrollRuns);
+}
+
+function renderPayrollRuns(runs) {
+  const body = document.getElementById("payroll-runs-body");
+  if (!runs.length) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No pay runs recorded yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = runs
+    .map(
+      (r) => `
+    <tr>
+      <td>${r.pay_date}</td>
+      <td>${escapeHtml(r.employee_name)}</td>
+      <td>${fmtMoney(r.gross_wages)}</td>
+      <td>${fmtMoney(r.net_pay)}</td>
+      <td>${fmtMoney(r.employer_tax_total)}</td>
+      <td><button type="button" class="pr-void-btn linklike" data-id="${r.id}">Void</button></td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".pr-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Void this pay run?", "Posts a reversing entry; the original stays on the books for reference.", {
+        confirmLabel: "Void",
+        danger: true,
+      });
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/payroll-runs/${btn.dataset.id}/void`, { method: "POST" });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't void that pay run", errBody.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__payroll_runs__");
+      invalidateCache("__trial_balance__");
+      invalidateCache("__journal_entries__");
+      loadPayrollRuns();
+    })
+  );
 }
 
 async function loadTrialBalance() {

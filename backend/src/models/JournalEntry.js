@@ -20,6 +20,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "equity_transaction", // owner capital in, distributions out, treasury stock
   "stock_compensation", // ASC 718: a month of an equity award's cost was earned
   "income_tax", // the tax provision accrued, and payments against it
+  "payroll_run", // gross wages, withholding, and the employer's own payroll tax cost
   "void",
 ];
 
