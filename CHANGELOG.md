@@ -4,6 +4,27 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.55
+
+`Vendor.paymentTermsDays` has carried a comment since it was added --
+"used to fill in a due date when a bill arrives without one" -- that
+nothing ever actually did. A bill whose document had no visible due date
+just got `dueDate: null` forever, the AP mirror of a gap customer invoices
+never had (`receivables.js` already falls back to
+`Customer.paymentTermsDays`).
+
+Fixed in `vendors.js`'s `attachVendorToInvoice`, the single place
+`ledger.js`'s `postInvoiceApproval` resolves a bill's vendor identity for
+all four approval paths: when a bill still has no due date at approval
+time, it's backfilled as `invoiceDate + vendor.paymentTermsDays`, the same
+math `receivables.js` already does for customers. Never overwrites a due
+date the document (or a human) already supplied, and a bill with no
+invoice date extracted either has nothing to count days from and is left
+as-is. Broadened slightly past the minimal fix: a bill whose vendor was
+already resolved by some earlier path (QuickBooks push, manual
+assignment) still gets the fallback, not just brand-new vendor
+resolutions, since the gap is "no due date," not "no vendor yet."
+
 ## v1.54
 
 Committed the first `graphify-out/` build (5.1MB: `graph.html`, `graph.json`,

@@ -74,6 +74,39 @@ test("a second bill from the same vendor reuses the vendor rather than making an
   expect((await request(app).get("/api/vendors").set(authHeader(token))).body.items).toHaveLength(1);
 });
 
+test("approving a bill with no due date inherits the vendor's payment terms", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await Vendor.create({ orgId: org, name: "Acme Inc", paymentTermsDays: 45 });
+  const invoice = await makeApprovedBill(token, org, { vendorName: "Acme Inc", invoiceDate: TODAY });
+
+  // 45-day terms from the invoice date, not a hardcoded 30.
+  const expectedDue = new Date(`${TODAY}T00:00:00Z`);
+  expectedDue.setUTCDate(expectedDue.getUTCDate() + 45);
+  expect(invoice.dueDate).toBe(expectedDue.toISOString().slice(0, 10));
+});
+
+test("a bill's own extracted due date is never overwritten by vendor terms", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await Vendor.create({ orgId: org, name: "Acme Inc", paymentTermsDays: 45 });
+  const invoice = await makeApprovedBill(token, org, {
+    vendorName: "Acme Inc",
+    invoiceDate: TODAY,
+    dueDate: "2099-01-01",
+  });
+
+  expect(invoice.dueDate).toBe("2099-01-01");
+});
+
+test("a bill with no invoice date extracted gets no due-date fallback either", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const invoice = await makeApprovedBill(token, org, { vendorName: "Acme Inc" });
+
+  expect(invoice.dueDate).toBeNull();
+});
+
 test("a bill still in review has no vendor -- resolution happens at approval", async () => {
   const token = await signup(app, request);
   const org = await orgId(token);
