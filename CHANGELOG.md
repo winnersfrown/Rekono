@@ -4,6 +4,21 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.54
+
+Committed the first `graphify-out/` build (5.1MB: `graph.html`, `graph.json`,
+`GRAPH_REPORT.md`, `manifest.json`, `cost.json`, extraction cache) --
+2,016 nodes, 5,178 edges, 152 communities over the whole repo. Structural
+extraction (AST, 1,803 nodes) needed no LLM; semantic extraction (docs,
+the sample invoice PDF) ran through 3 parallel subagents since no Gemini
+key was configured in this environment. Skipped the 14 favicon/icon
+assets from semantic extraction -- vision passes on 16-32px brand icons
+add no graph value for the cost of 14 extra subagent dispatches. The
+health check flagged ~700 dangling-endpoint edges, expected for a
+repo-wide AST pass (they mostly point at external library symbols never
+modeled as nodes) and noted rather than hidden, per the skill's own
+honesty rules.
+
 ## v1.53
 
 Added the `graphify` skill (project-scoped) so future sessions can query a
