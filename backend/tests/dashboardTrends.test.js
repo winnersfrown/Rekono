@@ -149,10 +149,14 @@ describe("month_over_month", () => {
     const org = await orgId(token);
 
     const now = new Date();
-    const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 12));
     const prevMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1, 12));
 
-    await makeInvoice(org, { total: 1000, updatedAt: currentMonthStart, createdAt: currentMonthStart });
+    // `now` itself, not a fixed midday timestamp, for the current-month
+    // fixture: documentsCreatedInRange's current-period window ends at the
+    // real current instant (see monthOverMonth's `now` upper bound), so a
+    // hardcoded noon lands in the future -- and gets excluded -- whenever
+    // the suite runs before noon UTC on the 1st of the month.
+    await makeInvoice(org, { total: 1000, updatedAt: now, createdAt: now });
     await makeInvoice(org, { total: 400, updatedAt: prevMonthStart, createdAt: prevMonthStart });
 
     const res = await request(app).get("/api/dashboard/trends").set(authHeader(token));

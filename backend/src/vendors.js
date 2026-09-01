@@ -128,16 +128,34 @@ export async function resolveVendorForInvoice(orgId, invoice) {
   });
 }
 
-// Sets invoice.vendorId if it isn't already set. Safe to call more than
-// once (invoice approval is itself idempotent), and never overwrites a
-// vendor a human assigned by hand.
+function addDaysIso(fromIso, days) {
+  const d = new Date(`${fromIso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Sets invoice.vendorId if it isn't already set, and backfills a missing
+// due date from the vendor's payment terms -- the AP mirror of how
+// receivables.js already inherits Customer.paymentTermsDays for a customer
+// invoice with no due date given. Safe to call more than once (invoice
+// approval is itself idempotent), and never overwrites a vendorId a human
+// assigned by hand or a dueDate the document (or a human) already
+// supplied. Bills with no invoice date extracted have nothing to count
+// days from, so they're left as-is, same as before this existed.
 export async function attachVendorToInvoice(orgId, invoice) {
-  if (invoice.vendorId) return invoice.vendorId;
-  const vendor = await resolveVendorForInvoice(orgId, invoice);
-  if (!vendor) return null;
-  invoice.vendorId = vendor.id;
-  await invoice.save();
-  return vendor.id;
+  let vendor = null;
+  if (!invoice.vendorId) {
+    vendor = await resolveVendorForInvoice(orgId, invoice);
+    if (vendor) invoice.vendorId = vendor.id;
+  }
+
+  if (!invoice.dueDate && invoice.invoiceDate) {
+    if (!vendor && invoice.vendorId) vendor = await Vendor.findByPk(invoice.vendorId);
+    if (vendor) invoice.dueDate = addDaysIso(invoice.invoiceDate, vendor.paymentTermsDays);
+  }
+
+  if (invoice.changed()) await invoice.save();
+  return invoice.vendorId;
 }
 
 // Folds `loserId` into `winnerId`: every bill, alias, and remembered
