@@ -4,6 +4,20 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.56
+
+CI was red on this PR (`Backend tests (SQLite)`), unrelated to v1.55's
+actual change: `dashboardTrends.test.js`'s month-over-month test hardcoded
+its "current month" invoice fixture at noon UTC on the 1st. `monthOverMonth`'s
+`documents_processed.current` counts rows from the start of the month
+through the real current instant (`documentsCreatedInRange(..., now)`), so
+whenever the suite runs before noon UTC on the 1st -- as it did here --
+that fixture is timestamped in the future and gets excluded, reporting 0
+instead of >=1. (`approved_value.current`'s query has no upper bound, which
+is why only the doc-count assertion ever failed.) Fixed by timestamping the
+fixture at the test's own captured `now` instead of a fixed noon, which is
+always at or before the app's own later-captured `now`.
+
 ## v1.55
 
 `Vendor.paymentTermsDays` has carried a comment since it was added --
