@@ -270,3 +270,27 @@ Key routing rules:
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
 - Author a backlog-ready spec/issue → invoke /spec
+
+## graphify
+
+The graphify skill is installed (project-scoped, `.claude/skills/graphify/`)
+but the graph hasn't been built yet -- run `/graphify .` once to generate
+`graphify-out/` (god nodes, community structure, cross-file relationships)
+before the rules below apply.
+
+- For codebase questions, first run `graphify query "<question>"` when
+  `graphify-out/graph.json` exists. Use `graphify path "<A>" "<B>"` for
+  relationships and `graphify explain "<concept>"` for focused concepts.
+  These return a scoped subgraph, usually much smaller than
+  `GRAPH_REPORT.md` or raw grep output.
+- If `graphify-out/wiki/index.md` exists, use it for broad navigation
+  instead of raw source browsing.
+- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review or
+  when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current
+  (AST-only, no API cost).
+
+Its `PreToolUse` hooks in `.claude/settings.json` (`graphify hook-guard
+search|read`) only ever print a suggestion to use the graph instead of a
+raw grep/read -- verified against the installed package's source before
+committing it. They fail open on any error and never block a tool call.

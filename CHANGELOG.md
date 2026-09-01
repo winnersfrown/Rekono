@@ -4,6 +4,21 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.53
+
+Added the `graphify` skill (project-scoped) so future sessions can query a
+knowledge graph of this codebase instead of raw grepping. `graphify install
+--project` was reviewed before committing anything it touched: the
+`PreToolUse` hooks it registers in `.claude/settings.json` were read
+directly from the installed package's source, not taken on faith -- they
+read the tool-call JSON on stdin and, at most, print a suggestion to use
+`graphify query` instead of a raw grep/read; every path fails open on any
+error, and no network calls or writes outside `graphify-out/` happen.
+`CLAUDE.md`'s new graphify section was written by hand rather than kept
+as the installer generated it, since that version claimed a graph already
+exists -- it doesn't yet, `/graphify .` still needs to be run once to
+build it.
+
 ## v1.52
 
 Close out most of what the first Scorecard run (v1.51) flagged, for real
