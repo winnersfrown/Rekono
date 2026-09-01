@@ -4,70 +4,47 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
-## v1.56
-
-CI was red on this PR (`Backend tests (SQLite)`), unrelated to v1.55's
-actual change: `dashboardTrends.test.js`'s month-over-month test hardcoded
-its "current month" invoice fixture at noon UTC on the 1st. `monthOverMonth`'s
-`documents_processed.current` counts rows from the start of the month
-through the real current instant (`documentsCreatedInRange(..., now)`), so
-whenever the suite runs before noon UTC on the 1st -- as it did here --
-that fixture is timestamped in the future and gets excluded, reporting 0
-instead of >=1. (`approved_value.current`'s query has no upper bound, which
-is why only the doc-count assertion ever failed.) Fixed by timestamping the
-fixture at the test's own captured `now` instead of a fixed noon, which is
-always at or before the app's own later-captured `now`.
-
-## v1.55
-
-`Vendor.paymentTermsDays` has carried a comment since it was added --
-"used to fill in a due date when a bill arrives without one" -- that
-nothing ever actually did. A bill whose document had no visible due date
-just got `dueDate: null` forever, the AP mirror of a gap customer invoices
-never had (`receivables.js` already falls back to
-`Customer.paymentTermsDays`).
-
-Fixed in `vendors.js`'s `attachVendorToInvoice`, the single place
-`ledger.js`'s `postInvoiceApproval` resolves a bill's vendor identity for
-all four approval paths: when a bill still has no due date at approval
-time, it's backfilled as `invoiceDate + vendor.paymentTermsDays`, the same
-math `receivables.js` already does for customers. Never overwrites a due
-date the document (or a human) already supplied, and a bill with no
-invoice date extracted either has nothing to count days from and is left
-as-is. Broadened slightly past the minimal fix: a bill whose vendor was
-already resolved by some earlier path (QuickBooks push, manual
-assignment) still gets the fallback, not just brand-new vendor
-resolutions, since the gap is "no due date," not "no vendor yet."
-
-## v1.54
-
-Committed the first `graphify-out/` build (5.1MB: `graph.html`, `graph.json`,
-`GRAPH_REPORT.md`, `manifest.json`, `cost.json`, extraction cache) --
-2,016 nodes, 5,178 edges, 152 communities over the whole repo. Structural
-extraction (AST, 1,803 nodes) needed no LLM; semantic extraction (docs,
-the sample invoice PDF) ran through 3 parallel subagents since no Gemini
-key was configured in this environment. Skipped the 14 favicon/icon
-assets from semantic extraction -- vision passes on 16-32px brand icons
-add no graph value for the cost of 14 extra subagent dispatches. The
-health check flagged ~700 dangling-endpoint edges, expected for a
-repo-wide AST pass (they mostly point at external library symbols never
-modeled as nodes) and noted rather than hidden, per the skill's own
-honesty rules.
-
 ## v1.53
 
-Added the `graphify` skill (project-scoped) so future sessions can query a
-knowledge graph of this codebase instead of raw grepping. `graphify install
---project` was reviewed before committing anything it touched: the
-`PreToolUse` hooks it registers in `.claude/settings.json` were read
-directly from the installed package's source, not taken on faith -- they
-read the tool-call JSON on stdin and, at most, print a suggestion to use
-`graphify query` instead of a raw grep/read; every path fails open on any
-error, and no network calls or writes outside `graphify-out/` happen.
-`CLAUDE.md`'s new graphify section was written by hand rather than kept
-as the installer generated it, since that version claimed a graph already
-exists -- it doesn't yet, `/graphify .` still needs to be run once to
-build it.
+Two independent additions landed on this branch together: the `graphify`
+knowledge-graph skill (project-scoped install plus the first
+`graphify-out/` build), and a real product fix -- bills now inherit
+`vendor.paymentTermsDays` as a due-date fallback the way customer
+invoices already do.
+
+**graphify**: `graphify install --project` was reviewed before committing
+anything it touched -- the `PreToolUse` hooks it registers in
+`.claude/settings.json` were read directly from the installed package's
+source, not taken on faith (nudge-only, fails open, no network calls),
+and `CLAUDE.md`'s auto-generated section was rewritten by hand since it
+claimed a graph already existed. The first build followed: 2,016 nodes,
+5,178 edges, 152 communities over the whole repo. Structural extraction
+(AST, 1,803 nodes) needed no LLM; semantic extraction (docs, the sample
+invoice PDF) ran through 3 parallel subagents since no Gemini key was
+configured in this environment. Skipped the 14 favicon/icon assets from
+semantic extraction -- vision passes on 16-32px brand icons add no graph
+value for the cost of 14 extra subagent dispatches. The health check
+flagged ~700 dangling-endpoint edges, expected for a repo-wide AST pass
+(they mostly point at external library symbols never modeled as nodes)
+and noted rather than hidden, per the skill's own honesty rules.
+
+**Vendor payment terms**: `Vendor.paymentTermsDays` has carried a comment
+since it was added -- "used to fill in a due date when a bill arrives
+without one" -- that nothing ever actually did. Fixed in `vendors.js`'s
+`attachVendorToInvoice`, the single place `ledger.js`'s
+`postInvoiceApproval` resolves a bill's vendor identity for all four
+approval paths: when a bill still has no due date at approval time, it's
+backfilled as `invoiceDate + vendor.paymentTermsDays`, the same math
+`receivables.js` already does for customers. Never overwrites a due date
+the document (or a human) already supplied, and a bill with no invoice
+date extracted has nothing to count days from and is left as-is.
+
+Also fixed a date-boundary flake in `dashboardTrends.test.js` that turned
+CI red on this PR, unrelated to either change above: its month-over-month
+test hardcoded a fixture at noon UTC on the 1st, which lands in the
+future (and gets excluded from `documents_processed.current`, which
+counts through the real current instant) whenever the suite runs before
+noon UTC on the 1st of the month -- as it did here.
 
 ## v1.52
 
