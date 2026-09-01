@@ -13,6 +13,7 @@ import { settings } from "../config.js";
 import * as plaid from "../plaid.js";
 import { AuditLog, BankAccount, BankConnection, MatchEntry, MatchSource } from "../models/index.js";
 import { serializeBankConnection } from "../serializers.js";
+import { normalizeMerchant } from "../transactionCategorization.js";
 
 const router = Router();
 
@@ -167,11 +168,21 @@ router.post("/api/integrations/plaid/accounts/:id/sync", requireAuth, requireAct
       await MatchEntry.bulkCreate(
         newTransactions.map((t) => ({
           sourceId: source.id,
+          // Plaid's own merchant_name enrichment simplifies a descriptor
+          // down to a canonical brand name ("Staples Advantage 800-333-3330
+          // MA" -> "Staples"), which is often *too* aggressive for matching
+          // against an invoice's own vendor name -- reusing this app's own
+          // normalizeMerchant (transactionCategorization.js) on the raw
+          // descriptor instead keeps more of the name intact ("staples
+          // advantage") while still stripping the noise a fuzzy match would
+          // choke on, so it scores far better against a real vendor name.
+          // Falls back to whatever's available if normalizing empties it
+          // out entirely (a descriptor that's pure noise, e.g. all digits).
+          vendor: normalizeMerchant(t.name || t.merchant_name || "") || t.merchant_name || t.name || "",
           // Plaid's sign convention: positive = money out of the account,
           // negative = money in -- matching's own model has no notion of
           // sign, so this normalizes to the same "always positive" amount
           // a CSV upload provides.
-          vendor: t.merchant_name || t.name || "",
           amount: Math.abs(t.amount),
           entryDate: t.date,
           reference: t.transaction_id,

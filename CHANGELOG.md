@@ -4,6 +4,25 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.55
+
+Fixed a real-world matching miss caught while testing v1.54's Plaid sync
+against a Plaid Sandbox custom test account: a "Staples Advantage
+800-3333330 MA" transaction synced in, but matching it against a genuine
+"Staples Advantage" invoice for the exact same amount and date only
+scored 58/100 on vendor name -- a "partial" match, not the confident
+"matched" it should have been.
+
+The cause: Plaid's own transaction enrichment (`merchant_name`) had
+simplified the descriptor down to just "Staples", which the sync route
+preferred over the fuller raw descriptor. `routes/plaid.js` now runs the
+raw descriptor through this app's own `normalizeMerchant`
+(`transactionCategorization.js`, already used for card-statement
+categorization) instead -- it strips the reference-number/location noise
+a fuzzy match would choke on while keeping the actual brand name intact
+("staples advantage" rather than "staples"), scoring far better against a
+real vendor name. 4 new tests pinning this exact regression.
+
 ## v1.54
 
 Connect a real bank account for reconciliation, via Plaid, instead of only
