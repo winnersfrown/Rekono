@@ -4,6 +4,7 @@
 // pipeline.js/routes/invoices.js.
 
 import { Router } from "express";
+import { Op } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
@@ -15,6 +16,22 @@ const router = Router();
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
+
+// The four traditional special-purpose journals a manual set of books
+// keeps alongside the general journal, expressed as the JournalEntry
+// `source` values that already tag every entry Rekono posts -- these are
+// filters over the one ledger, not a second place transactions get
+// written to. "General" is everything left over once the other four are
+// carved out (manual entries, adjustments, closes, equity, comp, tax,
+// voids), matching the traditional meaning: whatever doesn't belong in one
+// of the specialized books.
+const SPECIAL_JOURNAL_SOURCES = {
+  sales: ["customer_invoice"],
+  purchases: ["invoice_approval"],
+  cash_receipts: ["customer_payment"],
+  cash_payments: ["bill_payment", "payroll_run"],
+};
+const GENERAL_JOURNAL_SOURCES = Object.values(SPECIAL_JOURNAL_SOURCES).flat();
 
 async function loadLinesWithAccountNames(journalEntryId) {
   const lines = await JournalLine.findAll({
@@ -39,6 +56,18 @@ router.get("/api/journal-entries", requireAuth, requireActivePlan, async (req, r
   try {
     const where = { orgId: req.currentUser.orgId };
     if (req.query.status) where.status = req.query.status;
+
+    if (req.query.journal) {
+      if (req.query.journal === "general") {
+        where.source = { [Op.notIn]: GENERAL_JOURNAL_SOURCES };
+      } else if (SPECIAL_JOURNAL_SOURCES[req.query.journal]) {
+        where.source = { [Op.in]: SPECIAL_JOURNAL_SOURCES[req.query.journal] };
+      } else {
+        return res.status(422).json({
+          detail: `journal must be one of: ${["general", ...Object.keys(SPECIAL_JOURNAL_SOURCES)].join(", ")}`,
+        });
+      }
+    }
 
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, parseInt(req.query.page_size, 10) || DEFAULT_PAGE_SIZE));

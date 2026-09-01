@@ -562,6 +562,24 @@ tbody tr.account-group-row:hover th { background: var(--paper-sunk); cursor: def
 tbody tr.account-subgroup-row { height: auto; }
 tbody tr.account-subgroup-row:hover th { background: none; cursor: default; }
 
+/* Third-level heading nested under a .account-subgroup-row -- the
+   subtype itself (Bank & Cash, Accounts Receivable, ...). Indented and
+   lighter still than the subgroup heading, so the three levels read as
+   type > classification > subtype rather than three peers. */
+.account-subtype-row th {
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: 0.01em;
+  padding-top: 0.25rem;
+  padding-left: 1rem;
+}
+tbody tr.account-subtype-row { height: auto; }
+tbody tr.account-subtype-row:hover th { background: none; cursor: default; }
+
 /* Report tables (anything with a total row in a <tfoot>): the money
    columns right-align and the total carries a double rule. Both are real
    conventions from the printed statement this whole system is drawn from,

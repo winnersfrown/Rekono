@@ -4,6 +4,44 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.56
+
+Manual payroll and the traditional special-purpose journals, plus two
+smaller accounting/UI fixes -- the remainder of a checklist covering the
+"Accounting" and "Website UI/Design" sections. A few items on that
+checklist ("Write invoices", "Write checks", "Sales journal, purchases,
+cash receipts...", per-account debit/credit normal balances, the
+uploads/review-queue switch, and a full invoice search sheet sortable by
+vendor) turned out to already be built, so this release covers what
+wasn't:
+
+- **Payroll.** A new Payroll tab (Accounting) records a pay run's
+  already-computed numbers -- gross wages, withholding, employer taxes --
+  and posts the journal entry they imply (Debit wages expense + employer
+  payroll tax expense, Credit cash and payroll liabilities). Rekono
+  doesn't calculate tax tables itself; that's the payroll provider's or
+  spreadsheet's job. New `Employee`/`PayrollRun` models, `payroll.js` for
+  the posting/void logic, and `routes/payroll.js` for the HTTP surface,
+  mirroring the existing bill-payment record/void pattern.
+- **The four special-purpose journals.** Sales, Purchases, Cash Receipts,
+  and Cash Payments journals, as filter tabs over the Journal Entries
+  view -- `GET /api/journal-entries?journal=...` filters by the
+  `JournalEntry.source` values each one already carries (customer
+  invoices, invoice approvals, customer payments, bill payments and
+  payroll runs), rather than writing to a second ledger. "General journal"
+  is what's left over once those four are carved out.
+- **Chart of Accounts: a third grouping level.** Accounts were already
+  grouped by type and by balance-sheet/income-statement classification;
+  each account's subtype (Cash & bank, Accounts receivable, Cost of
+  revenue, ...) is now its own heading within that, so "which accounts
+  fit under which categories" reads directly off the page instead of
+  requiring the per-row category dropdown to answer it.
+- **A real "Add an account" shortcut from Home.** The dashboard's quick
+  action used to only add a personal Net Worth account (no code, no
+  liability/equity/revenue/expense types) instead of a real Chart of
+  Accounts entry. It now jumps to Chart of Accounts and focuses the name
+  field there.
+
 ## v1.55
 
 Fixed a real-world matching miss caught while testing v1.54's Plaid sync

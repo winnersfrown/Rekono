@@ -41,6 +41,8 @@ import { ShareClass, ShareTransaction, Shareholder } from "./ShareRegister.js";
 import { AwardEvent, EquityAward, EquityPlan } from "./EquityAward.js";
 import { BankConnection } from "./BankConnection.js";
 import { BankAccount } from "./BankAccount.js";
+import { Employee } from "./Employee.js";
+import { PayrollRun } from "./PayrollRun.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -218,6 +220,16 @@ BankConnection.hasMany(BankAccount, { foreignKey: "connectionId", as: "accounts"
 BankAccount.belongsTo(BankConnection, { foreignKey: "connectionId", as: "connection" });
 BankAccount.belongsTo(MatchSource, { foreignKey: "matchSourceId", as: "matchSource" });
 
+// A pay run outlives any edit to the employee it paid. No cascade: an
+// employee with payroll history is deactivated, never deleted, same
+// reasoning Vendor and Customer aren't either.
+Employee.hasMany(PayrollRun, { foreignKey: "employeeId", as: "payrollRuns" });
+PayrollRun.belongsTo(Employee, { foreignKey: "employeeId", as: "employee" });
+PayrollRun.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+PayrollRun.belongsTo(Account, { foreignKey: "wagesExpenseAccountId", as: "wagesExpenseAccount" });
+PayrollRun.belongsTo(Account, { foreignKey: "payrollTaxExpenseAccountId", as: "payrollTaxExpenseAccount" });
+PayrollRun.belongsTo(Account, { foreignKey: "liabilityAccountId", as: "liabilityAccount" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -361,4 +373,6 @@ export {
   AwardEvent,
   BankConnection,
   BankAccount,
+  Employee,
+  PayrollRun,
 };
