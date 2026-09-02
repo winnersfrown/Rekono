@@ -34,6 +34,7 @@ import { BillPayment } from "./BillPayment.js";
 import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
+import { RecurringInvoice, RecurringInvoiceLine } from "./RecurringInvoice.js";
 import { FixedAsset } from "./FixedAsset.js";
 import { WrittenCheck } from "./WrittenCheck.js";
 import { EquityTransaction } from "./EquityTransaction.js";
@@ -136,6 +137,14 @@ CustomerInvoiceLine.belongsTo(Account, { foreignKey: "revenueAccountId", as: "re
 CustomerInvoice.hasMany(CustomerPayment, { foreignKey: "customerInvoiceId", as: "payments", onDelete: "CASCADE", hooks: true });
 CustomerPayment.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
 CustomerPayment.belongsTo(Account, { foreignKey: "depositAccountId", as: "depositAccount" });
+
+// A recurring invoice template's lines die with it. Invoices it already
+// issued are real CustomerInvoice rows and are untouched -- deleting the
+// template stops future issuance, it does not un-issue history.
+RecurringInvoice.hasMany(RecurringInvoiceLine, { foreignKey: "recurringInvoiceId", as: "lines", onDelete: "CASCADE", hooks: true });
+RecurringInvoiceLine.belongsTo(RecurringInvoice, { foreignKey: "recurringInvoiceId" });
+RecurringInvoiceLine.belongsTo(Account, { foreignKey: "revenueAccountId", as: "revenueAccount" });
+RecurringInvoice.belongsTo(Customer, { foreignKey: "customerId", as: "customer" });
 
 // The AP mirror of CustomerPayment. Invoice is the vendor bill being paid.
 Invoice.hasMany(BillPayment, { foreignKey: "invoiceId", as: "billPayments", onDelete: "CASCADE", hooks: true });
@@ -362,6 +371,8 @@ export {
   RevenueScheduleEntry,
   RecurringEntry,
   RecurringEntryLine,
+  RecurringInvoice,
+  RecurringInvoiceLine,
   FixedAsset,
   WrittenCheck,
   EquityTransaction,

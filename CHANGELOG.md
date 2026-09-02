@@ -4,6 +4,26 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.69
+
+Added recurring customer invoices -- the AR equivalent of the recurring
+adjusting entries `recurringEntries.js` already handled on the ledger side.
+A customer on a retainer or subscription had no way to be billed on a
+schedule; someone had to re-create the invoice by hand every period, with
+every chance that implies to forget a month or bill the wrong amount.
+
+A `RecurringInvoice` template (customer, lines, frequency, start/end dates)
+reuses `recurringEntries.js`'s own `dueDates` schedule arithmetic rather
+than reimplementing it, and issues each occurrence as a draft
+`CustomerInvoice` -- reviewed and sent like any other invoice. An optional
+`auto_send` flag posts and sends the occurrence immediately instead, for
+templates trusted to run unattended; if the ledger refuses the send (a
+closed period), the draft still stands and the failure comes back as
+`send_error` rather than leaving a stuck draft with no explanation. The
+three-step "post, schedule, mark sent" logic the manual Send button already
+did was factored out into `accountsReceivable.js`'s `sendCustomerInvoice`
+so auto-send reuses the exact same path instead of a second copy of it.
+
 ## v1.68
 
 Refreshed the `/graphify` code-graph model (`graphify-out/`) — it hadn't been
