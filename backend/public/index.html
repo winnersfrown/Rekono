@@ -1560,7 +1560,7 @@
           </div>
           <div class="table-scroll">
             <table>
-              <thead><tr><th></th><th>Date</th><th>Memo</th><th>Doc #</th><th>Journal</th><th>Total</th><th>Status</th><th></th></tr></thead>
+              <thead id="journal-entries-thead"><tr><th></th><th>Date</th><th>Memo</th><th>Doc #</th><th>Journal</th><th>Total</th><th>Status</th><th></th></tr></thead>
               <tbody id="journal-entries-body"></tbody>
             </table>
           </div>
@@ -2477,6 +2477,7 @@
           <label>Amount<input type="number" id="payment-modal-amount" step="0.01" min="0.01" required /></label>
           <label><span id="payment-modal-date-label">Date received</span><input type="date" id="payment-modal-date" required /></label>
           <label><span id="payment-modal-account-label">Deposit into</span><select id="payment-modal-account" required></select></label>
+          <label id="payment-modal-discount-row" hidden>Discount taken <span class="hint">(early-payment terms)</span><input type="number" id="payment-modal-discount" step="0.01" min="0" placeholder="0.00" /></label>
         </div>
         <p id="payment-modal-error" class="confirm-modal-error" style="display: none;"></p>
         <div class="confirm-modal-actions">
@@ -2502,6 +2503,7 @@
           <label>Amount<input type="number" id="write-check-amount" step="0.01" min="0.01" required /></label>
           <label>Date<input type="date" id="write-check-date" required /></label>
           <label>Pay from<select id="write-check-account" required></select></label>
+          <label>Discount taken <span class="hint">(early-payment terms, optional)</span><input type="number" id="write-check-discount" step="0.01" min="0" placeholder="0.00" /></label>
           <label>Memo (optional)<input type="text" id="write-check-memo" maxlength="512" /></label>
         </div>
         <p id="write-check-error" class="confirm-modal-error" style="display: none;"></p>

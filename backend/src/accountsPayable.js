@@ -20,6 +20,33 @@ import { buildVendorResolver } from "./vendors.js";
 // posted to Accounts Payable in the first place.
 export const PAYABLE_INVOICE_STATUS = "approved";
 
+// An early-payment discount taken (see earlyPayDiscount below, and the
+// vendor terms it reads) reduces what the purchase actually cost -- it
+// isn't income, it's less expense. Booked as a contra-expense account
+// rather than folded into the original expense/COGS line, so a company can
+// see how much of what it paid was true cost versus discounts captured
+// (the same reasoning Distributions is a separate contra-equity account
+// instead of a debit straight to Retained Earnings). Credit-normal in
+// effect: crediting an expense-type account reduces the expense total on
+// the P&L, which is exactly what taking a discount should do.
+export const PURCHASES_DISCOUNT_SUBTYPE = "purchases_discount";
+
+// Created on demand, not seeded: an org that never takes an early-payment
+// discount shouldn't carry a permanently-zero account in its chart. Same
+// pattern as incomeTax.js's ensureTaxAccount and equity.js's ensureAccount.
+export async function ensurePurchasesDiscountAccount(orgId) {
+  const existing = await Account.findOne({ where: { orgId, type: "expense", subtype: PURCHASES_DISCOUNT_SUBTYPE } });
+  if (existing) return existing;
+  return Account.create({
+    orgId,
+    code: "5080",
+    name: "Purchases Discounts Taken",
+    type: "expense",
+    subtype: PURCHASES_DISCOUNT_SUBTYPE,
+    isSystemAccount: true,
+  });
+}
+
 // Accounts money can be paid *from*: an asset or liability account, minus
 // the two control accounts that make no sense as a source.
 //
@@ -52,20 +79,40 @@ export function invoiceTotalCents(invoice) {
   return dollarsToCents(invoice.total || 0);
 }
 
+// Includes any discount taken -- a discounted payment relieves AP for the
+// full amount+discount, not just the cash that moved, so a bill paid $980
+// cash plus a $20 discount is fully settled, not sitting $20 "outstanding"
+// forever.
 export async function amountPaidCents(invoiceId) {
-  const payments = await BillPayment.findAll({ where: { invoiceId }, attributes: ["amountCents"], raw: true });
-  return payments.reduce((sum, p) => sum + p.amountCents, 0);
+  const payments = await BillPayment.findAll({
+    where: { invoiceId },
+    attributes: ["amountCents", "discountCents"],
+    raw: true,
+  });
+  return payments.reduce((sum, p) => sum + p.amountCents + (p.discountCents || 0), 0);
 }
 
-// Posts Debit Accounts Payable / Credit [payment account] -- the payable
+// Posts Debit Accounts Payable / Credit [payment account] (+ Credit
+// Purchases Discounts Taken, if a discount was taken) -- the payable
 // cleared, the money gone. Dated to the payment date rather than today, so
 // the cash flow statement attributes it to the period the money actually
-// left in.
+// left in. AP is debited for amount+discount, since that's the full amount
+// relieved; the cash side only ever moves the actual cash paid.
 export async function postBillPayment(payment, invoice, { postedByUserId = null, docNumber = "" } = {}) {
   const apAccount = await Account.findOne({
     where: { orgId: invoice.orgId, type: "liability", subtype: "accounts_payable" },
   });
   if (!apAccount) throw new LedgerError("No Accounts Payable account found in the chart of accounts.", 409);
+
+  const discountCents = payment.discountCents || 0;
+  const lines = [
+    { accountId: apAccount.id, debitCents: payment.amountCents + discountCents },
+    { accountId: payment.paymentAccountId, creditCents: payment.amountCents },
+  ];
+  if (discountCents > 0) {
+    const discountAccount = await ensurePurchasesDiscountAccount(invoice.orgId);
+    lines.push({ accountId: discountAccount.id, creditCents: discountCents });
+  }
 
   return postJournalEntry(invoice.orgId, {
     entryDate: payment.paymentDate,
@@ -75,10 +122,7 @@ export async function postBillPayment(payment, invoice, { postedByUserId = null,
     sourceType: "bill_payment",
     sourceId: payment.id,
     postedByUserId,
-    lines: [
-      { accountId: apAccount.id, debitCents: payment.amountCents },
-      { accountId: payment.paymentAccountId, creditCents: payment.amountCents },
-    ],
+    lines,
   });
 }
 
@@ -102,7 +146,7 @@ export async function voidBillPaymentEntry(orgId, billPaymentId, { postedByUserI
 // otherwise the bill reads as paid against cash that never posted.
 export async function recordBillPayment(
   invoice,
-  { amountCents, paymentDate, paymentAccountId, memo = "", postedByUserId = null, docNumber = "" }
+  { amountCents, paymentDate, paymentAccountId, memo = "", postedByUserId = null, docNumber = "", discountCents = 0 }
 ) {
   // You can only relieve a payable that exists. Approving a bill is what
   // credits Accounts Payable, and that posting can be skipped (a bill
@@ -130,6 +174,7 @@ export async function recordBillPayment(
     paymentAccountId,
     paymentDate,
     amountCents,
+    discountCents,
     memo,
   });
 

@@ -27,6 +27,11 @@ export const BillPayment = sequelize.define(
     paymentAccountId: { type: DataTypes.STRING(32), allowNull: false },
     paymentDate: { type: DataTypes.DATEONLY, allowNull: false },
     amountCents: { type: DataTypes.INTEGER, allowNull: false },
+    // An early-payment discount taken against this bill's terms (see
+    // accountsPayable.js's earlyPayDiscount) -- cash that was never paid
+    // because the bill was settled early, not cash that moved. Zero for
+    // every payment that didn't take one, which is most of them.
+    discountCents: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     memo: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
   },
   {
