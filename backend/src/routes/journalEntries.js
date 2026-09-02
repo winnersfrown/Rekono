@@ -52,7 +52,7 @@ const GENERAL_JOURNAL_SOURCES = Object.values(SPECIAL_JOURNAL_SOURCES).flat();
 async function loadLinesWithAccountNames(journalEntryId) {
   const lines = await JournalLine.findAll({
     where: { journalEntryId },
-    include: [{ model: Account, attributes: ["name"] }],
+    include: [{ model: Account, attributes: ["name", "code"] }],
     order: [["position", "ASC"]],
   });
   return lines.map((l) =>
@@ -129,6 +129,7 @@ const lineSchema = z.object({
 const createSchema = z.object({
   entry_date: z.string().min(1),
   memo: z.string().max(512).optional(),
+  doc_number: z.string().max(64).optional(),
   lines: z.array(lineSchema).min(2),
 });
 
@@ -136,11 +137,12 @@ router.post("/api/journal-entries", requireAuth, requireActivePlan, async (req, 
   try {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
-    const { entry_date, memo = "", lines } = parsed.data;
+    const { entry_date, memo = "", doc_number = "", lines } = parsed.data;
 
     const entry = await postJournalEntry(req.currentUser.orgId, {
       entryDate: entry_date,
       memo,
+      docNumber: doc_number,
       source: "manual",
       postedByUserId: req.currentUser.id,
       lines: lines.map((l) => ({

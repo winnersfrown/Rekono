@@ -783,6 +783,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    the invoice), so it scrolls inside its own box instead of widening the
    page. */
 .table-scroll { overflow-x: auto; }
+
+.je-expand-btn { font-size: 0.85rem; text-decoration: none; }
+.je-detail-row td { background: var(--paper-sunk); padding: var(--sp-sm) var(--sp-md); }
+.je-lines-detail { width: 100%; margin: 0; }
+.je-lines-detail th, .je-lines-detail td { padding: var(--sp-2xs) var(--sp-sm); font-size: 0.86rem; }
+.je-lines-detail td:nth-child(3), .je-lines-detail td:nth-child(4) { text-align: right; white-space: nowrap; }
+
 .line-item-table { overflow-x: auto; }
 .line-item-table table { margin: 0; min-width: 560px; }
 /* A bare `input[type=date]` sizes itself well wider than "mm/dd/yyyy" needs.

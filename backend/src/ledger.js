@@ -201,7 +201,16 @@ export async function seedDefaultChartOfAccounts(org) {
 // a raw DB error, since these are business-rule checks, not schema ones.
 export async function postJournalEntry(
   orgId,
-  { entryDate = todayIso(), memo = "", source = "manual", sourceType = null, sourceId = null, postedByUserId = null, lines }
+  {
+    entryDate = todayIso(),
+    memo = "",
+    docNumber = "",
+    source = "manual",
+    sourceType = null,
+    sourceId = null,
+    postedByUserId = null,
+    lines,
+  }
 ) {
   if (!Array.isArray(lines) || lines.length < 2) {
     throw new LedgerError("A journal entry needs at least two lines.");
@@ -250,6 +259,7 @@ export async function postJournalEntry(
     orgId,
     entryDate,
     memo,
+    docNumber,
     source,
     sourceType,
     sourceId,
@@ -287,6 +297,7 @@ export async function voidJournalEntry(orgId, journalEntryId, { postedByUserId =
   const reversal = await postJournalEntry(orgId, {
     entryDate: todayIso(),
     memo: entry.memo ? `Void of: ${entry.memo}` : "Void",
+    docNumber: entry.docNumber,
     source: "void",
     sourceType: "journal_entry",
     sourceId: entry.id,
@@ -428,6 +439,7 @@ export async function postInvoiceApproval(invoice) {
   try {
     return await postJournalEntry(invoice.orgId, {
       memo: `Invoice ${invoice.invoiceNumber || invoice.id.slice(0, 8)} -- ${invoice.vendorName || "Unknown vendor"}`,
+      docNumber: invoice.invoiceNumber || "",
       source: "invoice_approval",
       sourceType: "invoice",
       sourceId: invoice.id,

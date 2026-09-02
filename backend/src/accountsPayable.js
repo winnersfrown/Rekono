@@ -61,7 +61,7 @@ export async function amountPaidCents(invoiceId) {
 // cleared, the money gone. Dated to the payment date rather than today, so
 // the cash flow statement attributes it to the period the money actually
 // left in.
-export async function postBillPayment(payment, invoice, { postedByUserId = null } = {}) {
+export async function postBillPayment(payment, invoice, { postedByUserId = null, docNumber = "" } = {}) {
   const apAccount = await Account.findOne({
     where: { orgId: invoice.orgId, type: "liability", subtype: "accounts_payable" },
   });
@@ -70,6 +70,7 @@ export async function postBillPayment(payment, invoice, { postedByUserId = null 
   return postJournalEntry(invoice.orgId, {
     entryDate: payment.paymentDate,
     memo: `Payment on ${invoice.invoiceNumber || invoice.id.slice(0, 8)} -- ${invoice.vendorName || "Unknown vendor"}`,
+    docNumber,
     source: "bill_payment",
     sourceType: "bill_payment",
     sourceId: payment.id,
@@ -101,7 +102,7 @@ export async function voidBillPaymentEntry(orgId, billPaymentId, { postedByUserI
 // otherwise the bill reads as paid against cash that never posted.
 export async function recordBillPayment(
   invoice,
-  { amountCents, paymentDate, paymentAccountId, memo = "", postedByUserId = null }
+  { amountCents, paymentDate, paymentAccountId, memo = "", postedByUserId = null, docNumber = "" }
 ) {
   // You can only relieve a payable that exists. Approving a bill is what
   // credits Accounts Payable, and that posting can be skipped (a bill
@@ -133,7 +134,7 @@ export async function recordBillPayment(
   });
 
   try {
-    await postBillPayment(payment, invoice, { postedByUserId });
+    await postBillPayment(payment, invoice, { postedByUserId, docNumber });
   } catch (err) {
     await payment.destroy();
     throw err;

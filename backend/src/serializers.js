@@ -446,6 +446,10 @@ export function serializeJournalLine(line) {
     id: line.id,
     account_id: line.accountId,
     account_name: line.account?.name,
+    // "Post ref." in a paper ledger points back to the account's page in
+    // the general ledger it was posted to -- the account code is that same
+    // pointer in a system that posts in real time instead of by hand.
+    post_ref: line.account?.code,
     debit: line.debit,
     credit: line.credit,
     memo: line.memo,
@@ -457,6 +461,7 @@ export function serializeJournalEntryDetail(entry, lines) {
     id: entry.id,
     entry_date: entry.entryDate,
     memo: entry.memo,
+    doc_number: entry.docNumber,
     source: entry.source,
     source_type: entry.sourceType,
     source_id: entry.sourceId,
@@ -472,6 +477,7 @@ export function serializeJournalEntryListItem(entry, totalDebit) {
     id: entry.id,
     entry_date: entry.entryDate,
     memo: entry.memo,
+    doc_number: entry.docNumber,
     source: entry.source,
     status: entry.status,
     total: totalDebit,

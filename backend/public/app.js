@@ -4982,6 +4982,7 @@ document.getElementById("journal-entry-form").addEventListener("submit", async (
       body: JSON.stringify({
         entry_date: document.getElementById("je-date").value,
         memo: document.getElementById("je-memo").value,
+        doc_number: document.getElementById("je-doc-number").value,
         lines,
       }),
     });
@@ -5045,9 +5046,11 @@ function renderJournalEntries(data) {
   body.innerHTML = data.items
     .map(
       (entry) => `
-    <tr>
+    <tr class="je-summary-row" data-entry-id="${entry.id}">
+      <td><button type="button" class="je-expand-btn linklike" data-entry-id="${entry.id}" aria-label="Show lines">▸</button></td>
       <td>${entry.entry_date}</td>
       <td>${escapeHtml(entry.memo || "—")}</td>
+      <td>${escapeHtml(entry.doc_number || "—")}</td>
       <td>${JOURNAL_ENTRY_SOURCE_LABELS[entry.source] || entry.source}</td>
       <td>${fmtMoney(entry.total)}</td>
       <td>${entry.status}</td>
@@ -5069,6 +5072,51 @@ function renderJournalEntries(data) {
       loadJournalEntries();
     });
   });
+  body.querySelectorAll(".je-expand-btn").forEach((btn) => {
+    btn.addEventListener("click", () => toggleJournalEntryLines(btn));
+  });
+}
+
+// Every column the checklist asks for -- date, account title, doc #, post
+// ref., debit, credit -- lives across the summary row (date, doc #) and
+// this per-entry detail row (account title, post ref., debit, credit),
+// fetched lazily on expand rather than upfront for every row in the list.
+async function toggleJournalEntryLines(btn) {
+  const summaryRow = btn.closest("tr");
+  const existing = summaryRow.nextElementSibling;
+  if (existing && existing.classList.contains("je-detail-row")) {
+    existing.remove();
+    btn.textContent = "▸";
+    return;
+  }
+  document.querySelectorAll(".je-detail-row").forEach((row) => row.remove());
+  document.querySelectorAll(".je-expand-btn").forEach((b) => (b.textContent = "▸"));
+  btn.textContent = "▾";
+
+  const detailRow = document.createElement("tr");
+  detailRow.className = "je-detail-row";
+  detailRow.innerHTML = `<td colspan="8">Loading…</td>`;
+  summaryRow.after(detailRow);
+
+  const entry = await (await apiFetch(`/api/journal-entries/${btn.dataset.entryId}`)).json();
+  detailRow.innerHTML = `
+    <td colspan="8">
+      <table class="je-lines-detail">
+        <thead><tr><th>Account title</th><th>Post ref.</th><th>Debit</th><th>Credit</th></tr></thead>
+        <tbody>
+          ${entry.lines
+            .map(
+              (l) => `<tr>
+                <td>${escapeHtml(l.account_name || "—")}</td>
+                <td>${escapeHtml(l.post_ref || "—")}</td>
+                <td>${l.debit ? fmtMoney(l.debit) : ""}</td>
+                <td>${l.credit ? fmtMoney(l.credit) : ""}</td>
+              </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </td>`;
 }
 
 document.querySelectorAll("#journal-filter-tabs .filter-btn").forEach((btn) => {
