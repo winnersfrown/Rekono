@@ -1207,7 +1207,9 @@
                 </select></label>
                 <label>First period<input type="date" id="rec-start" required /></label>
                 <label>Last period<input type="date" id="rec-end" /></label>
+                <label><input type="checkbox" id="rec-auto-reverse" /> Auto-reverse next month</label>
               </div>
+              <p class="hint">For accruals -- accrued wages, accrued interest, an expense incurred but not yet billed. Posts the exact mirror image on the 1st of the following month so the real bill or payroll run that lands that month doesn't double-count it. Leave off for depreciation and prepaid amortization, which nothing else ever replaces.</p>
               <div class="line-item-table">
                 <table>
                   <thead><tr><th>Account</th><th>Debit</th><th>Credit</th><th></th></tr></thead>
@@ -1229,7 +1231,7 @@
           </form>
           <div id="recurring-run-status" class="hint"></div>
           <table>
-            <thead><tr><th>Name</th><th>Frequency</th><th>First period</th><th>Last posted</th><th>Next due</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Frequency</th><th>First period</th><th>Last posted</th><th>Next due</th><th>Auto-reverse</th><th>Status</th><th></th></tr></thead>
             <tbody id="recurring-body"></tbody>
           </table>
 

@@ -36,6 +36,15 @@ export const RecurringEntry = sequelize.define(
     // (a closed month) leaves the template still due for it.
     lastPostedDate: { type: DataTypes.DATEONLY, allowNull: true },
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    // Marks this template as an accrual: accrued wages, accrued interest,
+    // an expense incurred but not yet billed. Each occurrence's mirror
+    // image posts automatically on the first of the following month, so
+    // the real bill or payroll run that lands sometime in that month
+    // doesn't double-count the expense the accrual already recorded.
+    // Left false for depreciation and prepaid amortization -- neither is
+    // ever replaced by a later real transaction, so there's nothing to
+    // reverse against.
+    autoReverse: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   {
     tableName: "recurring_entries",

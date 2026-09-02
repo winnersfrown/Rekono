@@ -76,10 +76,27 @@ export async function loadTemplateLines(recurringEntryId) {
   });
 }
 
-// Posts one occurrence. Returns the journal entry, or throws LedgerError
-// if the ledger refuses it (a closed period being the expected case).
+// A reversing entry always lands on the first of the *following* month,
+// never the same day-of-month as the accrual it undoes. The date is
+// deliberate, not incidental: it has to be in place before the real bill
+// or payroll run posts sometime in that month, and "sometime in that
+// month" is the only guarantee -- day 1 is the one date guaranteed to be
+// early enough regardless of frequency.
+function firstOfNextMonth(isoDate) {
+  const d = parseIso(isoDate);
+  const next = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  return `${next.getUTCFullYear()}-${pad2(next.getUTCMonth() + 1)}-01`;
+}
+
+// Posts one occurrence, plus its auto-reversal if the template calls for
+// one. Returns { entry, reversal, reversalError }. Throws LedgerError only
+// for the occurrence itself (a closed period being the expected case) --
+// the occurrence is a correct, complete entry on its own, so a problem
+// posting its reversal doesn't undo it. That failure comes back as
+// `reversalError` instead, the same "named rather than swallowed" contract
+// runRecurringEntries already uses for a refused period.
 export async function postOccurrence(template, lines, entryDate, { postedByUserId = null } = {}) {
-  return postJournalEntry(template.orgId, {
+  const entry = await postJournalEntry(template.orgId, {
     entryDate,
     memo: template.memo || template.name,
     source: "recurring_entry",
@@ -93,6 +110,31 @@ export async function postOccurrence(template, lines, entryDate, { postedByUserI
       memo: l.memo,
     })),
   });
+
+  if (!template.autoReverse) return { entry, reversal: null, reversalError: null };
+
+  try {
+    const reversal = await postJournalEntry(template.orgId, {
+      entryDate: firstOfNextMonth(entryDate),
+      memo: `Reversal of: ${template.memo || template.name}`,
+      source: "reversing_entry",
+      sourceType: "recurring_entry",
+      sourceId: template.id,
+      postedByUserId,
+      // Debits and credits flipped -- the exact mirror image, same shape
+      // voidJournalEntry uses for a correction.
+      lines: lines.map((l) => ({
+        accountId: l.accountId,
+        debitCents: l.creditCents,
+        creditCents: l.debitCents,
+        memo: l.memo,
+      })),
+    });
+    return { entry, reversal, reversalError: null };
+  } catch (err) {
+    if (!(err instanceof LedgerError)) throw err;
+    return { entry, reversal: null, reversalError: err.message };
+  }
 }
 
 // Runs every active template up to `asOf`, posting each occurrence it owes.
@@ -122,7 +164,7 @@ export async function runRecurringEntries(orgId, asOf, { postedByUserId = null, 
 
     for (const date of dates) {
       try {
-        const entry = await postOccurrence(template, lines, date, { postedByUserId });
+        const { entry, reversal, reversalError } = await postOccurrence(template, lines, date, { postedByUserId });
         const amountCents = lines.reduce((s, l) => s + l.debitCents, 0);
         totalCents += amountCents;
         posted.push({
@@ -130,6 +172,8 @@ export async function runRecurringEntries(orgId, asOf, { postedByUserId = null, 
           entry_date: date,
           journal_entry_id: entry.id,
           amount: centsToDollars(amountCents),
+          ...(reversal ? { reversal_entry_id: reversal.id, reversal_date: reversal.entryDate } : {}),
+          ...(reversalError ? { reversal_error: reversalError } : {}),
         });
         // Advanced only after the posting succeeded, so a refused period
         // leaves the template still due for it rather than skipping past.
@@ -168,6 +212,7 @@ export async function previewRecurringEntries(orgId, asOf) {
       periods: dates,
       amount_each: centsToDollars(amountCents),
       amount_total: centsToDollars(amountCents * dates.length),
+      auto_reverse: template.autoReverse,
     });
   }
 

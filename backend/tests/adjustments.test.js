@@ -209,6 +209,113 @@ test("a deactivated template stops posting, and deleting one leaves its history 
   expect(tb.balanced).toBe(true);
 });
 
+// ---- Auto-reversing entries (accruals) ----
+
+test("an auto-reverse template posts its mirror image on the 1st of the next month", async () => {
+  const token = await signup(app, request);
+  const created = await makeTemplate(token, { name: "Accrued rent", auto_reverse: true });
+  expect(created.body.auto_reverse).toBe(true);
+
+  const run = await request(app)
+    .post("/api/recurring-entries/run")
+    .set(authHeader(token))
+    .send({ as_of: "2026-01-31" });
+  expect(run.status).toBe(200);
+  expect(run.body.posted).toHaveLength(1);
+  expect(run.body.posted[0].reversal_entry_id).toBeTruthy();
+  expect(run.body.posted[0].reversal_date).toBe("2026-02-01");
+
+  // The accrual and its reversal cancel exactly -- a trial balance run
+  // after both is the same as if neither had posted.
+  const tb = await trialBalance(token, "2026-02-01");
+  expect(accountRow(tb, "Uncategorized Expense").debit - accountRow(tb, "Uncategorized Expense").credit).toBe(0);
+  expect(tb.balanced).toBe(true);
+
+  // Between the two dates, the accrual is live on its own.
+  const midTb = await trialBalance(token, "2026-01-31");
+  expect(accountRow(midTb, "Uncategorized Expense").debit).toBe(100);
+});
+
+test("a December accrual reverses into January of the following year", async () => {
+  const token = await signup(app, request);
+  await makeTemplate(token, { name: "Accrued rent", start_date: "2026-12-31", auto_reverse: true });
+
+  const run = await request(app)
+    .post("/api/recurring-entries/run")
+    .set(authHeader(token))
+    .send({ as_of: "2026-12-31" });
+  expect(run.body.posted[0].reversal_date).toBe("2027-01-01");
+});
+
+test("a template without auto-reverse posts no mirror image", async () => {
+  const token = await signup(app, request);
+  await makeTemplate(token);
+
+  const run = await request(app)
+    .post("/api/recurring-entries/run")
+    .set(authHeader(token))
+    .send({ as_of: "2026-01-31" });
+  expect(run.body.posted[0].reversal_entry_id).toBeUndefined();
+
+  const tb = await trialBalance(token, "2026-02-28");
+  expect(accountRow(tb, "Uncategorized Expense").debit).toBe(100);
+});
+
+test("auto-reverse can be turned on for an existing template", async () => {
+  const token = await signup(app, request);
+  const created = await makeTemplate(token);
+  expect(created.body.auto_reverse).toBe(false);
+
+  const patched = await request(app)
+    .patch(`/api/recurring-entries/${created.body.id}`)
+    .set(authHeader(token))
+    .send({ auto_reverse: true });
+  expect(patched.body.auto_reverse).toBe(true);
+
+  const run = await request(app)
+    .post("/api/recurring-entries/run")
+    .set(authHeader(token))
+    .send({ as_of: "2026-01-31" });
+  expect(run.body.posted[0].reversal_entry_id).toBeTruthy();
+});
+
+test("the pending preview flags which templates will auto-reverse", async () => {
+  const token = await signup(app, request);
+  await makeTemplate(token, { name: "Accrued rent", auto_reverse: true });
+
+  const preview = await request(app)
+    .get("/api/recurring-entries/pending?as_of=2026-01-31")
+    .set(authHeader(token));
+  expect(preview.body.items[0].auto_reverse).toBe(true);
+});
+
+test("a reversal that can't post (its month is already closed) doesn't undo the accrual", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  await makeTemplate(token, { name: "Accrued rent", auto_reverse: true });
+  // February -- the reversal's target month -- is closed before the
+  // accrual is ever run, so the reversal will be refused.
+  await ClosePeriod.create({ orgId: org, periodMonth: "2026-02", status: "closed", closedAt: new Date() });
+
+  const run = await request(app)
+    .post("/api/recurring-entries/run")
+    .set(authHeader(token))
+    .send({ as_of: "2026-01-31" });
+  expect(run.body.posted).toHaveLength(1);
+  expect(run.body.posted[0].reversal_entry_id).toBeUndefined();
+  expect(run.body.posted[0].reversal_error).toMatch(/2026-02 has been closed/);
+
+  // The accrual itself still stands -- a downstream posting problem in a
+  // future period doesn't roll back an entry that's correct on its own.
+  const tb = await trialBalance(token, "2026-01-31");
+  expect(accountRow(tb, "Uncategorized Expense").debit).toBe(100);
+  expect(tb.balanced).toBe(true);
+
+  // And the template isn't stuck reposting January forever.
+  const template = await RecurringEntry.findOne({ where: { orgId: org } });
+  expect(template.lastPostedDate).toBe("2026-01-31");
+});
+
 // The one-shot depreciation calculator that used to live at
 // POST /api/recurring-entries/depreciation was replaced by a tracked
 // FixedAsset record -- see tests/fixedAssets.test.js.
