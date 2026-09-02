@@ -62,6 +62,17 @@ test("a discounted bill payment fully relieves the payable and posts the discoun
   const discountAccount = await trialBalanceRow(token, "Purchases Discounts Taken");
   expect(discountAccount.credit).toBe(20);
 
+  // Two more views of the same payment, each with its own (previously
+  // separate, previously buggy) paid-amount calculation: the Bill Payments
+  // list and the bill's own detail page. A bill settled with a discount is
+  // fully paid on both, not "$20 outstanding forever" or "partial".
+  const bills = await request(app).get("/api/bills").set(authHeader(token));
+  expect(bills.body.items.some((b) => b.invoice_id === invoice.id)).toBe(false); // dropped: nothing left outstanding
+
+  const detail = await request(app).get(`/api/invoices/${invoice.id}`).set(authHeader(token));
+  expect(detail.body.amount_paid).toBe(1000);
+  expect(detail.body.payment_status).toBe("paid");
+
   const cashRow = await trialBalanceRow(token, "Cash");
   expect(cashRow.debit).toBe(0); // nothing deposited
   expect(cashRow.credit).toBe(980); // only the actual cash paid

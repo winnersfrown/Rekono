@@ -4,6 +4,20 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.65
+
+A bill paid with an early-payment discount (v1.64) never showed as fully
+paid outside the trial balance and AP Aging: the Bill Payments list
+(`GET /api/bills`) and a bill's own detail view each summed
+`BillPayment.amountCents` alone in a second, independent calculation that
+predates the discount column and was never updated for it, so a bill
+settled for cash+discount sat at "$X outstanding" on the Bill Payments tab
+forever, and its own detail page called it "partial" rather than "paid".
+Both now count amount+discount, matching the shared `amountPaidCents` the
+rest of the app already used correctly. Caught by actually watching the
+richer demo data below flow through every screen rather than just the
+report that happened to already be right.
+
 ## v1.64
 
 The purchases and cash payments journals get the specialized columns a

@@ -35,7 +35,10 @@ export function serializeMatchResult(mr) {
 // ledger follows -- summing dollars as floats is how a penny goes missing.
 function paymentSummary(inv) {
   const payments = inv.billPayments || [];
-  const paidCents = payments.reduce((sum, p) => sum + (p.amountCents || 0), 0);
+  // Amount+discount both relieve the payable (accountsPayable.js's
+  // amountPaidCents) -- a bill settled with an early-payment discount is
+  // fully paid, not "partial" for the discounted sliver forever.
+  const paidCents = payments.reduce((sum, p) => sum + (p.amountCents || 0) + (p.discountCents || 0), 0);
   const totalCents = Math.round((Number(inv.total) || 0) * 100);
   return {
     amount_paid: Math.round(paidCents) / 100,
