@@ -42,6 +42,7 @@ function serializeTemplate(t, lines = null, accountsById = null) {
     end_date: t.endDate,
     last_posted_date: t.lastPostedDate,
     active: t.active,
+    auto_reverse: t.autoReverse,
     next_due: dueDates(t, todayIso())[0] || null,
     ...(lines
       ? {
@@ -92,6 +93,7 @@ const templateSchema = z.object({
   frequency: z.enum(RECURRING_FREQUENCIES),
   start_date: z.string().regex(ISO_DATE),
   end_date: z.string().regex(ISO_DATE).optional(),
+  auto_reverse: z.boolean().optional(),
   lines: z.array(templateLineSchema).min(2),
 });
 
@@ -126,6 +128,7 @@ router.post("/api/recurring-entries", requireAuth, requireActivePlan, async (req
       frequency: data.frequency,
       startDate: data.start_date,
       endDate: data.end_date || null,
+      autoReverse: data.auto_reverse || false,
     });
     await RecurringEntryLine.bulkCreate(
       data.lines.map((l, i) => ({
@@ -156,7 +159,12 @@ router.post("/api/recurring-entries", requireAuth, requireActivePlan, async (req
 router.patch("/api/recurring-entries/:id", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
     const parsed = z
-      .object({ name: z.string().min(1).max(256).optional(), active: z.boolean().optional(), end_date: z.string().regex(ISO_DATE).nullable().optional() })
+      .object({
+        name: z.string().min(1).max(256).optional(),
+        active: z.boolean().optional(),
+        end_date: z.string().regex(ISO_DATE).nullable().optional(),
+        auto_reverse: z.boolean().optional(),
+      })
       .safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
 
@@ -166,6 +174,7 @@ router.patch("/api/recurring-entries/:id", requireAuth, requireActivePlan, async
     if (parsed.data.name !== undefined) template.name = parsed.data.name;
     if (parsed.data.active !== undefined) template.active = parsed.data.active;
     if (parsed.data.end_date !== undefined) template.endDate = parsed.data.end_date;
+    if (parsed.data.auto_reverse !== undefined) template.autoReverse = parsed.data.auto_reverse;
     await template.save();
 
     res.json(serializeTemplate(template));

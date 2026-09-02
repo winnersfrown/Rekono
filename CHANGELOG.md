@@ -4,6 +4,33 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.67
+
+Recurring entries (`recurringEntries.js`) covered adjusting entries but not
+the one piece of the accounting cycle they're conventionally paired with:
+reversing entries. An accrual posted for accrued wages, accrued interest, or
+an expense incurred but not yet billed had no way to *un*-post itself before
+the real bill or payroll run landed, so a strict reading of the accounting
+cycle -- record, post, adjust, close, reverse -- was missing its last step.
+
+A `RecurringEntry` template can now be flagged `auto_reverse`. Each occurrence
+still posts exactly as before, but if the flag is set, its mirror image
+(debits and credits swapped, same shape `voidJournalEntry` already uses for a
+correction) posts immediately after, dated the first of the *following*
+month regardless of the template's own day-of-month or frequency -- the one
+date guaranteed to be in place before whatever real transaction the accrual
+was standing in for arrives sometime that month. Left off by default:
+depreciation and prepaid amortization are never replaced by a later real
+transaction, so reversing them would just re-create the expense they
+correctly recorded.
+
+If the reversal's target period turns out to already be closed, the accrual
+still stands -- a downstream posting problem in a future period doesn't
+retroactively invalidate an entry that's correct on its own -- and the
+failure comes back as `reversal_error` on the run response rather than being
+swallowed, the same "named, not silently skipped" contract a refused period
+already gets.
+
 ## v1.65
 
 A bill paid with an early-payment discount (v1.64) never showed as fully

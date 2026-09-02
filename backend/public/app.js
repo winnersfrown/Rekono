@@ -5046,6 +5046,7 @@ const JOURNAL_ENTRY_SOURCE_LABELS = {
   customer_payment: "Customer payment",
   revenue_recognition: "Revenue recognition",
   recurring_entry: "Recurring entry",
+  reversing_entry: "Reversing entry",
   closing_entry: "Closing entry",
   equity_transaction: "Dividend declared",
   equity_contribution: "Capital contribution",
@@ -7304,6 +7305,7 @@ document.getElementById("recurring-form").addEventListener("submit", async (e) =
       frequency: document.getElementById("rec-frequency").value,
       start_date: document.getElementById("rec-start").value,
       ...(endDate ? { end_date: endDate } : {}),
+      auto_reverse: document.getElementById("rec-auto-reverse").checked,
       lines: rows.map((r) => {
         const debit = Number(r.querySelector(".rec-debit").value) || 0;
         const credit = Number(r.querySelector(".rec-credit").value) || 0;
@@ -7322,6 +7324,7 @@ document.getElementById("recurring-form").addEventListener("submit", async (e) =
   }
   statusEl.textContent = `Saved "${parsed.name}".`;
   document.getElementById("rec-name").value = "";
+  document.getElementById("rec-auto-reverse").checked = false;
   document.getElementById("rec-lines-body").innerHTML = "";
   addRecurringLineRow();
   addRecurringLineRow();
@@ -7332,7 +7335,7 @@ async function loadRecurringEntries() {
   const data = await (await apiFetch("/api/recurring-entries")).json();
   const body = document.getElementById("recurring-body");
   if (!data.items.length) {
-    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No recurring entries yet — add one above.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No recurring entries yet — add one above.</td></tr>`;
     return;
   }
   body.innerHTML = data.items
@@ -7344,6 +7347,11 @@ async function loadRecurringEntries() {
       <td>${t.start_date}</td>
       <td>${t.last_posted_date || "—"}</td>
       <td>${t.next_due || "—"}</td>
+      <td>
+        <button type="button" class="rec-auto-reverse-btn linklike" data-id="${t.id}" data-auto-reverse="${t.auto_reverse}">${
+          t.auto_reverse ? "On" : "Off"
+        }</button>
+      </td>
       <td>${t.active ? "Active" : "Paused"}</td>
       <td>
         <button type="button" class="rec-toggle-btn" data-id="${t.id}" data-active="${t.active}">${
@@ -7362,6 +7370,16 @@ async function loadRecurringEntries() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      loadRecurringEntries();
+    })
+  );
+  body.querySelectorAll(".rec-auto-reverse-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/recurring-entries/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_reverse: btn.dataset.autoReverse !== "true" }),
       });
       loadRecurringEntries();
     })
@@ -7390,7 +7408,7 @@ document.getElementById("rec-preview").addEventListener("click", async () => {
   const el = document.getElementById("recurring-run-status");
   el.textContent = data.occurrences
     ? `Would post ${data.occurrences} entr${data.occurrences === 1 ? "y" : "ies"}: ${data.items
-        .map((i) => `${i.name} x${i.periods.length}`)
+        .map((i) => `${i.name} x${i.periods.length}${i.auto_reverse ? " (auto-reverses)" : ""}`)
         .join(", ")}.`
     : "Nothing due through that date.";
 });
@@ -7409,6 +7427,18 @@ document.getElementById("recurring-run-form").addEventListener("submit", async (
     return;
   }
   const bits = [`Posted ${parsed.posted.length} entr${parsed.posted.length === 1 ? "y" : "ies"} (${fmtMoney(parsed.total)}).`];
+  const reversed = parsed.posted.filter((p) => p.reversal_entry_id).length;
+  if (reversed) bits.push(`${reversed} auto-reversed on their following month's 1st.`);
+  // Surfaced rather than swallowed, same reasoning as a skipped occurrence
+  // below: a reversal that couldn't post (its month already closed) is
+  // exactly the kind of thing that silently produces a double-counted
+  // expense next period if nobody is told.
+  const reversalFailures = parsed.posted.filter((p) => p.reversal_error);
+  if (reversalFailures.length) {
+    bits.push(
+      `Reversal not posted: ${reversalFailures.map((p) => `${p.template} ${p.entry_date} (${p.reversal_error})`).join("; ")}`
+    );
+  }
   // Skips are surfaced rather than swallowed -- a template that stopped
   // because its period was closed is exactly what someone needs to know.
   if (parsed.skipped.length) bits.push(`Skipped: ${parsed.skipped.map((s) => `${s.name} (${s.reason})`).join("; ")}`);
