@@ -213,6 +213,124 @@ document.addEventListener("keydown", (e) => {
   if (trigger) trigger.focus();
 });
 
+// ---- Command palette ----
+// A second, faster path to the ~30 destinations spread across the six
+// top-bar menus: type a name instead of knowing which menu it lives under.
+// The index is rebuilt from the nav's own [data-tab] buttons every time the
+// palette opens, rather than hand-maintained as a second list -- a
+// destination added to a menu shows up here for free, and the Staff tab
+// (gated on is_staff, hidden via inline style) is excluded the same way it's
+// excluded from the menu, with no second gate to keep in sync.
+let cpItems = [];
+let cpSelectedIndex = 0;
+
+function buildCommandPaletteIndex() {
+  const items = [];
+  document.querySelectorAll(".topbar-nav .tab-btn[data-tab]").forEach((btn) => {
+    if (btn.style.display === "none") return;
+    const menu = btn.closest(".topnav-menu");
+    const trigger = menu ? document.querySelector(`.topnav-trigger[data-menu="${menu.dataset.menuFor}"]`) : null;
+    items.push({
+      tab: btn.dataset.tab,
+      label: btn.textContent.trim(),
+      group: trigger ? trigger.textContent.trim() : "Home",
+      iconHtml: btn.querySelector("svg")?.outerHTML || "",
+    });
+  });
+  return items;
+}
+
+function openCommandPalette() {
+  cpItems = buildCommandPaletteIndex();
+  const input = document.getElementById("command-palette-input");
+  input.value = "";
+  renderCommandPaletteResults("");
+  document.getElementById("command-palette").style.display = "flex";
+  input.focus();
+}
+
+function closeCommandPalette() {
+  document.getElementById("command-palette").style.display = "none";
+}
+
+function updateCommandPaletteSelection() {
+  const els = document.querySelectorAll(".command-palette-item");
+  els.forEach((el, i) => el.classList.toggle("is-selected", i === cpSelectedIndex));
+  els[cpSelectedIndex]?.scrollIntoView({ block: "nearest" });
+}
+
+function renderCommandPaletteResults(query) {
+  const q = query.trim().toLowerCase();
+  const filtered = q ? cpItems.filter((it) => it.label.toLowerCase().includes(q) || it.group.toLowerCase().includes(q)) : cpItems;
+  cpSelectedIndex = 0;
+  const el = document.getElementById("command-palette-results");
+  if (!filtered.length) {
+    el.innerHTML = `<div class="command-palette-empty">No matches.</div>`;
+    return;
+  }
+  let html = "";
+  let lastGroup = null;
+  filtered.forEach((it, i) => {
+    if (it.group !== lastGroup) {
+      html += `<div class="command-palette-group">${escapeHtml(it.group)}</div>`;
+      lastGroup = it.group;
+    }
+    html += `<button type="button" class="command-palette-item${i === 0 ? " is-selected" : ""}" data-tab="${it.tab}" data-index="${i}">${it.iconHtml}<span>${escapeHtml(it.label)}</span></button>`;
+  });
+  el.innerHTML = html;
+  el.querySelectorAll(".command-palette-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      switchTab(btn.dataset.tab);
+      closeCommandPalette();
+    });
+    btn.addEventListener("mouseenter", () => {
+      cpSelectedIndex = Number(btn.dataset.index);
+      updateCommandPaletteSelection();
+    });
+  });
+}
+
+document.getElementById("command-palette-btn").addEventListener("click", openCommandPalette);
+
+// Ctrl+K on Windows/Linux, Cmd+K on Mac -- guarded to the app shell so it's
+// inert on the auth/onboarding screens, which have no tabs to jump to.
+document.addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "k") return;
+  if (document.getElementById("app-shell").style.display === "none") return;
+  e.preventDefault();
+  openCommandPalette();
+});
+
+document.getElementById("command-palette-input").addEventListener("input", (e) => renderCommandPaletteResults(e.target.value));
+
+document.getElementById("command-palette-input").addEventListener("keydown", (e) => {
+  const count = document.querySelectorAll(".command-palette-item").length;
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    cpSelectedIndex = Math.min(cpSelectedIndex + 1, count - 1);
+    updateCommandPaletteSelection();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    cpSelectedIndex = Math.max(cpSelectedIndex - 1, 0);
+    updateCommandPaletteSelection();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const selected = document.querySelectorAll(".command-palette-item")[cpSelectedIndex];
+    if (selected) {
+      switchTab(selected.dataset.tab);
+      closeCommandPalette();
+    }
+  }
+});
+
+document.getElementById("command-palette").addEventListener("click", (e) => {
+  if (e.target.id === "command-palette") closeCommandPalette();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.getElementById("command-palette").style.display !== "none") closeCommandPalette();
+});
+
 // ---- Tabs ----
 // Top-bar nav items and the dashboard's quick-action shortcuts both switch
 // tabs via [data-tab], but only the nav items (.tab-btn) get the persistent

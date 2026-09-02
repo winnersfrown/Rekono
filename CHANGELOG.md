@@ -4,6 +4,27 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.60
+
+A command palette (⌘K / Ctrl+K, plus a visible "Search" button in the top
+bar) for the app's ~30 destinations, spread across the six top-bar menus
+(Documents, Workflow, Receivables, Payables, Accounting, Admin) -- reported
+as too many categories to keep track of. Rather than cut real destinations
+to shrink the count, this adds a second, faster path to all of them: type
+a name and jump straight there instead of knowing which menu it lives
+under. The menus themselves are unchanged.
+
+The palette's index is built from the nav's own `[data-tab]` buttons at
+open time, not a hand-maintained second list -- a destination added to a
+menu shows up here for free, and the staff-only tab (gated on `is_staff`)
+is excluded the same way it's excluded from the menu, with nothing to keep
+in sync. Filtering matches on both the destination's name and its menu
+group, so "pay" finds Vendors/Bill Payments/AP Aging (the Payables group)
+alongside Payroll. Arrow keys move the selection, Enter jumps, Escape or a
+click on the backdrop closes it. Verified live: 31 destinations indexed,
+filtering, keyboard navigation, and both open paths (button and Ctrl+K) all
+confirmed working, on desktop and mobile, no console errors.
+
 ## v1.59
 
 Two "Website UI/Design" items reported as still broken after v1.56 closed

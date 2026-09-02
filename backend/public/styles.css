@@ -1599,6 +1599,107 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .topnav-menu .tab-btn svg { flex: none; opacity: 0.85; }
 .topnav-menu .tab-btn.active svg { opacity: 1; color: var(--accent-text); }
 
+/* ---------- command palette ---------- */
+/* A second, faster path to the ~30 destinations under the six menus above --
+   type a name instead of knowing which menu it lives under. The trigger
+   reads like any other top-bar control, not a search-engine input, since
+   this jumps to a screen rather than searching data. */
+.topbar-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: 0.4rem 0.6rem;
+  margin-left: 0.4rem;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.topbar-search-btn:hover { color: var(--ink); border-color: var(--ink-soft); background: transparent; box-shadow: none; transform: none; }
+.topbar-search-kbd {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.3rem;
+  margin-left: 0.15rem;
+}
+
+.command-palette-card {
+  width: 100%;
+  max-width: 560px;
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-rise);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.command-palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  flex: none;
+}
+#command-palette-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 0.98rem;
+  color: var(--ink);
+  background: transparent;
+  padding: 0;
+}
+.command-palette-esc {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.35rem;
+}
+.command-palette-results { overflow-y: auto; padding: 0.4rem; }
+.command-palette-empty { padding: 1.2rem 0.8rem; color: var(--muted); font-size: 0.88rem; text-align: center; }
+
+.command-palette-group {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0.6rem 0.6rem 0.3rem;
+}
+.command-palette-group:first-child { padding-top: 0.2rem; }
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.65rem;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.command-palette-item svg { flex: none; opacity: 0.75; color: var(--muted); }
+.command-palette-item.is-selected { background: var(--accent-wash); }
+.command-palette-item.is-selected svg { opacity: 1; color: var(--accent-text); }
+
 /* ---------- account menu ---------- */
 .topbar-account-group { flex: none; }
 
@@ -2674,6 +2775,10 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   .topbar-nav { order: 3; flex: 1 0 100%; overflow-x: auto; }
   .topbar-account-group { margin-left: auto; }
   .topnav-link, .topnav-trigger { padding: 0.4rem 0.55rem; font-size: 0.84rem; }
+  /* The keyboard shortcut is meaningless without a keyboard, and the label
+     next to an icon-only bar of controls is more than the space affords. */
+  .topbar-search-btn { padding: 0.4rem; margin-left: 0; }
+  .topbar-search-btn span, .topbar-search-kbd { display: none; }
   /* Anchored to the bar rather than each trigger, so a menu opening from a
      trigger near the right edge can't run off-screen on a narrow window. */
   .topnav-menu { left: 0; right: 0; min-width: 0; }
