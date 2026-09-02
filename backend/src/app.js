@@ -211,6 +211,21 @@ app.use(
   })
 );
 
+// A dedicated, tighter limit for the recurring-invoice endpoints, on top of
+// the blanket /api one above: unlike a plain CRUD route, .../run creates
+// real CustomerInvoice rows (and, for an auto-send template, posts them to
+// the ledger) on every call rather than just reading or writing one
+// record, so it earns its own bucket the same way login, signup, and the
+// assistant do.
+app.use(
+  "/api/recurring-invoices",
+  rateLimitMiddleware({
+    windowMs: 15 * 60 * 1000,
+    max: settings.rateLimitExpensiveMax,
+    message: "Too many requests. Please slow down and try again shortly.",
+  })
+);
+
 // Everything below runs inside a per-request transaction carrying the
 // database-level tenant context (see rls.js). Mounted after /api/health so
 // the health check stays a pure no-database ping, and before the routers so
