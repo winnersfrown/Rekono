@@ -22,6 +22,7 @@ import { DEFERRED_REVENUE_SUBTYPE } from "./revenueRecognition.js";
 import { INCOME_TAX_EXPENSE_SUBTYPE, INCOME_TAXES_PAYABLE_SUBTYPE } from "./incomeTax.js";
 import { EQUITY_SUBTYPES, DIVIDENDS_PAYABLE_SUBTYPE } from "./equity.js";
 import { STOCK_COMP_EXPENSE_SUBTYPE } from "./stockCompensation.js";
+import { PURCHASES_DISCOUNT_SUBTYPE } from "./accountsPayable.js";
 
 // Balance-sheet classifications, in the order a balance sheet reads them.
 // "other" exists for the case a subtype doesn't map to either -- equity has
@@ -62,6 +63,7 @@ export const ACCOUNT_SUBTYPES = {
     { value: "operating_expense", label: "Operating expense" },
     { value: STOCK_COMP_EXPENSE_SUBTYPE, label: "Stock compensation expense" },
     { value: INCOME_TAX_EXPENSE_SUBTYPE, label: "Income tax expense" },
+    { value: PURCHASES_DISCOUNT_SUBTYPE, label: "Purchases discounts taken" },
     { value: "other_expense", label: "Other expense" },
   ],
 };

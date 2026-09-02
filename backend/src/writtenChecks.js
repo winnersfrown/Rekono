@@ -13,7 +13,7 @@ import { Account, BillPayment, Invoice, WrittenCheck } from "./models/index.js";
 // does -- duplicated rather than imported as shared middleware, matching
 // how routes/checks.js's own /link route (a different way of recording the
 // same kind of payment) already duplicates this same set of checks.
-export async function writeCheck(orgId, { invoiceId, checkNumber, payeeName, checkDate, amountCents, memo, paymentAccountId, postedByUserId = null }) {
+export async function writeCheck(orgId, { invoiceId, checkNumber, payeeName, checkDate, amountCents, memo, paymentAccountId, discountCents = 0, postedByUserId = null }) {
   const invoice = await Invoice.scope("withSamples").findOne({ where: { id: invoiceId, orgId } });
   if (!invoice) throw new LedgerError("Bill not found.", 404);
   if (invoice.status !== PAYABLE_INVOICE_STATUS) {
@@ -29,12 +29,13 @@ export async function writeCheck(orgId, { invoiceId, checkNumber, payeeName, che
   }
 
   const alreadyPaid = await amountPaidCents(invoice.id);
-  if (alreadyPaid + amountCents > totalCents) {
+  if (alreadyPaid + amountCents + discountCents > totalCents) {
     throw new LedgerError(`That would overpay this bill. Outstanding balance is ${centsToDollars(totalCents - alreadyPaid)}.`);
   }
 
   const payment = await recordBillPayment(invoice, {
     amountCents,
+    discountCents,
     paymentDate: checkDate,
     paymentAccountId: paymentAccount.id,
     memo: memo || `Check #${checkNumber}`,

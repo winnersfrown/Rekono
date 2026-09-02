@@ -5010,12 +5010,31 @@ document.getElementById("journal-entry-form").addEventListener("submit", async (
 // place transactions get written to. "" means unfiltered (every entry).
 let activeJournalFilter = "";
 
+const GENERAL_JOURNAL_HEAD = `<tr><th></th><th>Date</th><th>Memo</th><th>Doc #</th><th>Journal</th><th>Total</th><th>Status</th><th></th></tr>`;
+const PURCHASES_JOURNAL_HEAD = `<tr><th>Date</th><th>Account title</th><th>Doc #</th><th>Post ref.</th><th>Amount</th><th>Status</th><th></th></tr>`;
+const CASH_PAYMENTS_JOURNAL_HEAD = `<tr><th>Date</th><th>Account title</th><th>Doc #</th><th>Post ref.</th><th>Debit</th><th>Credit</th><th>Accounts payable debit</th><th>Purchases discount credit</th><th>Cash credit</th><th>Status</th><th></th></tr>`;
+
+// Purchases and cash payments are the two journals whose checklist column
+// set names specific named amounts (a single Purchases/AP amount; AP debit,
+// Purchases discount credit, Cash credit) rather than a generic
+// debit/credit pair -- these fetch each entry's lines (`include=lines`) and
+// render a specialized table instead of the generic one every other
+// journal uses. The render functions are declared further below (function
+// declarations are hoisted, so referencing them here before their textual
+// definition is safe).
+const SPECIALIZED_JOURNAL_VIEWS = {
+  purchases: { head: PURCHASES_JOURNAL_HEAD, render: renderPurchasesJournal },
+  cash_payments: { head: CASH_PAYMENTS_JOURNAL_HEAD, render: renderCashPaymentsJournal },
+};
+
 async function loadJournalEntries() {
-  const q = activeJournalFilter ? `?journal=${activeJournalFilter}` : "";
+  const specialized = SPECIALIZED_JOURNAL_VIEWS[activeJournalFilter];
+  document.getElementById("journal-entries-thead").innerHTML = specialized ? specialized.head : GENERAL_JOURNAL_HEAD;
+  const q = activeJournalFilter ? `?journal=${activeJournalFilter}${specialized ? "&include=lines" : ""}` : "";
   await cachedLoad(
     `/api/journal-entries${q}`,
     async () => (await apiFetch(`/api/journal-entries${q}`)).json(),
-    renderJournalEntries
+    specialized ? specialized.render : renderJournalEntries
   );
 }
 
@@ -5041,24 +5060,10 @@ const JOURNAL_ENTRY_SOURCE_LABELS = {
   void: "Void",
 };
 
-function renderJournalEntries(data) {
-  const body = document.getElementById("journal-entries-body");
-  body.innerHTML = data.items
-    .map(
-      (entry) => `
-    <tr class="je-summary-row" data-entry-id="${entry.id}">
-      <td><button type="button" class="je-expand-btn linklike" data-entry-id="${entry.id}" aria-label="Show lines">▸</button></td>
-      <td>${entry.entry_date}</td>
-      <td>${escapeHtml(entry.memo || "—")}</td>
-      <td>${escapeHtml(entry.doc_number || "—")}</td>
-      <td>${JOURNAL_ENTRY_SOURCE_LABELS[entry.source] || entry.source}</td>
-      <td>${fmtMoney(entry.total)}</td>
-      <td>${entry.status}</td>
-      <td>${entry.status === "posted" ? `<button type="button" class="je-void-btn" data-entry-id="${entry.id}">Void</button>` : ""}</td>
-    </tr>
-  `
-    )
-    .join("");
+// Shared by every journal view (generic, purchases, cash payments): a
+// "Void" button posts the same reversal regardless of which columns got it
+// there.
+function wireVoidButtons(body) {
   body.querySelectorAll(".je-void-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const confirmed = await confirmDialog("Void this journal entry?", "Posts a reversing entry; the original stays on the books for reference.", {
@@ -5072,9 +5077,116 @@ function renderJournalEntries(data) {
       loadJournalEntries();
     });
   });
+}
+
+function voidCellHtml(entry) {
+  return entry.status === "posted" ? `<button type="button" class="je-void-btn" data-entry-id="${entry.id}">Void</button>` : "";
+}
+
+function renderJournalEntries(data) {
+  const body = document.getElementById("journal-entries-body");
+  body.innerHTML = data.items
+    .map(
+      (entry) => `
+    <tr class="je-summary-row" data-entry-id="${entry.id}">
+      <td><button type="button" class="je-expand-btn linklike" data-entry-id="${entry.id}" aria-label="Show lines">▸</button></td>
+      <td>${entry.entry_date}</td>
+      <td>${escapeHtml(entry.memo || "—")}</td>
+      <td>${escapeHtml(entry.doc_number || "—")}</td>
+      <td>${JOURNAL_ENTRY_SOURCE_LABELS[entry.source] || entry.source}</td>
+      <td>${fmtMoney(entry.total)}</td>
+      <td>${entry.status}</td>
+      <td>${voidCellHtml(entry)}</td>
+    </tr>
+  `
+    )
+    .join("");
+  wireVoidButtons(body);
   body.querySelectorAll(".je-expand-btn").forEach((btn) => {
     btn.addEventListener("click", () => toggleJournalEntryLines(btn));
   });
+}
+
+// Every invoice_approval entry is exactly two lines by construction
+// (ledger.js's postInvoiceApproval): one expense/COGS debit, one Accounts
+// Payable credit. The AP line is identified by account subtype, not name or
+// code, since either can be renamed -- the other line is "the account title"
+// the traditional single-amount purchases journal column names.
+function classifyPurchasesLines(lines) {
+  const apLine = lines.find((l) => l.account_subtype === "accounts_payable" && l.credit > 0);
+  const otherLine = lines.find((l) => l !== apLine) || lines[0] || {};
+  return { apLine, otherLine };
+}
+
+function renderPurchasesJournal(data) {
+  const body = document.getElementById("journal-entries-body");
+  body.innerHTML = data.items
+    .map((entry) => {
+      const { otherLine } = classifyPurchasesLines(entry.lines || []);
+      // Debit and credit are the same figure by construction -- one Amount
+      // column is both, per the checklist's own note.
+      const amount = otherLine.debit || entry.total;
+      return `
+    <tr>
+      <td>${entry.entry_date}</td>
+      <td>${escapeHtml(otherLine.account_name || "—")}</td>
+      <td>${escapeHtml(entry.doc_number || "—")}</td>
+      <td>${escapeHtml(otherLine.post_ref || "—")}</td>
+      <td>${fmtMoney(amount)}</td>
+      <td>${entry.status}</td>
+      <td>${voidCellHtml(entry)}</td>
+    </tr>`;
+    })
+    .join("");
+  wireVoidButtons(body);
+}
+
+// Cash-payment sources vary (paying a bill, running payroll, paying income
+// tax, an equity distribution) and only the bill-payment case has real
+// "Accounts Payable"/"Purchases discount" amounts -- everything else lands
+// in the generic account-title/debit/credit columns instead of leaving
+// those AP-specific columns awkwardly populated with something they were
+// never meant for. Classified by account subtype (not name/code, both
+// renameable): the AP line, the Purchases Discounts Taken line (if a
+// discount was taken), and the cash/bank/credit-card line the money
+// actually left from. Whatever's left -- payroll's wage and tax debits and
+// its liability credit, an equity event's one debit line, and so on --
+// falls into "everything else" and is summed/joined into the generic
+// columns, which is exactly what those columns are for.
+function classifyCashPaymentLines(lines) {
+  const apLine = lines.find((l) => l.account_subtype === "accounts_payable" && l.debit > 0);
+  const discountLine = lines.find((l) => l.account_subtype === "purchases_discount" && l.credit > 0);
+  const cashLine = lines.find((l) => (l.account_subtype === "bank" || l.account_subtype === "credit_card") && l.credit > 0);
+  const otherLines = lines.filter((l) => l !== apLine && l !== discountLine && l !== cashLine);
+  return { apLine, discountLine, cashLine, otherLines };
+}
+
+function renderCashPaymentsJournal(data) {
+  const body = document.getElementById("journal-entries-body");
+  body.innerHTML = data.items
+    .map((entry) => {
+      const { apLine, discountLine, cashLine, otherLines } = classifyCashPaymentLines(entry.lines || []);
+      const accountTitle = otherLines.map((l) => l.account_name).join(", ");
+      const postRef = otherLines.map((l) => l.post_ref).filter(Boolean).join(", ");
+      const otherDebit = otherLines.reduce((sum, l) => sum + (l.debit || 0), 0);
+      const otherCredit = otherLines.reduce((sum, l) => sum + (l.credit || 0), 0);
+      return `
+    <tr>
+      <td>${entry.entry_date}</td>
+      <td>${escapeHtml(accountTitle || "—")}</td>
+      <td>${escapeHtml(entry.doc_number || "—")}</td>
+      <td>${escapeHtml(postRef || "—")}</td>
+      <td>${otherDebit ? fmtMoney(otherDebit) : ""}</td>
+      <td>${otherCredit ? fmtMoney(otherCredit) : ""}</td>
+      <td>${apLine?.debit ? fmtMoney(apLine.debit) : ""}</td>
+      <td>${discountLine?.credit ? fmtMoney(discountLine.credit) : ""}</td>
+      <td>${cashLine?.credit ? fmtMoney(cashLine.credit) : ""}</td>
+      <td>${entry.status}</td>
+      <td>${voidCellHtml(entry)}</td>
+    </tr>`;
+    })
+    .join("");
+  wireVoidButtons(body);
 }
 
 // Every column the checklist asks for -- date, account title, doc #, post
@@ -5954,6 +6066,9 @@ async function paymentDialog(
     accounts = null,
     emptyTitle = "No deposit account",
     emptyMessage = "Add an asset account for the bank you were paid into first.",
+    // Only a bill payment can take an early-payment discount -- a customer
+    // paying Rekono's org doesn't owe this org anything to discount.
+    allowDiscount = false,
   } = {}
 ) {
   const options = accounts || ciDepositAccounts();
@@ -5969,6 +6084,9 @@ async function paymentDialog(
   document.getElementById("payment-modal-amount").value = outstanding.toFixed(2);
   document.getElementById("payment-modal-date").value = new Date().toISOString().slice(0, 10);
   document.getElementById("payment-modal-account").innerHTML = groupedAccountOptionsHtml(options, null);
+  const discountRow = document.getElementById("payment-modal-discount-row");
+  discountRow.hidden = !allowDiscount;
+  document.getElementById("payment-modal-discount").value = "";
   const errorEl = document.getElementById("payment-modal-error");
   errorEl.textContent = "";
   errorEl.style.display = "none";
@@ -6006,6 +6124,7 @@ document.getElementById("payment-modal-form").addEventListener("submit", (e) => 
     amount,
     payment_date: document.getElementById("payment-modal-date").value,
     account_id: document.getElementById("payment-modal-account").value,
+    discount: Number(document.getElementById("payment-modal-discount").value) || 0,
   });
 });
 
@@ -7472,6 +7591,7 @@ function renderBillPayments(rows) {
         accounts: bpPaymentAccounts,
         emptyTitle: "No account to pay from",
         emptyMessage: "Add a bank, cash, or credit card account to your chart of accounts first.",
+        allowDiscount: true,
       });
       if (!payment) return;
 
@@ -7482,6 +7602,7 @@ function renderBillPayments(rows) {
           amount: payment.amount,
           payment_date: payment.payment_date,
           payment_account_id: payment.account_id,
+          discount: payment.discount || 0,
         }),
       });
       const parsed = await res.json().catch(() => ({}));
@@ -7536,6 +7657,7 @@ function writeCheckDialog(outstanding, vendorName) {
   document.getElementById("write-check-amount").value = outstanding.toFixed(2);
   document.getElementById("write-check-date").value = new Date().toISOString().slice(0, 10);
   document.getElementById("write-check-account").innerHTML = groupedAccountOptionsHtml(bpPaymentAccounts, null);
+  document.getElementById("write-check-discount").value = "";
   document.getElementById("write-check-memo").value = "";
   const errorEl = document.getElementById("write-check-error");
   errorEl.textContent = "";
@@ -7573,6 +7695,7 @@ document.getElementById("write-check-form").addEventListener("submit", (e) => {
     amount,
     check_date: document.getElementById("write-check-date").value,
     payment_account_id: document.getElementById("write-check-account").value,
+    discount: Number(document.getElementById("write-check-discount").value) || 0,
     memo: document.getElementById("write-check-memo").value,
   });
 });

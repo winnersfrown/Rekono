@@ -29,6 +29,7 @@ function serializePayment(payment, account) {
     payment_account_name: account?.name,
     payment_date: payment.paymentDate,
     amount: centsToDollars(payment.amountCents),
+    discount: centsToDollars(payment.discountCents || 0),
     memo: payment.memo,
   };
 }
@@ -51,7 +52,8 @@ async function paymentsPayload(invoice) {
   const byId = new Map(accounts.map((a) => [a.id, a]));
 
   const totalCents = invoiceTotalCents(invoice);
-  const paidCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
+  // Amount+discount both relieve the payable -- see amountPaidCents.
+  const paidCents = payments.reduce((sum, p) => sum + p.amountCents + (p.discountCents || 0), 0);
   return {
     invoice_id: invoice.id,
     total: centsToDollars(totalCents),
@@ -120,6 +122,10 @@ const paymentSchema = z.object({
   payment_date: z.string().min(1),
   payment_account_id: z.string().min(1),
   memo: z.string().max(512).optional(),
+  // An early-payment discount taken against this bill, if any -- see
+  // accountsPayable.js's earlyPayDiscount. Zero (the default) for the
+  // ordinary case of paying the full outstanding balance.
+  discount: z.number().min(0).optional(),
 });
 
 router.post("/api/invoices/:id/payments", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -151,8 +157,9 @@ router.post("/api/invoices/:id/payments", requireAuth, requireActivePlan, async 
     }
 
     const amountCents = dollarsToCents(parsed.data.amount);
+    const discountCents = dollarsToCents(parsed.data.discount || 0);
     const alreadyPaid = await amountPaidCents(invoice.id);
-    if (alreadyPaid + amountCents > totalCents) {
+    if (alreadyPaid + amountCents + discountCents > totalCents) {
       return res.status(422).json({
         detail: `That would overpay this bill. Outstanding balance is ${centsToDollars(totalCents - alreadyPaid)}.`,
       });
@@ -160,6 +167,7 @@ router.post("/api/invoices/:id/payments", requireAuth, requireActivePlan, async 
 
     await recordBillPayment(invoice, {
       amountCents,
+      discountCents,
       paymentDate: parsed.data.payment_date,
       paymentAccountId: paymentAccount.id,
       memo: parsed.data.memo || "",
@@ -172,7 +180,7 @@ router.post("/api/invoices/:id/payments", requireAuth, requireActivePlan, async 
       invoiceId: invoice.id,
       action: "bill_payment_recorded",
       actor: req.currentUser.email,
-      details: { amount: parsed.data.amount, payment_account: paymentAccount.name },
+      details: { amount: parsed.data.amount, discount: parsed.data.discount || 0, payment_account: paymentAccount.name },
     });
 
     res.status(201).json(await paymentsPayload(invoice));

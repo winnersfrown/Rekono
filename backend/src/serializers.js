@@ -446,6 +446,11 @@ export function serializeJournalLine(line) {
     id: line.id,
     account_id: line.accountId,
     account_name: line.account?.name,
+    // Lets a caller identify e.g. "the Accounts Payable line" or "the cash
+    // line" reliably by what the account IS rather than by its (renameable)
+    // name or code -- the specialized purchases/cash-payments journal views
+    // classify lines this way.
+    account_subtype: line.account?.subtype,
     // "Post ref." in a paper ledger points back to the account's page in
     // the general ledger it was posted to -- the account code is that same
     // pointer in a system that posts in real time instead of by hand.

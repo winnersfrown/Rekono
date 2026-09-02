@@ -4,6 +4,38 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.64
+
+The purchases and cash payments journals get the specialized columns a
+traditional set of books gives them, instead of the generic date/memo/doc
+#/journal/total layout every journal shared. Purchases journal: Date,
+Account title, Doc #, Post ref., and a single Amount column (debit and
+credit are the same figure by construction, so one column is both, per how
+these journals are usually kept). Cash payments journal: Date, Account
+title, Doc #, Post ref., Debit, Credit, plus three named columns --
+Accounts Payable debit, Purchases Discount credit, Cash credit -- for the
+common case of paying a bill; a cash payment that isn't paying a vendor
+bill (payroll, an income tax payment, an equity distribution) falls into
+the generic columns instead of leaving the AP-specific ones sitting empty
+for something they were never meant to describe.
+
+Building "Purchases discount credit" surfaced that the app already
+computed early-payment discounts (the AP Aging report has quoted "Save
+$X by paying before Y" for a while) but never let anyone actually take
+one -- paying a bill only ever posted the full cash amount. Recording a
+payment or writing a check now takes an optional discount amount; it
+posts as a credit to a new on-demand "Purchases Discounts Taken" account
+(a contra-expense, so it reduces the P&L's expense total, which is what
+taking a discount should do) and fully relieves the payable for
+amount+discount rather than leaving the discount portion outstanding
+forever.
+
+Both journals are identified from the ledger's own data, not by
+source-specific special-casing: a new `account_subtype` field on each
+journal line lets the frontend recognize "the Accounts Payable line" or
+"the cash line" by what the account actually is, which keeps working even
+if someone renames or recodes those accounts.
+
 ## v1.63
 
 Every journal (general, sales, purchases, cash receipts, cash payments)

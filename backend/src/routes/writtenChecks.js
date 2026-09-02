@@ -47,6 +47,7 @@ const createSchema = z.object({
   amount: z.number().positive(),
   memo: z.string().max(512).optional(),
   payment_account_id: z.string().min(1),
+  discount: z.number().min(0).optional(),
 });
 
 router.post("/api/written-checks", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -62,6 +63,7 @@ router.post("/api/written-checks", requireAuth, requireActivePlan, async (req, r
       payeeName: d.payee_name,
       checkDate: d.check_date,
       amountCents: dollarsToCents(d.amount),
+      discountCents: dollarsToCents(d.discount || 0),
       memo: d.memo,
       paymentAccountId: d.payment_account_id,
       postedByUserId: req.currentUser.id,

@@ -52,7 +52,7 @@ const GENERAL_JOURNAL_SOURCES = Object.values(SPECIAL_JOURNAL_SOURCES).flat();
 async function loadLinesWithAccountNames(journalEntryId) {
   const lines = await JournalLine.findAll({
     where: { journalEntryId },
-    include: [{ model: Account, attributes: ["name", "code"] }],
+    include: [{ model: Account, attributes: ["name", "code", "subtype"] }],
     order: [["position", "ASC"]],
   });
   return lines.map((l) =>
@@ -108,8 +108,38 @@ router.get("/api/journal-entries", requireAuth, requireActivePlan, async (req, r
       totalByEntry.set(line.journalEntryId, (totalByEntry.get(line.journalEntryId) || 0) + line.debitCents);
     }
 
+    // Lines are included only on request (the purchases/cash-payments
+    // journal views need them to build their specialized columns) --
+    // fetched in one batched query rather than per row, since a page can
+    // hold up to MAX_PAGE_SIZE entries.
+    let linesByEntry = null;
+    if (req.query.include === "lines" && rows.length) {
+      linesByEntry = new Map();
+      const lines = await JournalLine.findAll({
+        where: { journalEntryId: rows.map((r) => r.id) },
+        include: [{ model: Account, attributes: ["name", "code", "subtype"] }],
+        order: [["position", "ASC"]],
+      });
+      for (const l of lines) {
+        if (!linesByEntry.has(l.journalEntryId)) linesByEntry.set(l.journalEntryId, []);
+        linesByEntry.get(l.journalEntryId).push(
+          serializeJournalLine({
+            id: l.id,
+            accountId: l.accountId,
+            account: l.Account,
+            debit: centsToDollars(l.debitCents),
+            credit: centsToDollars(l.creditCents),
+            memo: l.memo,
+          })
+        );
+      }
+    }
+
     res.json({
-      items: rows.map((entry) => serializeJournalEntryListItem(entry, centsToDollars(totalByEntry.get(entry.id) || 0))),
+      items: rows.map((entry) => ({
+        ...serializeJournalEntryListItem(entry, centsToDollars(totalByEntry.get(entry.id) || 0)),
+        ...(linesByEntry ? { lines: linesByEntry.get(entry.id) || [] } : {}),
+      })),
       total: count,
       page,
       page_size: pageSize,
