@@ -2559,7 +2559,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   font-family: var(--font-body);
   font-weight: 600;
   font-size: 0.88rem;
-  box-shadow: var(--shadow-lg);
+  /* --shadow-modal, not the neutralised --shadow-lg: DESIGN.md rules out
+     shadows everywhere except a genuinely floating layer, and this fixed,
+     over-the-page button is exactly that -- same as the contact/upgrade
+     modals. Without it the button read as a flat rectangle clipping into
+     whatever panel happened to sit underneath it, rather than a layer
+     sitting above the page. */
+  box-shadow: var(--shadow-modal);
 }
 .ask-widget-toggle:hover { background: var(--accent-deep); }
 
@@ -2573,7 +2579,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow), var(--shadow-lg);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
   animation: fade-in 0.2s var(--ease);
 }

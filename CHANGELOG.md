@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.58
+
+Two real craft fixes found by actually rendering both surfaces (not just
+reading the code) after the editorial redesign, rather than a broad
+"make it look better" pass -- the redesign itself is already deliberate
+and thorough (see `DESIGN.md`), so this looks for what it missed:
+
+- **The hero's trial-balance workpaper wrapped account names on narrow
+  screens.** Below ~860px of panel width (a phone, and the ~768px tablet
+  width where the two-column hero layout is at its tightest), "Accounts
+  Receivable" and similar names wrapped to a second line while the
+  debit/credit figures stayed on the first -- a real misalignment on the
+  one artifact whose whole thesis is a ledger that ties out, precisely.
+  The account cell now truncates with an ellipsis instead of wrapping,
+  verified at 390/640/768/834/1440px; the desktop table is pixel-identical
+  since truncation never engages there.
+- **The floating "Ask Rekono" widget had no shadow.** The redesign
+  neutralised `--shadow-lg`/`--glass-shadow` to invisible everywhere,
+  correctly, since the product is ruled rather than floated -- except this
+  widget is a `position: fixed` layer that sits over arbitrary page
+  content, which is exactly the "genuinely floating layer" DESIGN.md
+  carves out for `--shadow-modal`. Without a shadow it read as a flat
+  rectangle clipping into whatever panel happened to be underneath it
+  rather than a layer above the page. It now uses `--shadow-modal`, same
+  as the contact/upgrade modals.
+
 ## v1.57
 
 New logomark, on both surfaces. The previous mark was an "R" traced from
