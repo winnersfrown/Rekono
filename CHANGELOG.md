@@ -4,6 +4,23 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.61
+
+A bookkeeping rule the special-purpose journals (v1.56) didn't fully
+enforce: anything that actually moves cash belongs in the cash receipts or
+cash payments journal, never the general journal -- even when it's also an
+equity or tax event. Five equity events were falling through: a capital
+contribution or a treasury reissue brings cash in; a distribution, a paid
+dividend, or a treasury purchase pays cash out. All five previously shared
+one `equity_transaction` source with dividend *declarations* (which don't
+move cash), so all of them landed on the general journal. Same issue with
+an income tax payment, which shared a source with the non-cash provision
+accrual. Each now posts its own source value and is routed into cash
+receipts or cash payments accordingly; declaring a dividend and accruing
+the tax provision correctly stay on the general journal, since neither
+moves cash yet. New tests in subJournals.test.js cover all five events plus
+the two that correctly stay put.
+
 ## v1.60
 
 A command palette (⌘K / Ctrl+K, plus a visible "Search" button in the top

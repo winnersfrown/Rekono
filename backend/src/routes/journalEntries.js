@@ -22,14 +22,30 @@ const MAX_PAGE_SIZE = 500;
 // `source` values that already tag every entry Rekono posts -- these are
 // filters over the one ledger, not a second place transactions get
 // written to. "General" is everything left over once the other four are
-// carved out (manual entries, adjustments, closes, equity, comp, tax,
+// carved out (manual entries, adjustments, closes, comp, non-cash equity,
 // voids), matching the traditional meaning: whatever doesn't belong in one
 // of the specialized books.
+//
+// The rule that matters here: anything that actually moves cash belongs in
+// cash_receipts or cash_payments, never in the general journal, even when
+// it's otherwise an "equity" or "tax" event. A capital contribution and a
+// treasury reissue both bring cash in; a distribution, a paid dividend, and
+// a treasury purchase all pay cash out; an income tax payment pays cash
+// out. The non-cash counterparts -- declaring a dividend (a liability, no
+// cash yet) and accruing the tax provision (an expense/liability, no cash
+// yet) -- correctly stay on the general journal.
 const SPECIAL_JOURNAL_SOURCES = {
   sales: ["customer_invoice"],
   purchases: ["invoice_approval"],
-  cash_receipts: ["customer_payment"],
-  cash_payments: ["bill_payment", "payroll_run"],
+  cash_receipts: ["customer_payment", "equity_contribution", "equity_treasury_reissue"],
+  cash_payments: [
+    "bill_payment",
+    "payroll_run",
+    "income_tax_payment",
+    "equity_distribution",
+    "equity_dividend_paid",
+    "equity_treasury_purchase",
+  ],
 };
 const GENERAL_JOURNAL_SOURCES = Object.values(SPECIAL_JOURNAL_SOURCES).flat();
 
