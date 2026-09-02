@@ -448,6 +448,16 @@
             </div>
           </nav>
 
+          <!-- Jump to any of the ~30 destinations under the six menus by
+               typing its name, rather than knowing which menu it lives
+               under. The menus stay -- this is a faster second path to the
+               same tabs, not a replacement for them. -->
+          <button type="button" id="command-palette-btn" class="topbar-search-btn" aria-label="Search">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <span>Search</span>
+            <span class="topbar-search-kbd">⌘K</span>
+          </button>
+
           <!-- Plan, usage, and account collapse into one control. All three
                were separate always-visible blocks in the old sidebar footer;
                none of them is something you read on every screen. -->
@@ -2365,6 +2375,22 @@
        what got reported -- posting through the same createAccount() the
        Chart of Accounts form uses, so there is one create path rather than
        two that can drift. -->
+  <!-- Command palette: built from the nav's own [data-tab] buttons at open
+       time (see buildCommandPaletteIndex in app.js), not a hand-maintained
+       second list -- a destination added to a menu shows up here for free,
+       and one that's hidden (Staff, gated on is_staff) is left out for the
+       same reason it doesn't appear in the menu. -->
+  <div id="command-palette" class="modal-overlay" style="display: none;">
+    <div class="command-palette-card">
+      <div class="command-palette-input-row">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="command-palette-input" placeholder="Jump to…" autocomplete="off" />
+        <kbd class="command-palette-esc">Esc</kbd>
+      </div>
+      <div id="command-palette-results" class="command-palette-results"></div>
+    </div>
+  </div>
+
   <div id="account-modal" class="modal-overlay" style="display: none;">
     <div class="confirm-modal-card">
       <h2>Add an account</h2>
