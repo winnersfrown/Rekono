@@ -389,7 +389,7 @@ function switchTab(name) {
   if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
   if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); loadRecurringInvoices(); }
-  if (name === "araging") loadArAging();
+  if (name === "araging") { loadArAging(); loadSalesTax(); }
   if (name === "revenue") loadDeferredRevenue();
   if (name === "adjustments") {
     loadAdjustmentAccounts();
@@ -3836,6 +3836,7 @@ function renderOrgSettings({ settingsRes, me }) {
   // split, see financialStatements.js). Not owner-gated, unlike renaming
   // the org below.
   document.getElementById("settings-fiscal-month").value = String(settingsRes.fiscal_year_end_month || 12);
+  document.getElementById("settings-sales-tax-rate").value = settingsRes.sales_tax_rate_percent ?? "";
   document.getElementById("settings-fiscal-status").textContent = "";
 
   // Two-factor authentication -- reset back to the status view on every
@@ -4120,10 +4121,14 @@ document.getElementById("settings-fiscal-form").addEventListener("submit", async
   e.preventDefault();
   const statusEl = document.getElementById("settings-fiscal-status");
   try {
+    const rateInput = document.getElementById("settings-sales-tax-rate").value;
     const res = await apiFetch("/api/org/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fiscal_year_end_month: Number(document.getElementById("settings-fiscal-month").value) }),
+      body: JSON.stringify({
+        fiscal_year_end_month: Number(document.getElementById("settings-fiscal-month").value),
+        sales_tax_rate_percent: rateInput === "" ? null : Number(rateInput),
+      }),
     });
     const body = await res.json();
     statusEl.textContent = res.ok ? "Saved." : body.detail || "Something went wrong.";
@@ -5785,7 +5790,7 @@ async function loadCustomers() {
 function renderCustomers(data) {
   const body = document.getElementById("customers-body");
   if (!data.items.length) {
-    body.innerHTML = `<tr><td colspan="5" class="table-empty-row">No customers yet -- add one above to start invoicing.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No customers yet -- add one above to start invoicing.</td></tr>`;
     return;
   }
   body.innerHTML = data.items
@@ -5795,6 +5800,9 @@ function renderCustomers(data) {
       <td>${escapeHtml(c.name)}</td>
       <td>${escapeHtml(c.email || "—")}</td>
       <td>Net ${c.payment_terms_days}</td>
+      <td><button type="button" class="customer-tax-exempt-btn linklike" data-customer-id="${c.id}" data-tax-exempt="${c.tax_exempt}">${
+        c.tax_exempt ? "Exempt" : "Taxable"
+      }</button></td>
       <td>${c.active ? "Active" : "Inactive"}</td>
       <td>${c.active ? `<button type="button" class="customer-deactivate-btn" data-customer-id="${c.id}">Deactivate</button>` : ""}</td>
     </tr>
@@ -5817,6 +5825,18 @@ function renderCustomers(data) {
       loadCustomers();
     });
   });
+  body.querySelectorAll(".customer-tax-exempt-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/customers/${btn.dataset.customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tax_exempt: btn.dataset.taxExempt !== "true" }),
+      });
+      invalidateCache("__customers__");
+      invalidateCache("__ci_form_data__");
+      loadCustomers();
+    });
+  });
 }
 
 document.getElementById("customer-create-form").addEventListener("submit", async (e) => {
@@ -5830,6 +5850,7 @@ document.getElementById("customer-create-form").addEventListener("submit", async
         name: document.getElementById("customer-create-name").value,
         email: document.getElementById("customer-create-email").value,
         payment_terms_days: Number(document.getElementById("customer-create-terms").value) || 30,
+        tax_exempt: document.getElementById("customer-create-tax-exempt").checked,
       }),
     });
     const body = await res.json();
@@ -5853,20 +5874,23 @@ document.getElementById("customer-create-form").addEventListener("submit", async
 let ciCustomers = [];
 let ciRevenueAccounts = [];
 let ciAllAccounts = [];
+let ciSalesTaxRatePercent = null;
 
 async function loadCustomerInvoiceFormData() {
   await cachedLoad(
     "__ci_form_data__",
     async () => {
-      const [customers, accounts] = await Promise.all([
+      const [customers, accounts, orgSettings] = await Promise.all([
         apiFetch("/api/customers?active=true").then((r) => r.json()),
         apiFetch("/api/accounts?active=true").then((r) => r.json()),
+        apiFetch("/api/org/settings").then((r) => r.json()),
       ]);
-      return { customers: customers.items, accounts: accounts.items };
+      return { customers: customers.items, accounts: accounts.items, salesTaxRatePercent: orgSettings.sales_tax_rate_percent };
     },
-    ({ customers, accounts }) => {
+    ({ customers, accounts, salesTaxRatePercent }) => {
       ciCustomers = customers;
       ciAllAccounts = accounts;
+      ciSalesTaxRatePercent = salesTaxRatePercent;
       // Invoice lines can only bill revenue; payments can only land in an
       // asset account. Both come off this one fetch.
       ciRevenueAccounts = accounts.filter((a) => a.type === "revenue");
@@ -5883,14 +5907,33 @@ function revenueOptionsHtml() {
   return groupedAccountOptionsHtml(ciRevenueAccounts, null);
 }
 
+// Estimate only -- the server recomputes tax from scratch at creation time
+// (routes/receivables.js), which is the number that actually gets posted.
+// This just gives a preview so the rate/exemption aren't a surprise after
+// clicking Create draft.
 function updateCustomerInvoiceTotal() {
   const rows = [...document.getElementById("ci-lines-body").querySelectorAll("tr")];
-  const total = rows.reduce((sum, row) => {
+  const subtotal = rows.reduce((sum, row) => {
     const qty = Number(row.querySelector(".ci-qty").value) || 0;
     const price = Number(row.querySelector(".ci-price").value) || 0;
     return sum + qty * price;
   }, 0);
-  document.getElementById("ci-total-indicator").textContent = `Invoice total: ${fmtMoney(total)}`;
+  const selectedCustomer = ciCustomers.find((c) => c.id === document.getElementById("ci-customer").value);
+  const taxExempt = selectedCustomer?.tax_exempt;
+  const taxableSubtotal = taxExempt
+    ? 0
+    : rows.reduce((sum, row) => {
+        if (!row.querySelector(".ci-taxable").checked) return sum;
+        const qty = Number(row.querySelector(".ci-qty").value) || 0;
+        const price = Number(row.querySelector(".ci-price").value) || 0;
+        return sum + qty * price;
+      }, 0);
+  const tax = ciSalesTaxRatePercent ? Math.round(taxableSubtotal * ciSalesTaxRatePercent) / 100 : 0;
+  document.getElementById("ci-total-indicator").textContent = taxExempt
+    ? `Subtotal: ${fmtMoney(subtotal)}. Tax-exempt customer -- no tax. Total: ${fmtMoney(subtotal)}.`
+    : tax > 0
+      ? `Subtotal: ${fmtMoney(subtotal)}. Tax (${ciSalesTaxRatePercent}%): ${fmtMoney(tax)}. Total: ${fmtMoney(subtotal + tax)}.`
+      : `Invoice total: ${fmtMoney(subtotal)}`;
 }
 
 function addCustomerInvoiceLineRow() {
@@ -5901,12 +5944,13 @@ function addCustomerInvoiceLineRow() {
     <td><input type="text" class="ci-desc" maxlength="512" placeholder="What are you billing for?" /></td>
     <td><input type="number" class="ci-qty" step="0.01" min="0" value="1" /></td>
     <td><input type="number" class="ci-price" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="checkbox" class="ci-taxable" checked /></td>
     <td><input type="date" class="ci-service-start" /></td>
     <td><input type="date" class="ci-service-end" /></td>
     <td><button type="button" class="ci-remove-line linklike">Remove</button></td>
   `;
   body.appendChild(row);
-  row.querySelectorAll(".ci-qty, .ci-price").forEach((i) => i.addEventListener("input", updateCustomerInvoiceTotal));
+  row.querySelectorAll(".ci-qty, .ci-price, .ci-taxable").forEach((i) => i.addEventListener("input", updateCustomerInvoiceTotal));
   row.querySelector(".ci-remove-line").addEventListener("click", () => {
     row.remove();
     updateCustomerInvoiceTotal();
@@ -5915,6 +5959,7 @@ function addCustomerInvoiceLineRow() {
 }
 
 document.getElementById("ci-add-line").addEventListener("click", addCustomerInvoiceLineRow);
+document.getElementById("ci-customer").addEventListener("change", updateCustomerInvoiceTotal);
 
 document.getElementById("customer-invoice-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -5936,6 +5981,7 @@ document.getElementById("customer-invoice-form").addEventListener("submit", asyn
             description: row.querySelector(".ci-desc").value,
             quantity: Number(row.querySelector(".ci-qty").value) || 0,
             unit_price: Number(row.querySelector(".ci-price").value) || 0,
+            taxable: row.querySelector(".ci-taxable").checked,
             // Omitted entirely unless both are filled -- the API rejects a
             // half-specified period rather than guessing at it, and an
             // empty string isn't a date.
@@ -5949,7 +5995,9 @@ document.getElementById("customer-invoice-form").addEventListener("submit", asyn
       statusEl.textContent = body.detail?.[0]?.message || body.detail || "Something went wrong.";
       return;
     }
-    statusEl.textContent = `Created ${body.invoice_number} as a draft. Send it to put it on the books.`;
+    statusEl.textContent = `Created ${body.invoice_number} as a draft (${fmtMoney(body.total)}${
+      body.tax > 0 ? `, incl. ${fmtMoney(body.tax)} tax` : ""
+    }). Send it to put it on the books.`;
     document.getElementById("ci-lines-body").innerHTML = "";
     addCustomerInvoiceLineRow();
     document.getElementById("ci-memo").value = "";
@@ -6062,6 +6110,7 @@ function addRecurringInvoiceLineRow() {
     <td><input type="text" class="ri-desc" maxlength="512" placeholder="What are you billing for?" /></td>
     <td><input type="number" class="ri-qty" step="0.01" min="0" value="1" /></td>
     <td><input type="number" class="ri-price" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="checkbox" class="ri-taxable" checked /></td>
     <td><button type="button" class="ri-remove-line linklike">Remove</button></td>
   `;
   body.appendChild(row);
@@ -6096,6 +6145,7 @@ document.getElementById("recurring-invoice-form").addEventListener("submit", asy
         description: row.querySelector(".ri-desc").value,
         quantity: Number(row.querySelector(".ri-qty").value) || 0,
         unit_price: Number(row.querySelector(".ri-price").value) || 0,
+        taxable: row.querySelector(".ri-taxable").checked,
       })),
     }),
   });
@@ -6349,6 +6399,50 @@ function renderArAging(data) {
 document.getElementById("ar-aging-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadArAging();
+});
+
+// ---- Sales tax ----
+
+async function loadSalesTax() {
+  const dateEl = document.getElementById("sales-tax-date");
+  if (!dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+
+  const [taxData, accountsData] = await Promise.all([
+    apiFetch("/api/reports/sales-tax").then((r) => r.json()),
+    apiFetch("/api/accounts?active=true").then((r) => r.json()),
+  ]);
+
+  document.getElementById("sales-tax-summary").textContent =
+    taxData.rate_percent
+      ? `Rate: ${taxData.rate_percent}%. ${fmtMoney(taxData.payable)} collected and not yet remitted.`
+      : `No sales tax rate set (Settings > Accounting). ${fmtMoney(taxData.payable)} collected and not yet remitted.`;
+
+  // Cash can leave a bank account or go onto a credit line, same rule the
+  // income tax and equity tabs use.
+  const cashAccounts = accountsData.items.filter((a) => a.type === "asset");
+  document.getElementById("sales-tax-account").innerHTML = groupedAccountOptionsHtml(cashAccounts, null);
+}
+
+document.getElementById("sales-tax-remit-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("sales-tax-remit-status");
+  const res = await apiFetch("/api/sales-tax/remit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount: Number(document.getElementById("sales-tax-amount").value) || 0,
+      payment_date: document.getElementById("sales-tax-date").value,
+      cash_account_id: document.getElementById("sales-tax-account").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Remitted ${fmtMoney(parsed.amount)}. ${fmtMoney(parsed.payable)} still collected and unremitted.`;
+  document.getElementById("sales-tax-amount").value = "";
+  loadSalesTax();
 });
 
 // ---- Revenue recognition ----

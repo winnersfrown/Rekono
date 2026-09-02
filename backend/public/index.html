@@ -1361,12 +1361,13 @@
               <label>Name<input type="text" id="customer-create-name" maxlength="256" required /></label>
               <label>Email<input type="email" id="customer-create-email" /></label>
               <label>Net terms (days)<input type="number" id="customer-create-terms" min="0" max="365" value="30" /></label>
+              <label><input type="checkbox" id="customer-create-tax-exempt" /> Tax-exempt</label>
               <button type="submit">Add customer</button>
             </form>
             <div id="customer-create-status" class="hint"></div>
           </div>
           <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Terms</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Email</th><th>Terms</th><th>Tax</th><th>Status</th><th></th></tr></thead>
             <tbody id="customers-body"></tbody>
           </table>
         </section>
@@ -1384,7 +1385,7 @@
               </div>
               <div class="line-item-table">
                 <table>
-                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Service start</th><th>Service end</th><th></th></tr></thead>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Taxable</th><th>Service start</th><th>Service end</th><th></th></tr></thead>
                   <tbody id="ci-lines-body"></tbody>
                 </table>
               </div>
@@ -1420,7 +1421,7 @@
               </div>
               <div class="line-item-table">
                 <table>
-                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th></th></tr></thead>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th>Taxable</th><th></th></tr></thead>
                   <tbody id="ri-lines-body"></tbody>
                 </table>
               </div>
@@ -1477,6 +1478,24 @@
             <tbody id="ar-aging-body"></tbody>
             <tfoot><tr id="ar-aging-totals"></tr></tfoot>
           </table>
+
+          <h3>Sales tax payable</h3>
+          <p class="hint">Tax collected on invoices, held on behalf of the state until remitted. Set the rate in Settings &gt; Accounting.</p>
+          <div id="sales-tax-summary" class="hint"></div>
+          <div class="panel">
+            <h3>Remit sales tax</h3>
+            <form id="sales-tax-remit-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Amount<input type="number" id="sales-tax-amount" min="0.01" step="0.01" required /></label>
+                <label>Date<input type="date" id="sales-tax-date" required /></label>
+                <label>Paid from<select id="sales-tax-account"></select></label>
+              </div>
+              <div class="line-item-footer">
+                <button type="submit" class="line-item-submit">Record remittance</button>
+              </div>
+              <div id="sales-tax-remit-status" class="hint"></div>
+            </form>
+          </div>
         </section>
 
         <section id="tab-vendors" class="tab-panel">
@@ -2251,6 +2270,7 @@
                   <option value="12">December</option>
                 </select>
               </label>
+              <label>Sales tax rate %<input type="number" id="settings-sales-tax-rate" min="0" max="100" step="0.01" placeholder="None" /></label>
               <button type="submit">Save</button>
             </form>
             <div id="settings-fiscal-status" class="hint"></div>

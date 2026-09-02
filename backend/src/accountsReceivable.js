@@ -12,6 +12,7 @@
 import { Op } from "sequelize";
 import { LedgerError, centsToDollars, postJournalEntry, voidJournalEntry } from "./ledger.js";
 import { createSchedulesForInvoice, ensureDeferredRevenueAccount, lineIsDeferred } from "./revenueRecognition.js";
+import { ensureSalesTaxPayableAccount } from "./salesTax.js";
 import {
   Account,
   Customer,
@@ -67,13 +68,14 @@ export async function postCustomerInvoice(invoice, lines, { postedByUserId = nul
   if (!arAccount) throw new LedgerError("No Accounts Receivable account found in the chart of accounts.", 409);
 
   const lineTotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);
-  if (lineTotalCents !== invoice.totalCents) {
-    // Should be impossible (routes recompute the total from the lines on
-    // every write) -- caught here anyway because posting a journal entry
-    // whose debit doesn't match what the invoice claims is exactly the
-    // kind of drift that only shows up as an unexplained AR variance
-    // months later.
-    throw new LedgerError("This invoice's total doesn't match the sum of its lines.");
+  const taxCents = invoice.taxCents || 0;
+  if (lineTotalCents + taxCents !== invoice.totalCents) {
+    // Should be impossible (routes recompute the total from the lines and
+    // the tax on every write) -- caught here anyway because posting a
+    // journal entry whose debit doesn't match what the invoice claims is
+    // exactly the kind of drift that only shows up as an unexplained AR
+    // variance months later.
+    throw new LedgerError("This invoice's total doesn't match the sum of its lines and tax.");
   }
 
   // Credits collapsed per account: two lines billing the same account
@@ -93,6 +95,14 @@ export async function postCustomerInvoice(invoice, lines, { postedByUserId = nul
   for (const line of lines) {
     const accountId = lineIsDeferred(line) ? deferredAccount.id : line.revenueAccountId;
     creditsByAccount.set(accountId, (creditsByAccount.get(accountId) || 0) + line.amountCents);
+  }
+
+  // Tax collected is never this org's revenue -- it's a liability from the
+  // moment it's billed, same reasoning a billed-but-unearned line credits
+  // Deferred Revenue above rather than revenue.
+  if (taxCents > 0) {
+    const taxAccount = await ensureSalesTaxPayableAccount(invoice.orgId);
+    creditsByAccount.set(taxAccount.id, (creditsByAccount.get(taxAccount.id) || 0) + taxCents);
   }
 
   return postJournalEntry(invoice.orgId, {

@@ -42,6 +42,7 @@ const SPECIAL_JOURNAL_SOURCES = {
     "bill_payment",
     "payroll_run",
     "income_tax_payment",
+    "sales_tax_remittance",
     "equity_distribution",
     "equity_dividend_paid",
     "equity_treasury_purchase",

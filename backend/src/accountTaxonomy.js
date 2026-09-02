@@ -20,6 +20,7 @@
 import { COST_OF_REVENUE_SUBTYPE } from "./ledger.js";
 import { DEFERRED_REVENUE_SUBTYPE } from "./revenueRecognition.js";
 import { INCOME_TAX_EXPENSE_SUBTYPE, INCOME_TAXES_PAYABLE_SUBTYPE } from "./incomeTax.js";
+import { SALES_TAX_PAYABLE_SUBTYPE } from "./salesTax.js";
 import { EQUITY_SUBTYPES, DIVIDENDS_PAYABLE_SUBTYPE } from "./equity.js";
 import { STOCK_COMP_EXPENSE_SUBTYPE } from "./stockCompensation.js";
 import { PURCHASES_DISCOUNT_SUBTYPE } from "./accountsPayable.js";
@@ -41,6 +42,7 @@ export const ACCOUNT_SUBTYPES = {
     { value: "accounts_payable", label: "Accounts payable", classification: CLASSIFICATIONS.CURRENT },
     { value: "credit_card", label: "Credit card", classification: CLASSIFICATIONS.CURRENT },
     { value: DEFERRED_REVENUE_SUBTYPE, label: "Deferred revenue", classification: CLASSIFICATIONS.CURRENT },
+    { value: SALES_TAX_PAYABLE_SUBTYPE, label: "Sales tax payable", classification: CLASSIFICATIONS.CURRENT },
     { value: INCOME_TAXES_PAYABLE_SUBTYPE, label: "Income taxes payable", classification: CLASSIFICATIONS.CURRENT },
     { value: DIVIDENDS_PAYABLE_SUBTYPE, label: "Dividends payable", classification: CLASSIFICATIONS.CURRENT },
     { value: "current_liability", label: "Other current liability", classification: CLASSIFICATIONS.CURRENT },

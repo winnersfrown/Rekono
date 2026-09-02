@@ -28,6 +28,11 @@ export const CustomerInvoiceLine = sequelize.define(
     // revenue directly, which is what every line did before v1.26.
     serviceStartDate: { type: DataTypes.DATEONLY, allowNull: true },
     serviceEndDate: { type: DataTypes.DATEONLY, allowNull: true },
+    // Whether this line counts toward the invoice's sales tax base.
+    // Defaults to true so a plain line is taxable the way most goods and
+    // services are; a shipping charge or a pass-through reimbursement is
+    // the kind of thing that gets flipped off.
+    taxable: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     position: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   },
   {

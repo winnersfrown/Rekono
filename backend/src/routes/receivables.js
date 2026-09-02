@@ -20,6 +20,7 @@ import {
   voidCustomerInvoiceEntry,
 } from "../accountsReceivable.js";
 import { dropUnrecognizedSchedule } from "../revenueRecognition.js";
+import { computeInvoiceTaxCents, recordSalesTaxRemittance, salesTaxPayableCents } from "../salesTax.js";
 import {
   accountsExist,
   dueDates,
@@ -54,6 +55,7 @@ function serializeCustomer(c) {
     payment_terms_days: c.paymentTermsDays,
     notes: c.notes,
     active: c.active,
+    tax_exempt: c.taxExempt,
   };
 }
 
@@ -68,6 +70,7 @@ function serializeLine(line) {
     amount: centsToDollars(line.amountCents),
     service_start_date: line.serviceStartDate,
     service_end_date: line.serviceEndDate,
+    taxable: line.taxable,
   };
 }
 
@@ -82,6 +85,8 @@ function serializeInvoice(invoice, { lines, paidCents } = {}) {
     due_date: invoice.dueDate,
     status: invoice.status,
     memo: invoice.memo,
+    subtotal: centsToDollars(invoice.totalCents - invoice.taxCents),
+    tax: centsToDollars(invoice.taxCents),
     total: centsToDollars(invoice.totalCents),
     amount_paid: centsToDollars(paid),
     amount_outstanding: centsToDollars(invoice.totalCents - paid),
@@ -108,6 +113,7 @@ const customerSchema = z.object({
   email: z.string().email().or(z.literal("")).optional(),
   payment_terms_days: z.number().int().min(0).max(365).optional(),
   notes: z.string().max(4096).optional(),
+  tax_exempt: z.boolean().optional(),
 });
 
 router.post("/api/customers", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -124,6 +130,7 @@ router.post("/api/customers", requireAuth, requireActivePlan, async (req, res, n
       email: parsed.data.email || "",
       paymentTermsDays: parsed.data.payment_terms_days ?? 30,
       notes: parsed.data.notes || "",
+      taxExempt: parsed.data.tax_exempt || false,
     });
     await AuditLog.create({
       orgId: req.currentUser.orgId,
@@ -148,7 +155,14 @@ router.patch("/api/customers/:id", requireAuth, requireActivePlan, async (req, r
     const customer = await Customer.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!customer) return res.status(404).json({ detail: "Customer not found" });
 
-    const FIELD_MAP = { name: "name", email: "email", payment_terms_days: "paymentTermsDays", notes: "notes", active: "active" };
+    const FIELD_MAP = {
+      name: "name",
+      email: "email",
+      payment_terms_days: "paymentTermsDays",
+      notes: "notes",
+      active: "active",
+      tax_exempt: "taxExempt",
+    };
     for (const [field, attr] of Object.entries(FIELD_MAP)) {
       if (parsed.data[field] !== undefined) customer[attr] = parsed.data[field];
     }
@@ -200,6 +214,7 @@ function serializeRecurringInvoice(t, lines = null, accountsById = null) {
             description: l.description,
             quantity: l.quantity,
             unit_price: centsToDollars(l.unitPriceCents),
+            taxable: l.taxable,
           })),
         }
       : {}),
@@ -230,6 +245,7 @@ const recurringLineSchema = z.object({
   description: z.string().max(512).optional(),
   quantity: z.number().min(0).default(1),
   unit_price: z.number().min(0),
+  taxable: z.boolean().optional(),
 });
 
 const recurringInvoiceSchema = z.object({
@@ -276,6 +292,7 @@ router.post("/api/recurring-invoices", requireAuth, requireActivePlan, recurring
         description: l.description || "",
         quantity: l.quantity,
         unitPriceCents: dollarsToCents(l.unit_price),
+        taxable: l.taxable !== false,
         position: i,
       }))
     );
@@ -426,6 +443,7 @@ const lineSchema = z
     description: z.string().max(512).optional(),
     quantity: z.number().min(0).default(1),
     unit_price: z.number().min(0),
+    taxable: z.boolean().optional(),
     // Both or neither: a half-specified service period has no defensible
     // reading (does it run to the end of time?), so it's rejected rather
     // than guessed at.
@@ -461,6 +479,7 @@ function buildLines(parsedLines) {
       amountCents: Math.round(unitPriceCents * l.quantity),
       serviceStartDate: l.service_start_date || null,
       serviceEndDate: l.service_end_date || null,
+      taxable: l.taxable !== false,
       position: i,
     };
   });
@@ -482,6 +501,13 @@ router.post("/api/customer-invoices", requireAuth, requireActivePlan, async (req
       return res.status(422).json({ detail: "Every line must bill to a revenue account in your chart of accounts." });
     }
 
+    // A tax-exempt customer is never taxed, regardless of any line's own
+    // flag -- see Customer.js's taxExempt comment.
+    const taxCents = customer.taxExempt
+      ? 0
+      : computeInvoiceTaxCents(req.currentUser.organization.salesTaxRatePercent, lines);
+    const linesTotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);
+
     const invoice = await CustomerInvoice.create({
       orgId,
       customerId: customer.id,
@@ -491,7 +517,8 @@ router.post("/api/customer-invoices", requireAuth, requireActivePlan, async (req
       // terms live on the customer at all.
       dueDate: parsed.data.due_date || addDays(parsed.data.issue_date, customer.paymentTermsDays),
       memo: parsed.data.memo || "",
-      totalCents: lines.reduce((sum, l) => sum + l.amountCents, 0),
+      totalCents: linesTotalCents + taxCents,
+      taxCents,
       status: "draft",
     });
     await CustomerInvoiceLine.bulkCreate(lines.map((l) => ({ ...l, customerInvoiceId: invoice.id })));
@@ -678,6 +705,59 @@ router.get("/api/reports/ar-aging", requireAuth, requireActivePlan, async (req, 
     const asOf = /^\d{4}-\d{2}-\d{2}$/.test(req.query.as_of || "") ? req.query.as_of : null;
     res.json(await computeArAging(req.currentUser.orgId, { asOf }));
   } catch (err) {
+    next(err);
+  }
+});
+
+// ---- Sales tax ----
+
+router.get("/api/reports/sales-tax", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const asOf = ISO_DATE.test(req.query.as_of || "") ? req.query.as_of : null;
+    res.json({
+      rate_percent: req.currentUser.organization.salesTaxRatePercent,
+      payable: centsToDollars(await salesTaxPayableCents(req.currentUser.orgId, { asOf })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const remitSchema = z.object({
+  amount: z.number().positive(),
+  payment_date: z.string().regex(ISO_DATE),
+  cash_account_id: z.string().min(1),
+});
+
+router.post("/api/sales-tax/remit", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = remitSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+    const d = parsed.data;
+
+    const entry = await recordSalesTaxRemittance(
+      orgId,
+      { amountCents: dollarsToCents(d.amount), paymentDate: d.payment_date, cashAccountId: d.cash_account_id },
+      { postedByUserId: req.currentUser.id }
+    );
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "sales_tax_remitted",
+      actor: req.currentUser.email,
+      details: { amount: d.amount, payment_date: d.payment_date },
+    });
+
+    res.status(201).json({
+      journal_entry_id: entry.id,
+      amount: d.amount,
+      payment_date: d.payment_date,
+      payable: centsToDollars(await salesTaxPayableCents(orgId)),
+    });
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
     next(err);
   }
 });

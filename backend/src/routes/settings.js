@@ -35,6 +35,13 @@ const settingsSchema = z.object({
   // a basic property of how a business keeps its books, not a premium
   // feature, and the general ledger it drives isn't gated either.
   fiscal_year_end_month: z.number().int().min(1).max(12).optional(),
+  // The flat rate applied to a taxable customer invoice line (see
+  // salesTax.js). Not plan-gated, same reasoning fiscal_year_end_month
+  // isn't -- whether an org charges sales tax at all is a basic fact about
+  // how it does business, not a premium feature. Nullable so it can be
+  // cleared back to "no tax charged" the same way confidence_threshold
+  // resets to the server default.
+  sales_tax_rate_percent: z.number().min(0).max(100).nullable().optional(),
 });
 
 function settingsResponse(org) {
@@ -53,6 +60,7 @@ function settingsResponse(org) {
     sample_review_enabled: Boolean(org.sampleReviewEnabled),
     sample_review_rate: org.sampleReviewRate,
     fiscal_year_end_month: org.fiscalYearEndMonth,
+    sales_tax_rate_percent: org.salesTaxRatePercent,
   };
 }
 
@@ -131,6 +139,13 @@ router.patch("/api/org/settings", requireAuth, requireActivePlan, async (req, re
       // nothing -- both figures are derived (financialStatements.js), so
       // this is safe to change at any time.
       org.fiscalYearEndMonth = parsed.data.fiscal_year_end_month;
+    }
+
+    if (parsed.data.sales_tax_rate_percent !== undefined) {
+      // Only affects invoices created after this point -- past invoices
+      // keep the taxCents they were created with (CustomerInvoice.js),
+      // never recomputed against whatever the rate is today.
+      org.salesTaxRatePercent = parsed.data.sales_tax_rate_percent;
     }
 
     if (parsed.data.org_name !== undefined) {

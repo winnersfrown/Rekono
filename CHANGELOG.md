@@ -4,6 +4,33 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.70
+
+Added sales tax as its own liability, instead of it disappearing into
+revenue. Tax collected from a customer isn't this org's money -- it's
+held on behalf of the state until remitted -- so treating it as revenue
+overstated income and left nothing on the books tracking what's actually
+owed.
+
+An org sets one `sales_tax_rate_percent` in Settings; a customer can be
+marked `tax_exempt` and a line can be marked non-taxable (shipping,
+already-taxed resale, etc.), both overriding the org rate down to zero for
+that scope. `postCustomerInvoice` now splits a sent invoice's total into
+the existing AR debit and revenue credit, plus a new credit to a
+`Sales Tax Payable` liability account (code 2300, created on demand the
+same way `incomeTax.js` creates its own accounts) for the tax portion --
+mirroring `salesTax.js`'s design on `incomeTax.js`'s running-balance and
+on-demand-account pattern throughout. `recurringInvoices.js`'s auto-send
+path applies the same computation, so a recurring invoice's tax isn't a
+second implementation of the same rule. Remitting collected tax
+(`POST /api/sales-tax/remit`) debits the payable and credits cash the same
+way a bill payment does, and is refused past whatever is actually accrued
+-- there's no way to remit tax the org never collected.
+
+As with the tax provision in `incomeTax.js`, the rate is supplied, never
+guessed: no rate configured means no tax charged, not a default rate
+invented on the org's behalf.
+
 ## v1.69
 
 Added recurring customer invoices -- the AR equivalent of the recurring
