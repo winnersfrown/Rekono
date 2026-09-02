@@ -4,6 +4,16 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.68
+
+Refreshed the `/graphify` code-graph model (`graphify-out/`) — it hadn't been
+rebuilt since v1.53, so everything shipped since (the full ledger/AR/AP/
+payroll/equity/income-tax accounting core through v1.67, the investor demo
+enrichment, and this release's own auto-reversing entries) was invisible to
+graph queries. Incremental update over the 65 changed files: 2247 nodes,
+5535 edges, 165 labeled communities, clean health check. No application
+code changed — this is a developer-tooling artifact, not a product change.
+
 ## v1.67
 
 Recurring entries (`recurringEntries.js`) covered adjusting entries but not
