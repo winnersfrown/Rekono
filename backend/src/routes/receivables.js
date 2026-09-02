@@ -6,6 +6,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
+import { settings } from "../config.js";
+import { rateLimitMiddleware } from "../rateLimit.js";
 import { LedgerError, centsToDollars, dollarsToCents } from "../ledger.js";
 import {
   addDays,
@@ -159,6 +161,18 @@ router.patch("/api/customers/:id", requireAuth, requireActivePlan, async (req, r
 
 // ---- Recurring invoices ----
 
+// .../run (and, less so, the rest of this group) mutates real billing
+// state on every call rather than just reading or writing one record --
+// .../run can create a real CustomerInvoice, post it, and send it in a
+// single request -- so this group gets its own tighter, explicitly-chained
+// limit the same way login, signup, and the assistant do, on top of the
+// blanket one every route already has.
+const recurringInvoiceRateLimit = rateLimitMiddleware({
+  windowMs: 15 * 60 * 1000,
+  max: settings.rateLimitExpensiveMax,
+  message: "Too many requests. Please slow down and try again shortly.",
+});
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -192,7 +206,7 @@ function serializeRecurringInvoice(t, lines = null, accountsById = null) {
   };
 }
 
-router.get("/api/recurring-invoices", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/recurring-invoices", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const orgId = req.currentUser.orgId;
     const templates = await RecurringInvoice.findAll({
@@ -229,7 +243,7 @@ const recurringInvoiceSchema = z.object({
   lines: z.array(recurringLineSchema).min(1),
 });
 
-router.post("/api/recurring-invoices", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/recurring-invoices", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const parsed = recurringInvoiceSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
@@ -282,7 +296,7 @@ router.post("/api/recurring-invoices", requireAuth, requireActivePlan, async (re
   }
 });
 
-router.patch("/api/recurring-invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+router.patch("/api/recurring-invoices/:id", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const parsed = z
       .object({
@@ -314,7 +328,7 @@ router.patch("/api/recurring-invoices/:id", requireAuth, requireActivePlan, asyn
 
 // Deleting stops future issuance. Invoices already created are real
 // CustomerInvoice rows and stay -- this only stops the next one.
-router.delete("/api/recurring-invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+router.delete("/api/recurring-invoices/:id", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const template = await RecurringInvoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
     if (!template) return res.status(404).json({ detail: "Recurring invoice not found" });
@@ -325,7 +339,7 @@ router.delete("/api/recurring-invoices/:id", requireAuth, requireActivePlan, asy
   }
 });
 
-router.get("/api/recurring-invoices/pending", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/recurring-invoices/pending", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const asOf = ISO_DATE.test(req.query.as_of || "") ? req.query.as_of : todayIso();
     res.json(await previewRecurringInvoices(req.currentUser.orgId, asOf));
@@ -334,7 +348,7 @@ router.get("/api/recurring-invoices/pending", requireAuth, requireActivePlan, as
   }
 });
 
-router.post("/api/recurring-invoices/run", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/recurring-invoices/run", requireAuth, requireActivePlan, recurringInvoiceRateLimit, async (req, res, next) => {
   try {
     const parsed = z
       .object({ as_of: z.string().regex(ISO_DATE).optional(), template_id: z.string().optional() })
