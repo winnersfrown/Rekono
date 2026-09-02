@@ -98,6 +98,7 @@ export async function postCustomerInvoice(invoice, lines, { postedByUserId = nul
   return postJournalEntry(invoice.orgId, {
     entryDate: invoice.issueDate,
     memo: `${invoice.invoiceNumber} -- ${invoice.customerName || "Customer"}`,
+    docNumber: invoice.invoiceNumber || "",
     source: "customer_invoice",
     sourceType: "customer_invoice",
     sourceId: invoice.id,

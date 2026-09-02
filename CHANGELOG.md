@@ -4,6 +4,25 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.63
+
+Every journal (general, sales, purchases, cash receipts, cash payments)
+was only ever shown as one summary row per entry -- date, memo, source,
+total, status -- with no way to see the actual lines: no account title,
+no debit/credit split, no doc number, no post reference. That's every
+column a manual ledger is expected to carry, missing from all five at
+once, since they're all filters over this same table.
+
+Two additions close the gap. A "Doc #" column and optional field on the
+manual entry form record the paper document an entry corresponds to
+(check, invoice, receipt, memorandum) -- populated automatically from the
+vendor invoice number on approval, the customer invoice number on billing,
+and the check number on a written check, and left blank where no such
+document exists (a payroll run, an equity event) rather than inventing
+one. Clicking any entry now expands it in place to show its lines: account
+title, post ref. (the account's code -- the real-time equivalent of the
+ledger page a paper post ref points to), debit, and credit.
+
 ## v1.62
 
 Every account amount on the trial balance, income statement, and balance

@@ -1534,6 +1534,7 @@
               <div class="line-item-fields">
                 <label>Date<input type="date" id="je-date" required /></label>
                 <label>Memo<input type="text" id="je-memo" maxlength="512" placeholder="What is this entry for?" /></label>
+                <label>Doc # <span class="hint">(check, receipt, memorandum, etc.)</span><input type="text" id="je-doc-number" maxlength="64" placeholder="Optional" /></label>
               </div>
               <div class="line-item-table">
                 <table>
@@ -1557,10 +1558,12 @@
             <button type="button" class="filter-btn" data-journal="cash_receipts">Cash receipts journal</button>
             <button type="button" class="filter-btn" data-journal="cash_payments">Cash payments journal</button>
           </div>
-          <table>
-            <thead><tr><th>Date</th><th>Memo</th><th>Source</th><th>Total</th><th>Status</th><th></th></tr></thead>
-            <tbody id="journal-entries-body"></tbody>
-          </table>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th></th><th>Date</th><th>Memo</th><th>Doc #</th><th>Journal</th><th>Total</th><th>Status</th><th></th></tr></thead>
+              <tbody id="journal-entries-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="tab-payroll" class="tab-panel">

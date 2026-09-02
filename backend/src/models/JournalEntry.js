@@ -44,6 +44,13 @@ export const JournalEntry = sequelize.define(
     orgId: { type: DataTypes.STRING(32), allowNull: false },
     entryDate: { type: DataTypes.DATEONLY, allowNull: false },
     memo: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
+    // The paper document this entry corresponds to -- an invoice number, a
+    // check number, a receipt number, a memorandum reference. Optional and
+    // free text: not every entry has one (a payroll run or an equity event
+    // doesn't produce a numbered document the way a check or invoice does),
+    // and the exact numbering scheme is the org's own, not something this
+    // app can standardize.
+    docNumber: { type: DataTypes.STRING(64), allowNull: false, defaultValue: "" },
     source: { type: DataTypes.ENUM(...JOURNAL_ENTRY_SOURCES), allowNull: false, defaultValue: "manual" },
     // Generic (sourceType, sourceId) pair rather than one nullable FK column
     // per possible source (the shape AuditLog uses) -- deliberate departure,

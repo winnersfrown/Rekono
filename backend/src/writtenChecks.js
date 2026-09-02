@@ -38,6 +38,7 @@ export async function writeCheck(orgId, { invoiceId, checkNumber, payeeName, che
     paymentDate: checkDate,
     paymentAccountId: paymentAccount.id,
     memo: memo || `Check #${checkNumber}`,
+    docNumber: checkNumber,
     postedByUserId,
   });
 
