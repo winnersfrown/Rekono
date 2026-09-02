@@ -17,9 +17,15 @@ export const JOURNAL_ENTRY_SOURCES = [
   "revenue_recognition", // AR: a month of deferred revenue was earned
   "recurring_entry", // an adjusting entry posted from a recurring template
   "closing_entry", // year-end: revenue and expense zeroed into retained earnings
-  "equity_transaction", // owner capital in, distributions out, treasury stock
+  "equity_transaction", // a dividend *declared* -- no cash moves, so this one stays out of the cash journals
+  "equity_contribution", // cash in: an owner or investor put money in
+  "equity_distribution", // cash out: a non-dividend distribution to owners
+  "equity_dividend_paid", // cash out: a previously declared dividend settled
+  "equity_treasury_purchase", // cash out: the company bought back its own shares
+  "equity_treasury_reissue", // cash in: previously repurchased shares sold back out
   "stock_compensation", // ASC 718: a month of an equity award's cost was earned
-  "income_tax", // the tax provision accrued, and payments against it
+  "income_tax", // the tax provision accrued -- no cash moves, so this stays out of the cash journals
+  "income_tax_payment", // cash out: the accrued tax was actually paid
   "payroll_run", // gross wages, withholding, and the employer's own payroll tax cost
   "void",
 ];

@@ -211,7 +211,7 @@ export async function recordTaxPayment(orgId, { amountCents, paymentDate, cashAc
   return postJournalEntry(orgId, {
     entryDate: paymentDate,
     memo: memo || "Income tax paid",
-    source: "income_tax",
+    source: "income_tax_payment",
     sourceType: "income_tax_payment",
     sourceId: paymentDate,
     postedByUserId,

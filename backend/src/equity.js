@@ -238,6 +238,21 @@ const MEMO_BY_TYPE = {
   treasury_reissue: "Treasury stock reissued",
 };
 
+// Which journal an equity event belongs in. "dividend_declared" just
+// recognizes a liability -- no cash moves, so it's the one type that stays
+// on the general journal's default "equity_transaction" source. Every other
+// type either brings cash in or pays it out, so each gets its own source
+// value to route into the cash receipts/cash payments journals
+// (routes/journalEntries.js's SPECIAL_JOURNAL_SOURCES) instead.
+const JOURNAL_SOURCE_BY_TYPE = {
+  contribution: "equity_contribution",
+  distribution: "equity_distribution",
+  dividend_declared: "equity_transaction",
+  dividend_paid: "equity_dividend_paid",
+  treasury_purchase: "equity_treasury_purchase",
+  treasury_reissue: "equity_treasury_reissue",
+};
+
 // Records the event and posts it, unwinding the row if the ledger refuses.
 // Same shape as recordBillPayment: the row has to exist before the entry
 // can name it as its source, so a refused posting has to delete it rather
@@ -262,7 +277,7 @@ export async function recordEquityTransaction(orgId, input, { postedByUserId = n
     entry = await postJournalEntry(orgId, {
       entryDate: input.transactionDate,
       memo: input.memo || MEMO_BY_TYPE[input.type],
-      source: "equity_transaction",
+      source: JOURNAL_SOURCE_BY_TYPE[input.type],
       sourceType: "equity_transaction",
       sourceId: transaction.id,
       postedByUserId,
