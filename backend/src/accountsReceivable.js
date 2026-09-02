@@ -11,7 +11,7 @@
 
 import { Op } from "sequelize";
 import { LedgerError, centsToDollars, postJournalEntry, voidJournalEntry } from "./ledger.js";
-import { ensureDeferredRevenueAccount, lineIsDeferred } from "./revenueRecognition.js";
+import { createSchedulesForInvoice, ensureDeferredRevenueAccount, lineIsDeferred } from "./revenueRecognition.js";
 import {
   Account,
   Customer,
@@ -130,6 +130,28 @@ export async function postCustomerPayment(payment, invoice, { postedByUserId = n
       { accountId: arAccount.id, creditCents: payment.amountCents },
     ],
   });
+}
+
+// Draft -> sent, the moment an invoice becomes a real receivable. Posts
+// the ledger entry, creates any deferred-revenue schedule its lines need,
+// and marks the invoice sent -- the exact three steps the manual "Send"
+// route performs, factored out so a recurring invoice's auto-send does the
+// identical thing rather than a second, drift-prone copy of it. Mutates
+// and saves `invoice`; the caller is responsible for the "already sent"
+// guard, since that check differs slightly between a fresh draft and a
+// just-created recurring occurrence.
+export async function sendCustomerInvoice(invoice, lines, { postedByUserId = null } = {}) {
+  await postCustomerInvoice({ ...invoice.get(), customerName: invoice.customer?.name }, lines, { postedByUserId });
+
+  // Only after the posting succeeded -- a schedule for an invoice whose
+  // journal entry was refused would plan revenue against a receivable
+  // that never landed.
+  await createSchedulesForInvoice(invoice, lines);
+
+  invoice.status = "sent";
+  invoice.sentAt = new Date();
+  await invoice.save();
+  return invoice;
 }
 
 // Reverses whatever a customer invoice posted, if anything. Looked up by

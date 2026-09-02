@@ -12,12 +12,20 @@ import {
   amountPaidCents,
   computeArAging,
   nextInvoiceNumber,
-  postCustomerInvoice,
   postCustomerPayment,
   refreshInvoiceStatus,
+  sendCustomerInvoice,
   voidCustomerInvoiceEntry,
 } from "../accountsReceivable.js";
-import { createSchedulesForInvoice, dropUnrecognizedSchedule } from "../revenueRecognition.js";
+import { dropUnrecognizedSchedule } from "../revenueRecognition.js";
+import {
+  accountsExist,
+  dueDates,
+  loadTemplateLines,
+  previewRecurringInvoices,
+  runRecurringInvoices,
+} from "../recurringInvoices.js";
+import { RECURRING_INVOICE_FREQUENCIES } from "../models/RecurringInvoice.js";
 import {
   Account,
   AuditLog,
@@ -25,7 +33,11 @@ import {
   CustomerInvoice,
   CustomerInvoiceLine,
   CustomerPayment,
+  RecurringInvoice,
+  RecurringInvoiceLine,
 } from "../models/index.js";
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const router = Router();
 
@@ -145,6 +157,212 @@ router.patch("/api/customers/:id", requireAuth, requireActivePlan, async (req, r
   }
 });
 
+// ---- Recurring invoices ----
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function serializeRecurringInvoice(t, lines = null, accountsById = null) {
+  return {
+    id: t.id,
+    customer_id: t.customerId,
+    customer_name: t.customer?.name,
+    name: t.name,
+    memo: t.memo,
+    frequency: t.frequency,
+    start_date: t.startDate,
+    end_date: t.endDate,
+    last_issued_date: t.lastIssuedDate,
+    active: t.active,
+    auto_send: t.autoSend,
+    next_due: dueDates({ frequency: t.frequency, startDate: t.startDate, endDate: t.endDate, lastPostedDate: t.lastIssuedDate }, todayIso())[0] || null,
+    ...(lines
+      ? {
+          lines: lines.map((l) => ({
+            id: l.id,
+            revenue_account_id: l.revenueAccountId,
+            revenue_account_name: accountsById?.get(l.revenueAccountId)?.name,
+            description: l.description,
+            quantity: l.quantity,
+            unit_price: centsToDollars(l.unitPriceCents),
+          })),
+        }
+      : {}),
+  };
+}
+
+router.get("/api/recurring-invoices", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const orgId = req.currentUser.orgId;
+    const templates = await RecurringInvoice.findAll({
+      where: { orgId },
+      include: [{ model: Customer, as: "customer", attributes: ["id", "name"] }],
+      order: [["name", "ASC"]],
+    });
+    const accounts = await Account.findAll({ where: { orgId } });
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+
+    const items = [];
+    for (const t of templates) items.push(serializeRecurringInvoice(t, await loadTemplateLines(t.id), byId));
+    res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const recurringLineSchema = z.object({
+  revenue_account_id: z.string().min(1),
+  description: z.string().max(512).optional(),
+  quantity: z.number().min(0).default(1),
+  unit_price: z.number().min(0),
+});
+
+const recurringInvoiceSchema = z.object({
+  customer_id: z.string().min(1),
+  name: z.string().min(1).max(256),
+  memo: z.string().max(512).optional(),
+  frequency: z.enum(RECURRING_INVOICE_FREQUENCIES),
+  start_date: z.string().regex(ISO_DATE),
+  end_date: z.string().regex(ISO_DATE).optional(),
+  auto_send: z.boolean().optional(),
+  lines: z.array(recurringLineSchema).min(1),
+});
+
+router.post("/api/recurring-invoices", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = recurringInvoiceSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+    const data = parsed.data;
+
+    if (data.end_date && data.end_date < data.start_date) {
+      return res.status(422).json({ detail: "A recurring invoice can't end before it starts." });
+    }
+    const customer = await Customer.findOne({ where: { id: data.customer_id, orgId } });
+    if (!customer) return res.status(404).json({ detail: "Customer not found" });
+    if (!(await accountsExist(orgId, data.lines.map((l) => l.revenue_account_id)))) {
+      return res.status(422).json({ detail: "Every line must bill to a revenue account in your chart of accounts." });
+    }
+
+    const template = await RecurringInvoice.create({
+      orgId,
+      customerId: customer.id,
+      name: data.name,
+      memo: data.memo || "",
+      frequency: data.frequency,
+      startDate: data.start_date,
+      endDate: data.end_date || null,
+      autoSend: data.auto_send || false,
+    });
+    await RecurringInvoiceLine.bulkCreate(
+      data.lines.map((l, i) => ({
+        recurringInvoiceId: template.id,
+        revenueAccountId: l.revenue_account_id,
+        description: l.description || "",
+        quantity: l.quantity,
+        unitPriceCents: dollarsToCents(l.unit_price),
+        position: i,
+      }))
+    );
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "recurring_invoice_created",
+      actor: req.currentUser.email,
+      details: { name: template.name, customer: customer.name, frequency: template.frequency },
+    });
+
+    template.customer = customer;
+    const accounts = await Account.findAll({ where: { orgId } });
+    res.status(201).json(serializeRecurringInvoice(template, await loadTemplateLines(template.id), new Map(accounts.map((a) => [a.id, a]))));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/api/recurring-invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({
+        name: z.string().min(1).max(256).optional(),
+        active: z.boolean().optional(),
+        end_date: z.string().regex(ISO_DATE).nullable().optional(),
+        auto_send: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    const template = await RecurringInvoice.findOne({
+      where: { id: req.params.id, orgId: req.currentUser.orgId },
+      include: [{ model: Customer, as: "customer", attributes: ["id", "name"] }],
+    });
+    if (!template) return res.status(404).json({ detail: "Recurring invoice not found" });
+
+    if (parsed.data.name !== undefined) template.name = parsed.data.name;
+    if (parsed.data.active !== undefined) template.active = parsed.data.active;
+    if (parsed.data.end_date !== undefined) template.endDate = parsed.data.end_date;
+    if (parsed.data.auto_send !== undefined) template.autoSend = parsed.data.auto_send;
+    await template.save();
+
+    res.json(serializeRecurringInvoice(template));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Deleting stops future issuance. Invoices already created are real
+// CustomerInvoice rows and stay -- this only stops the next one.
+router.delete("/api/recurring-invoices/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const template = await RecurringInvoice.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!template) return res.status(404).json({ detail: "Recurring invoice not found" });
+    await template.destroy();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/recurring-invoices/pending", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const asOf = ISO_DATE.test(req.query.as_of || "") ? req.query.as_of : todayIso();
+    res.json(await previewRecurringInvoices(req.currentUser.orgId, asOf));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/recurring-invoices/run", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({ as_of: z.string().regex(ISO_DATE).optional(), template_id: z.string().optional() })
+      .safeParse(req.body || {});
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const asOf = parsed.data.as_of || todayIso();
+
+    const result = await runRecurringInvoices(req.currentUser.orgId, asOf, {
+      postedByUserId: req.currentUser.id,
+      templateId: parsed.data.template_id || null,
+    });
+
+    if (result.issued.length) {
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        action: "recurring_invoices_run",
+        actor: req.currentUser.email,
+        details: { as_of: asOf, issued: result.issued.length, amount: result.total },
+      });
+    }
+    res.json({ as_of: asOf, ...result });
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
 // ---- Customer invoices ----
 
 async function getOwnedInvoice(id, orgId) {
@@ -187,8 +405,6 @@ router.get("/api/customer-invoices", requireAuth, requireActivePlan, async (req,
     next(err);
   }
 });
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const lineSchema = z
   .object({
@@ -304,20 +520,7 @@ router.post("/api/customer-invoices/:id/send", requireAuth, requireActivePlan, a
     }
 
     const lines = await loadLines(invoice.id);
-    await postCustomerInvoice(
-      { ...invoice.get(), customerName: invoice.customer?.name },
-      lines,
-      { postedByUserId: req.currentUser.id }
-    );
-
-    // Only after the posting succeeded -- a schedule for an invoice whose
-    // journal entry was refused would plan revenue against a receivable
-    // that never landed.
-    await createSchedulesForInvoice(invoice, lines);
-
-    invoice.status = "sent";
-    invoice.sentAt = new Date();
-    await invoice.save();
+    await sendCustomerInvoice(invoice, lines, { postedByUserId: req.currentUser.id });
 
     await AuditLog.create({
       orgId: req.currentUser.orgId,

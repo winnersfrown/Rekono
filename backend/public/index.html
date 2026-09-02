@@ -1400,6 +1400,48 @@
             <thead><tr><th>Number</th><th>Customer</th><th>Issued</th><th>Due</th><th>Total</th><th>Outstanding</th><th>Status</th><th></th></tr></thead>
             <tbody id="customer-invoices-body"></tbody>
           </table>
+
+          <h3>Recurring invoices</h3>
+          <p class="hint">For customers on a retainer or subscription. Each period creates a draft for you to review -- check "Auto-send" to have it post and go out on its own instead.</p>
+          <div class="panel">
+            <h3>New recurring invoice</h3>
+            <form id="recurring-invoice-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Customer<select id="ri-customer" required></select></label>
+                <label>Name<input type="text" id="ri-name" maxlength="256" placeholder="e.g. Monthly retainer" required /></label>
+                <label>Frequency<select id="ri-frequency">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                </select></label>
+                <label>First period<input type="date" id="ri-start" required /></label>
+                <label>Last period<input type="date" id="ri-end" /></label>
+                <label><input type="checkbox" id="ri-auto-send" /> Auto-send</label>
+              </div>
+              <div class="line-item-table">
+                <table>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Qty</th><th>Unit price</th><th></th></tr></thead>
+                  <tbody id="ri-lines-body"></tbody>
+                </table>
+              </div>
+              <div class="line-item-footer">
+                <button type="button" class="btn-quiet" id="ri-add-line">+ Add line</button>
+                <p class="hint" id="ri-total-indicator"></p>
+                <button type="submit" class="line-item-submit">Save template</button>
+              </div>
+              <div id="recurring-invoice-status" class="hint"></div>
+            </form>
+          </div>
+          <form id="recurring-invoice-run-form" class="statement-period">
+            <label>Run through<input type="date" id="ri-as-of" /></label>
+            <button type="button" class="btn-quiet" id="ri-preview">Preview</button>
+            <button type="submit">Run</button>
+          </form>
+          <div id="recurring-invoice-run-status" class="hint"></div>
+          <table>
+            <thead><tr><th>Name</th><th>Customer</th><th>Frequency</th><th>First period</th><th>Last issued</th><th>Next due</th><th>Auto-send</th><th>Status</th><th></th></tr></thead>
+            <tbody id="recurring-invoices-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-revenue" class="tab-panel">

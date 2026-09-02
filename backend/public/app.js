@@ -388,7 +388,7 @@ function switchTab(name) {
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
   if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
-  if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); }
+  if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); loadRecurringInvoices(); }
   if (name === "araging") loadArAging();
   if (name === "revenue") loadDeferredRevenue();
   if (name === "adjustments") {
@@ -5870,10 +5870,11 @@ async function loadCustomerInvoiceFormData() {
       // Invoice lines can only bill revenue; payments can only land in an
       // asset account. Both come off this one fetch.
       ciRevenueAccounts = accounts.filter((a) => a.type === "revenue");
-      document.getElementById("ci-customer").innerHTML = customers
-        .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
-        .join("");
+      const customerOptionsHtml = customers.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+      document.getElementById("ci-customer").innerHTML = customerOptionsHtml;
+      document.getElementById("ri-customer").innerHTML = customerOptionsHtml;
       if (!document.getElementById("ci-lines-body").children.length) addCustomerInvoiceLineRow();
+      if (!document.getElementById("ri-lines-body").children.length) addRecurringInvoiceLineRow();
     }
   );
 }
@@ -6038,6 +6039,190 @@ function renderCustomerInvoices(data) {
     })
   );
 }
+
+function riAccountOptions() {
+  return groupedAccountOptionsHtml(ciRevenueAccounts, null);
+}
+
+function updateRecurringInvoiceTotal() {
+  const rows = [...document.getElementById("ri-lines-body").querySelectorAll("tr")];
+  const total = rows.reduce((sum, row) => {
+    const qty = Number(row.querySelector(".ri-qty").value) || 0;
+    const price = Number(row.querySelector(".ri-price").value) || 0;
+    return sum + qty * price;
+  }, 0);
+  document.getElementById("ri-total-indicator").textContent = `Each occurrence: ${fmtMoney(total)}`;
+}
+
+function addRecurringInvoiceLineRow() {
+  const body = document.getElementById("ri-lines-body");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><select class="ri-account" required>${riAccountOptions()}</select></td>
+    <td><input type="text" class="ri-desc" maxlength="512" placeholder="What are you billing for?" /></td>
+    <td><input type="number" class="ri-qty" step="0.01" min="0" value="1" /></td>
+    <td><input type="number" class="ri-price" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><button type="button" class="ri-remove-line linklike">Remove</button></td>
+  `;
+  body.appendChild(row);
+  row.querySelectorAll(".ri-qty, .ri-price").forEach((i) => i.addEventListener("input", updateRecurringInvoiceTotal));
+  row.querySelector(".ri-remove-line").addEventListener("click", () => {
+    row.remove();
+    updateRecurringInvoiceTotal();
+  });
+  updateRecurringInvoiceTotal();
+}
+
+document.getElementById("ri-add-line").addEventListener("click", addRecurringInvoiceLineRow);
+
+document.getElementById("recurring-invoice-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("recurring-invoice-status");
+  const rows = [...document.getElementById("ri-lines-body").querySelectorAll("tr")];
+  const endDate = document.getElementById("ri-end").value;
+
+  const res = await apiFetch("/api/recurring-invoices", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customer_id: document.getElementById("ri-customer").value,
+      name: document.getElementById("ri-name").value,
+      frequency: document.getElementById("ri-frequency").value,
+      start_date: document.getElementById("ri-start").value,
+      ...(endDate ? { end_date: endDate } : {}),
+      auto_send: document.getElementById("ri-auto-send").checked,
+      lines: rows.map((row) => ({
+        revenue_account_id: row.querySelector(".ri-account").value,
+        description: row.querySelector(".ri-desc").value,
+        quantity: Number(row.querySelector(".ri-qty").value) || 0,
+        unit_price: Number(row.querySelector(".ri-price").value) || 0,
+      })),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Saved "${parsed.name}".`;
+  document.getElementById("ri-name").value = "";
+  document.getElementById("ri-auto-send").checked = false;
+  document.getElementById("ri-lines-body").innerHTML = "";
+  addRecurringInvoiceLineRow();
+  loadRecurringInvoices();
+});
+
+async function loadRecurringInvoices() {
+  const data = await (await apiFetch("/api/recurring-invoices")).json();
+  const body = document.getElementById("recurring-invoices-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="9" class="table-empty-row">No recurring invoices yet — add one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (t) => `
+    <tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td>${escapeHtml(t.customer_name || "—")}</td>
+      <td>${t.frequency}</td>
+      <td>${t.start_date}</td>
+      <td>${t.last_issued_date || "—"}</td>
+      <td>${t.next_due || "—"}</td>
+      <td>
+        <button type="button" class="ri-auto-send-btn linklike" data-id="${t.id}" data-auto-send="${t.auto_send}">${
+          t.auto_send ? "On" : "Off"
+        }</button>
+      </td>
+      <td>${t.active ? "Active" : "Paused"}</td>
+      <td>
+        <button type="button" class="ri-toggle-btn" data-id="${t.id}" data-active="${t.active}">${
+          t.active ? "Pause" : "Resume"
+        }</button>
+        <button type="button" class="ri-delete-btn linklike" data-id="${t.id}">Delete</button>
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".ri-toggle-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/recurring-invoices/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: btn.dataset.active !== "true" }),
+      });
+      loadRecurringInvoices();
+    })
+  );
+  body.querySelectorAll(".ri-auto-send-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/recurring-invoices/${btn.dataset.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_send: btn.dataset.autoSend !== "true" }),
+      });
+      loadRecurringInvoices();
+    })
+  );
+  body.querySelectorAll(".ri-delete-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Delete this recurring invoice?", "Invoices it already created stay — this only stops future ones.", {
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
+      await apiFetch(`/api/recurring-invoices/${btn.dataset.id}`, { method: "DELETE" });
+      loadRecurringInvoices();
+    })
+  );
+}
+
+function riAsOf() {
+  const el = document.getElementById("ri-as-of");
+  if (!el.value) el.value = new Date().toISOString().slice(0, 10);
+  return el.value;
+}
+
+document.getElementById("ri-preview").addEventListener("click", async () => {
+  const data = await (await apiFetch(`/api/recurring-invoices/pending?as_of=${riAsOf()}`)).json();
+  const el = document.getElementById("recurring-invoice-run-status");
+  el.textContent = data.occurrences
+    ? `Would issue ${data.occurrences} invoice${data.occurrences === 1 ? "" : "s"}: ${data.items
+        .map((i) => `${i.name} x${i.periods.length}${i.auto_send ? " (auto-sends)" : ""}`)
+        .join(", ")}.`
+    : "Nothing due through that date.";
+});
+
+document.getElementById("recurring-invoice-run-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const el = document.getElementById("recurring-invoice-run-status");
+  const res = await apiFetch("/api/recurring-invoices/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ as_of: riAsOf() }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await alertDialog("Couldn't run those invoices", parsed.detail || "Something went wrong.");
+    return;
+  }
+  const sentCount = parsed.issued.filter((i) => i.sent).length;
+  const bits = [`Issued ${parsed.issued.length} invoice${parsed.issued.length === 1 ? "" : "s"} (${fmtMoney(parsed.total)}).`];
+  if (sentCount) bits.push(`${sentCount} auto-sent.`);
+  const sendFailures = parsed.issued.filter((i) => i.send_error);
+  if (sendFailures.length) {
+    bits.push(
+      `Created as drafts instead of sending: ${sendFailures.map((i) => `${i.invoice_number} (${i.send_error})`).join("; ")}`
+    );
+  }
+  if (parsed.skipped.length) bits.push(`Skipped: ${parsed.skipped.map((s) => `${s.name} (${s.reason})`).join("; ")}`);
+  el.textContent = bits.join(" ");
+  invalidateCache("__customer_invoices__");
+  loadCustomerInvoices();
+  loadRecurringInvoices();
+});
 
 // Where a customer payment can land. Asset accounts, minus Accounts
 // Receivable itself -- depositing into AR posts Debit AR / Credit AR, which
