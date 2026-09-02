@@ -118,6 +118,89 @@ test("the demo's close suggestions have something real to surface", async () => 
   expect(types).toContain("undepreciated_asset");
 });
 
+// Until this the demo's entire Accounting section ran on raw journal
+// entries disconnected from the Documents tab, and Receivables, Payroll,
+// Equity, and Income Tax were all completely empty -- a visitor exploring
+// any of those tabs found nothing, despite the features being real. This
+// covers every one of those additions having real, current rows to show.
+test("the demo's real AP flow ties the Documents tab's bills to the books", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const vendors = await request(app).get("/api/vendors").set(headers);
+  expect(vendors.body.items.length).toBeGreaterThanOrEqual(2);
+  const pinehurst = vendors.body.items.find((v) => v.name === "Pinehurst Office Supply");
+  expect(pinehurst.early_pay_discount_pct).toBeGreaterThan(0);
+
+  const checks = await request(app).get("/api/written-checks").set(headers);
+  expect(checks.body.items.length).toBeGreaterThan(0);
+
+  const aging = await request(app).get("/api/reports/ap-aging").set(headers);
+  expect(aging.body.totals.total).toBeGreaterThan(0);
+
+  const purchases = await request(app).get("/api/journal-entries?journal=purchases").set(headers);
+  expect(purchases.body.items.length).toBeGreaterThan(0);
+
+  const cashPayments = await request(app).get("/api/journal-entries?journal=cash_payments").set(headers);
+  expect(cashPayments.body.items.some((e) => e.source === "bill_payment")).toBe(true);
+});
+
+test("the demo's Receivables tab has real customers and invoices across every status", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const customers = await request(app).get("/api/customers").set(headers);
+  expect(customers.body.items.length).toBeGreaterThanOrEqual(2);
+
+  const invoices = await request(app).get("/api/customer-invoices").set(headers);
+  const statuses = new Set(invoices.body.items.map((i) => i.status));
+  expect(statuses.has("draft")).toBe(true);
+  expect(statuses.has("sent")).toBe(true);
+  expect(statuses.has("paid")).toBe(true);
+
+  const aging = await request(app).get("/api/reports/ar-aging").set(headers);
+  expect(aging.body.totals.total).toBeGreaterThan(0);
+
+  const sales = await request(app).get("/api/journal-entries?journal=sales").set(headers);
+  expect(sales.body.items.length).toBeGreaterThan(0);
+
+  const cashReceipts = await request(app).get("/api/journal-entries?journal=cash_receipts").set(headers);
+  expect(cashReceipts.body.items.some((e) => e.source === "customer_payment")).toBe(true);
+});
+
+test("the demo's Payroll tab has real employees and pay runs", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const employees = await request(app).get("/api/employees").set(headers);
+  expect(employees.body.length).toBeGreaterThanOrEqual(2);
+
+  const runs = await request(app).get("/api/payroll-runs").set(headers);
+  expect(runs.body.length).toBeGreaterThan(0);
+  expect(runs.body[0].net_pay).toBeGreaterThan(0);
+});
+
+test("the demo's Equity tab has real transactions, not just a balance with nothing behind it", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const transactions = await request(app).get("/api/equity/transactions").set(headers);
+  const types = new Set(transactions.body.items.map((t) => t.type));
+  expect(types.has("contribution")).toBe(true);
+  expect(types.has("distribution")).toBe(true);
+});
+
+test("the demo's Income Tax tab shows an accrued provision and a partial payment", async () => {
+  const login = await request(app).post("/api/demo/login").send({});
+  const headers = authHeader(login.body.access_token);
+
+  const asOf = new Date().toISOString().slice(0, 10);
+  const provision = await request(app).get(`/api/income-tax/provision?as_of=${asOf}&rate_percent=21`).set(headers);
+  expect(provision.status).toBe(200);
+  expect(provision.body.already_posted).toBeGreaterThan(0);
+  expect(provision.body.payable).toBeGreaterThan(0);
+});
+
 // Kept last, same reasoning as auth.test.js's rate-limit tests -- exhausts
 // the shared per-file limiter state, so nothing after it needs a fresh call.
 test("demo login rate limits after repeated attempts from the same IP", async () => {
