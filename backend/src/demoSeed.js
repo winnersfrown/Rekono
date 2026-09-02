@@ -37,9 +37,21 @@ import {
   Account,
   ClosePeriod,
   CloseTask,
+  Vendor,
+  Customer,
+  CustomerInvoice,
+  CustomerInvoiceLine,
+  CustomerPayment,
+  Employee,
 } from "./models/index.js";
-import { postJournalEntry, seedDefaultChartOfAccounts } from "./ledger.js";
+import { postInvoiceApproval, postJournalEntry, seedDefaultChartOfAccounts } from "./ledger.js";
 import { DEFAULT_CLOSE_TASKS } from "./routes/close.js";
+import { addDays, nextInvoiceNumber, postCustomerInvoice, postCustomerPayment, refreshInvoiceStatus } from "./accountsReceivable.js";
+import { recordBillPayment } from "./accountsPayable.js";
+import { writeCheck } from "./writtenChecks.js";
+import { recordPayrollRun } from "./payroll.js";
+import { recordEquityTransaction } from "./equity.js";
+import { recordProvision, recordTaxPayment } from "./incomeTax.js";
 
 // ---- minimal hand-rolled single-page PDF builder ----
 // No PDF library dependency for a handful of lines of Helvetica text --
@@ -422,7 +434,12 @@ export async function seedDemoOrg() {
     overallConfidence: 0.58,
   });
 
-  await seedLedger(org, owner);
+  const { byCode, openingDate } = await seedLedger(org, owner);
+  await seedEquity(org, owner, byCode, openingDate);
+  await seedVendorBillsAndPayments(org, owner, invoiceAcme, invoiceGlobex, byCode);
+  await seedCustomersAndInvoices(org, owner, byCode);
+  await seedPayroll(org, owner, byCode);
+  await seedIncomeTax(org, owner);
   await seedClosePeriod(org, owner);
   await seedNetWorth(owner);
 
@@ -471,9 +488,15 @@ async function seedLedger(org, owner) {
   // A real org adds them; posting rent to "Other" instead would make the
   // demo's own close suggestion ("Rent posted in 5 of the last 6 months")
   // read as nonsense.
+  // Payroll needs its own three accounts too -- nothing in the default
+  // chart or EXPENSE_CATEGORIES models wages at all, since the demo (like
+  // any org before it adds employees) starts as an all-contractor company.
   await Account.bulkCreate([
     { orgId: org.id, code: "1500", name: "Equipment", type: "asset" },
     { orgId: org.id, code: "5080", name: "Rent", type: "expense" },
+    { orgId: org.id, code: "5090", name: "Wages Expense", type: "expense" },
+    { orgId: org.id, code: "5095", name: "Payroll Tax Expense", type: "expense" },
+    { orgId: org.id, code: "2050", name: "Payroll Liabilities", type: "liability" },
   ]);
 
   const accounts = await Account.findAll({ where: { orgId: org.id }, raw: true });
@@ -483,18 +506,17 @@ async function seedLedger(org, owner) {
   const ar = byCode["1100"];
   const revenue = byCode["4900"];
   const cogs = byCode["5000"];
-  const equity = byCode["3000"];
 
   const post = (entryDate, memo, lines) =>
     postJournalEntry(org.id, { entryDate, memo, source: "manual", postedByUserId: owner.id, lines });
 
-  // Opening capital, dated before the reporting window so it lands on the
-  // balance sheet without distorting any month's income statement.
+  // Dated before the reporting window so the opening entries below land on
+  // the balance sheet without distorting any month's income statement.
+  // The founder contribution itself is posted by seedEquity as a real
+  // EquityTransaction, not a raw entry here, so the Equity tab has a real
+  // row to show instead of a balance with nothing behind it.
   const opening = monthsAgo(DEMO_MONTHS);
-  await post(isoDay(opening, 1), "Founder capital contribution", [
-    { accountId: cash, debitCents: 25_000_00 },
-    { accountId: equity, creditCents: 25_000_00 },
-  ]);
+  const openingDate = isoDay(opening, 1);
 
   // A fixed asset with nothing depreciating it, which is one of the two
   // things closeAutomation.js looks for -- so the Close tab's suggestions
@@ -560,6 +582,254 @@ async function seedLedger(org, owner) {
         { accountId: cash, creditCents: cents },
       ]);
     }
+  }
+
+  return { byCode, openingDate };
+}
+
+// The founder contribution as a real EquityTransaction (equity.js) rather
+// than the raw manual entry seedLedger used to post -- same amount, same
+// date, so the balance sheet doesn't move, but now the Equity tab and the
+// Statement of Stockholders' Equity have a real row to show. A modest
+// owner draw partway through the window does the same for Distributions,
+// and gives the cash payments journal an equity_distribution row to show
+// alongside the bill payments and payroll it already has.
+async function seedEquity(org, owner, byCode, openingDate) {
+  const cash = byCode["1000"];
+
+  await recordEquityTransaction(
+    org.id,
+    { type: "contribution", transactionDate: openingDate, amountCents: 25_000_00, cashAccountId: cash },
+    { postedByUserId: owner.id }
+  );
+
+  await recordEquityTransaction(
+    org.id,
+    { type: "distribution", transactionDate: isoDay(monthsAgo(2), 20), amountCents: 6_000_00, cashAccountId: cash },
+    { postedByUserId: owner.id }
+  );
+}
+
+// Ties two of the AP-automation documents seeded above to the real ledger:
+// approving them for real (ledger.js's postInvoiceApproval) instead of
+// leaving them as rows the Documents tab shows but the books never heard
+// about -- before this, the entire Accounting section ran on a separate,
+// disconnected set of raw journal entries and nothing in Payables ever
+// touched it. Pinehurst gets early-payment terms and the demo actually
+// takes the discount on a written check, so the Purchases and Cash
+// Payments journals, AP Aging, Written Checks, and Vendors tabs all have
+// real, current data instead of reading empty.
+async function seedVendorBillsAndPayments(org, owner, invoiceAcme, invoiceGlobex, byCode) {
+  await Vendor.create({
+    orgId: org.id,
+    name: "Pinehurst Office Supply",
+    paymentTermsDays: 30,
+    earlyPayDiscountPct: 2,
+    earlyPayDiscountDays: 10,
+  });
+  await Vendor.create({ orgId: org.id, name: "Ridgeline Cloud Services", paymentTermsDays: 30 });
+
+  await postInvoiceApproval(invoiceAcme);
+  await postInvoiceApproval(invoiceGlobex);
+
+  const cash = byCode["1000"];
+  const totalAcmeCents = Math.round(invoiceAcme.total * 100);
+  const discountCents = Math.round(totalAcmeCents * 0.02); // the full 2% -- paid inside the 10-day window
+  await writeCheck(org.id, {
+    invoiceId: invoiceAcme.id,
+    checkNumber: "1024",
+    payeeName: invoiceAcme.vendorName,
+    checkDate: daysFromNow(-8),
+    amountCents: totalAcmeCents - discountCents,
+    discountCents,
+    paymentAccountId: cash,
+    postedByUserId: owner.id,
+  });
+
+  // Partial payment on the other bill, so AP Aging has a real outstanding
+  // balance to show -- a demo where every bill is either untouched or
+  // fully settled doesn't demonstrate what that report is for.
+  await recordBillPayment(invoiceGlobex, {
+    amountCents: 3_000_00,
+    paymentDate: daysFromNow(-2),
+    paymentAccountId: cash,
+    postedByUserId: owner.id,
+  });
+}
+
+// Two customers and a handful of AR invoices across every lifecycle stage
+// -- draft (not on the books yet), sent and overdue, sent and partially
+// paid, sent and fully paid -- posted through the real AR flow
+// (accountsReceivable.js) rather than the raw revenue entries seedLedger
+// posts. Receivables was the one section of the demo with nothing in it
+// at all: no customers, no AR aging, nothing in the Sales or Cash Receipts
+// journals.
+async function seedCustomersAndInvoices(org, owner, byCode) {
+  const revenue = byCode["4900"];
+  const cash = byCode["1000"];
+
+  const fernhollow = await Customer.create({
+    orgId: org.id,
+    name: "Fernhollow Media",
+    email: "ap@fernhollowmedia.com",
+    paymentTermsDays: 30,
+  });
+  const brightpoint = await Customer.create({
+    orgId: org.id,
+    name: "Brightpoint Analytics",
+    email: "billing@brightpointanalytics.com",
+    paymentTermsDays: 15,
+  });
+
+  async function draftInvoice(customer, { issueDate, dueDate, description, amount }) {
+    const totalCents = Math.round(amount * 100);
+    const invoice = await CustomerInvoice.create({
+      orgId: org.id,
+      customerId: customer.id,
+      invoiceNumber: await nextInvoiceNumber(org.id),
+      issueDate,
+      dueDate: dueDate || addDays(issueDate, customer.paymentTermsDays),
+      totalCents,
+      status: "draft",
+    });
+    await CustomerInvoiceLine.create({
+      customerInvoiceId: invoice.id,
+      revenueAccountId: revenue,
+      description,
+      quantity: 1,
+      unitPriceCents: totalCents,
+      amountCents: totalCents,
+      position: 0,
+    });
+    return invoice;
+  }
+
+  async function sendInvoice(invoice, customer) {
+    await postCustomerInvoice(
+      { ...invoice.get(), customerName: customer.name },
+      [{ revenueAccountId: revenue, amountCents: invoice.totalCents }],
+      { postedByUserId: owner.id }
+    );
+    invoice.status = "sent";
+    invoice.sentAt = new Date();
+    await invoice.save();
+    return invoice;
+  }
+
+  async function pay(invoice, amountCents, paymentDate) {
+    const payment = await CustomerPayment.create({
+      orgId: org.id,
+      customerInvoiceId: invoice.id,
+      depositAccountId: cash,
+      paymentDate,
+      amountCents,
+    });
+    await postCustomerPayment(payment, invoice, { postedByUserId: owner.id });
+    await refreshInvoiceStatus(invoice);
+  }
+
+  // Fully paid, on time -- the clean case.
+  const paidInFull = await sendInvoice(
+    await draftInvoice(fernhollow, { issueDate: daysFromNow(-40), description: "Q3 retainer -- strategy & analytics", amount: 6200 }),
+    fernhollow
+  );
+  await pay(paidInFull, paidInFull.totalCents, daysFromNow(-32));
+
+  // Sent, partially paid -- AR still carries a real outstanding balance.
+  const partiallyPaid = await sendInvoice(
+    await draftInvoice(fernhollow, { issueDate: daysFromNow(-18), description: "October ad campaign management", amount: 8400 }),
+    fernhollow
+  );
+  await pay(partiallyPaid, 4_000_00, daysFromNow(-5));
+
+  // Sent, untouched, and past due -- gives the AR aging report a bucket
+  // beyond "current" to show.
+  await sendInvoice(
+    await draftInvoice(brightpoint, {
+      issueDate: daysFromNow(-70),
+      dueDate: daysFromNow(-40),
+      description: "Data pipeline audit",
+      amount: 3150,
+    }),
+    brightpoint
+  );
+
+  // Still a draft -- hasn't hit the books, which is the point: it proves a
+  // draft really doesn't touch revenue or receivables until sent.
+  await draftInvoice(brightpoint, { issueDate: daysFromNow(-1), description: "Q4 analytics dashboard build", amount: 5000 });
+}
+
+// Two employees and a couple of pay periods, posted through the real
+// payroll flow (payroll.js's recordPayrollRun) -- individual employees,
+// full tax withholding, and the employer's own payroll tax cost, so the
+// Payroll tab (previously empty) and the cash payments journal both have
+// something real.
+async function seedPayroll(org, owner, byCode) {
+  const alex = await Employee.create({ orgId: org.id, name: "Alex Rivera" });
+  const jordan = await Employee.create({ orgId: org.id, name: "Jordan Lee" });
+
+  const cash = byCode["1000"];
+  const wages = byCode["5090"];
+  const payrollTax = byCode["5095"];
+  const liabilities = byCode["2050"];
+
+  for (const monthOffset of [1, 0]) {
+    for (const [employee, grossCents] of [
+      [alex, 6_500_00],
+      [jordan, 5_800_00],
+    ]) {
+      const federal = Math.round(grossCents * 0.12);
+      const state = Math.round(grossCents * 0.04);
+      const ficaEmployee = Math.round(grossCents * 0.0765);
+      const ficaEmployer = ficaEmployee;
+      const unemployment = Math.round(grossCents * 0.006);
+
+      await recordPayrollRun(
+        org.id,
+        {
+          employeeId: employee.id,
+          payDate: isoDay(monthsAgo(monthOffset), 15),
+          grossWagesCents: grossCents,
+          federalTaxWithheldCents: federal,
+          stateTaxWithheldCents: state,
+          ficaEmployeeWithheldCents: ficaEmployee,
+          otherDeductionsCents: 0,
+          employerFicaMatchCents: ficaEmployer,
+          employerUnemploymentTaxCents: unemployment,
+          paymentAccountId: cash,
+          wagesExpenseAccountId: wages,
+          payrollTaxExpenseAccountId: payrollTax,
+          liabilityAccountId: liabilities,
+        },
+        { postedByUserId: owner.id, employeeName: employee.name }
+      );
+    }
+  }
+}
+
+// One provision at a plausible effective rate, plus a partial payment
+// against it -- so the Income Tax tab shows both an accrued amount and a
+// remaining payable instead of reading as a feature nobody has used yet.
+// Run last, after every other revenue- and expense-affecting seed, so the
+// provision is computed against the complete picture rather than a
+// partial one.
+async function seedIncomeTax(org, owner) {
+  const asOf = new Date().toISOString().slice(0, 10);
+  const { to_post: toPost, provision } = await recordProvision(
+    org.id,
+    { asOf, ratePercent: 21 },
+    { postedByUserId: owner.id }
+  );
+  if (toPost <= 0) return;
+
+  const accounts = await Account.findAll({ where: { orgId: org.id }, raw: true });
+  const cash = accounts.find((a) => a.code === "1000").id;
+  const paymentCents = Math.round(provision * 100 * 0.4); // paid roughly 40% of what's accrued so far
+  if (paymentCents > 0) {
+    // Dated the same day as the provision, never before it -- paying
+    // against tax that isn't accrued as of the payment date yet is exactly
+    // the LedgerError this would otherwise hit.
+    await recordTaxPayment(org.id, { amountCents: paymentCents, paymentDate: asOf, cashAccountId: cash }, { postedByUserId: owner.id });
   }
 }
 

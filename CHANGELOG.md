@@ -15,8 +15,33 @@ settled for cash+discount sat at "$X outstanding" on the Bill Payments tab
 forever, and its own detail page called it "partial" rather than "paid".
 Both now count amount+discount, matching the shared `amountPaidCents` the
 rest of the app already used correctly. Caught by actually watching the
-richer demo data below flow through every screen rather than just the
-report that happened to already be right.
+richer demo data added next (v1.66) flow through every screen, rather than
+just the report that happened to already be right.
+
+## v1.66
+
+Every accounting feature shipped since v1.56 -- real AR invoicing, AP
+vendor bills with early-payment discounts, payroll, equity events, income
+tax -- was invisible in the investor demo. Receivables, Payroll, Equity,
+and Income Tax read as completely empty tabs, and the Documents tab's
+sample bills were never actually posted to the books, so approving one in
+the demo did nothing to Payables or the ledger. The demo's entire
+Accounting section ran on a separate set of raw journal entries with no
+connection to the AP-automation documents sitting right next to it.
+
+Adds, all posted through the same real functions a customer's data goes
+through (never raw inserted rows, so nothing can post out of balance):
+two vendor bills approved for real and paid -- one via a written check
+that takes its vendor's 2%/10-day early-payment discount, the other
+partially, so AP Aging has a real outstanding balance to show; two
+customers with invoices across every lifecycle stage (draft, sent and
+overdue, sent and partially paid, sent and fully paid), populating AR
+Aging and the Sales/Cash Receipts journals for the first time; two
+employees with a couple of pay periods; the founder contribution and an
+owner distribution as real equity transactions instead of one raw entry;
+and an income tax provision with a partial payment against it. A visitor
+clicking through any tab in the demo now finds real, current data instead
+of an empty state that undersells what the product actually does.
 
 ## v1.64
 
