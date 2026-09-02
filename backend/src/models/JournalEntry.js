@@ -27,6 +27,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "stock_compensation", // ASC 718: a month of an equity award's cost was earned
   "income_tax", // the tax provision accrued -- no cash moves, so this stays out of the cash journals
   "income_tax_payment", // cash out: the accrued tax was actually paid
+  "sales_tax_remittance", // cash out: sales tax collected on invoices was paid to the state
   "payroll_run", // gross wages, withholding, and the employer's own payroll tax cost
   "void",
 ];

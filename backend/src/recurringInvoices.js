@@ -14,7 +14,16 @@
 import { LedgerError, centsToDollars } from "./ledger.js";
 import { addDays, nextInvoiceNumber, sendCustomerInvoice } from "./accountsReceivable.js";
 import { addMonthsClamped, dueDates } from "./recurringEntries.js";
-import { Account, Customer, CustomerInvoice, CustomerInvoiceLine, RecurringInvoice, RecurringInvoiceLine } from "./models/index.js";
+import { computeInvoiceTaxCents } from "./salesTax.js";
+import {
+  Account,
+  Customer,
+  CustomerInvoice,
+  CustomerInvoiceLine,
+  Organization,
+  RecurringInvoice,
+  RecurringInvoiceLine,
+} from "./models/index.js";
 
 export { addMonthsClamped, dueDates };
 
@@ -53,9 +62,13 @@ export async function issueOccurrence(template, lines, issueDate, { postedByUser
     quantity: l.quantity,
     unitPriceCents: l.unitPriceCents,
     amountCents: Math.round(l.unitPriceCents * l.quantity),
+    taxable: l.taxable !== false,
     position: i,
   }));
-  const totalCents = builtLines.reduce((sum, l) => sum + l.amountCents, 0);
+  const linesTotalCents = builtLines.reduce((sum, l) => sum + l.amountCents, 0);
+
+  const org = await Organization.findOne({ where: { id: template.orgId } });
+  const taxCents = customer.taxExempt ? 0 : computeInvoiceTaxCents(org?.salesTaxRatePercent, builtLines);
 
   const invoice = await CustomerInvoice.create({
     orgId: template.orgId,
@@ -64,7 +77,8 @@ export async function issueOccurrence(template, lines, issueDate, { postedByUser
     issueDate,
     dueDate: addDays(issueDate, customer.paymentTermsDays),
     memo: template.memo || template.name,
-    totalCents,
+    totalCents: linesTotalCents + taxCents,
+    taxCents,
     status: "draft",
   });
   await CustomerInvoiceLine.bulkCreate(builtLines.map((l) => ({ ...l, customerInvoiceId: invoice.id })));

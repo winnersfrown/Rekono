@@ -54,6 +54,9 @@ export const RecurringInvoiceLine = sequelize.define(
     description: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
     quantity: { type: DataTypes.FLOAT, allowNull: false, defaultValue: 1 },
     unitPriceCents: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // Carried onto every real CustomerInvoiceLine an occurrence creates --
+    // see CustomerInvoiceLine.js's own comment on what this means.
+    taxable: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     position: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   },
   {

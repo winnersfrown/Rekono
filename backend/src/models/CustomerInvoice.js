@@ -38,6 +38,14 @@ export const CustomerInvoice = sequelize.define(
     // doesn't have to sum them, and revalidated against the lines
     // whenever the invoice is edited.
     totalCents: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+    // The sales tax portion of totalCents, denormalized alongside it for
+    // the same reason totalCents itself is: postCustomerInvoice needs an
+    // exact figure to validate its posting against without re-deriving it
+    // from the lines and the org's rate (which could have changed since
+    // this invoice was created) every time. Zero for a tax-exempt customer
+    // or an org that's never set a rate -- never null, so every reader can
+    // just add it without a null check.
+    taxCents: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
     memo: { type: DataTypes.STRING(512), allowNull: false, defaultValue: "" },
     sentAt: { type: DataTypes.DATE, allowNull: true },
   },

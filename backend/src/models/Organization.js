@@ -59,6 +59,13 @@ export const Organization = sequelize.define(
     // earnings (financialStatements.js).
     fiscalYearEndMonth: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 12 },
 
+    // The flat rate applied to a taxable invoice line's amount (see
+    // salesTax.js's computeInvoiceTaxCents). Null, not zero, when never
+    // configured -- an org that hasn't set a rate charges no tax at all,
+    // the same "nothing invented" stance incomeTax.js takes on its own
+    // rate, rather than a 0% default that would look deliberately set.
+    salesTaxRatePercent: { type: DataTypes.FLOAT, allowNull: true },
+
     // Business/Scale-only (see plans.js's riskBasedAutoApproval): when an
     // invoice would already have been fast-tracked as `extracted` (passes
     // the confidence bar, cross-check, not a duplicate/possible-multi), skip

@@ -23,6 +23,13 @@ export const Customer = sequelize.define(
     // Deactivated rather than deleted, same reasoning as Account.active --
     // a customer with historical invoices has to stay resolvable forever.
     active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+    // Government, non-profit, resale -- whatever the reason, no invoice for
+    // this customer ever charges sales tax, regardless of what any
+    // individual line is marked. Checked at invoice-creation time
+    // (routes/receivables.js), not baked into the line's own taxable flag,
+    // so a customer that later loses exempt status doesn't require going
+    // back and editing every line on every template that bills them.
+    taxExempt: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   {
     tableName: "customers",
