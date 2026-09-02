@@ -77,10 +77,17 @@ router.get("/api/bills", requireAuth, requireActivePlan, async (req, res, next) 
     });
 
     // One query for every payment in the org rather than one per bill.
-    const payments = await BillPayment.findAll({ where: { orgId }, attributes: ["invoiceId", "amountCents"], raw: true });
+    // Amount+discount both relieve the payable -- see amountPaidCents --
+    // so a bill paid with a discount has to sum both here too, or it never
+    // drops off this list's outstanding balance.
+    const payments = await BillPayment.findAll({
+      where: { orgId },
+      attributes: ["invoiceId", "amountCents", "discountCents"],
+      raw: true,
+    });
     const paidByInvoice = new Map();
     for (const p of payments) {
-      paidByInvoice.set(p.invoiceId, (paidByInvoice.get(p.invoiceId) || 0) + p.amountCents);
+      paidByInvoice.set(p.invoiceId, (paidByInvoice.get(p.invoiceId) || 0) + p.amountCents + (p.discountCents || 0));
     }
 
     const outstandingOnly = req.query.outstanding !== "false";
