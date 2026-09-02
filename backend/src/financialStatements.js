@@ -19,7 +19,7 @@ import { INCOME_TAX_EXPENSE_SUBTYPE } from "./incomeTax.js";
 // being re-derived per report.
 const DEBIT_NORMAL_TYPES = new Set(["asset", "expense"]);
 
-function normalBalanceCents(type, debitCents, creditCents) {
+export function normalBalanceCents(type, debitCents, creditCents) {
   return DEBIT_NORMAL_TYPES.has(type) ? debitCents - creditCents : creditCents - debitCents;
 }
 

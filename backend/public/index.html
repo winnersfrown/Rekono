@@ -1612,10 +1612,27 @@
             </form>
           </div>
 
-          <table>
-            <thead><tr><th>Pay date</th><th>Employee</th><th>Gross wages</th><th>Net pay</th><th>Employer tax</th><th></th></tr></thead>
-            <tbody id="payroll-runs-body"></tbody>
-          </table>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pay date</th>
+                  <th>Employee</th>
+                  <th>Gross wages</th>
+                  <th>Federal tax</th>
+                  <th>State tax</th>
+                  <th>FICA (employee)</th>
+                  <th>Other deductions</th>
+                  <th>Net pay</th>
+                  <th>Employer FICA match</th>
+                  <th>Unemployment tax</th>
+                  <th>Employer tax total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="payroll-runs-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="tab-trialbalance" class="tab-panel">
@@ -2388,6 +2405,26 @@
         <kbd class="command-palette-esc">Esc</kbd>
       </div>
       <div id="command-palette-results" class="command-palette-results"></div>
+    </div>
+  </div>
+
+  <!-- The drill-down behind every account amount on the trial balance,
+       income statement, and balance sheet -- "how was this calculated"
+       answered by listing the actual posted lines that sum to it. -->
+  <div id="account-ledger-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card ledger-modal-card">
+      <button type="button" id="account-ledger-close" class="modal-close" aria-label="Close">&times;</button>
+      <h2 id="account-ledger-title">Account</h2>
+      <p class="hint" id="account-ledger-period"></p>
+      <div class="ledger-modal-scroll">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Memo</th><th>Journal</th><th>Other account(s)</th><th>Debit</th><th>Credit</th><th>Balance</th></tr>
+          </thead>
+          <tbody id="account-ledger-body"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="account-ledger-summary"></p>
     </div>
   </div>
 

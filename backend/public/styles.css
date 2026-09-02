@@ -782,6 +782,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 /* The line table can outgrow the panel on a narrow window (five columns on
    the invoice), so it scrolls inside its own box instead of widening the
    page. */
+.table-scroll { overflow-x: auto; }
 .line-item-table { overflow-x: auto; }
 .line-item-table table { margin: 0; min-width: 560px; }
 /* A bare `input[type=date]` sizes itself well wider than "mm/dd/yyyy" needs.
@@ -1699,6 +1700,28 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .command-palette-item svg { flex: none; opacity: 0.75; color: var(--muted); }
 .command-palette-item.is-selected { background: var(--accent-wash); }
 .command-palette-item.is-selected svg { opacity: 1; color: var(--accent-text); }
+
+/* ---------- account ledger drill-down ---------- */
+.ledger-modal-card {
+  max-width: 900px;
+  width: 92vw;
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-rise);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  padding: 1.75rem;
+}
+.ledger-modal-card h2 { margin: 0 0 var(--sp-2xs); font-size: 1.2rem; }
+.ledger-modal-scroll { overflow-y: auto; overflow-x: auto; margin-top: var(--sp-sm); }
+.ledger-modal-scroll table { width: 100%; min-width: 620px; }
+.ledger-modal-scroll table th:nth-child(1), .ledger-modal-scroll table td:nth-child(1) { white-space: nowrap; }
+.ledger-modal-scroll table td:nth-child(5),
+.ledger-modal-scroll table td:nth-child(6),
+.ledger-modal-scroll table td:nth-child(7) { text-align: right; white-space: nowrap; }
+#account-ledger-summary { margin-top: var(--sp-sm); text-align: right; }
 
 /* ---------- account menu ---------- */
 .topbar-account-group { flex: none; }

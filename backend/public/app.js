@@ -5216,7 +5216,7 @@ async function loadPayrollRuns() {
 function renderPayrollRuns(runs) {
   const body = document.getElementById("payroll-runs-body");
   if (!runs.length) {
-    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No pay runs recorded yet.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="table-empty-row">No pay runs recorded yet.</td></tr>`;
     return;
   }
   body.innerHTML = runs
@@ -5226,7 +5226,13 @@ function renderPayrollRuns(runs) {
       <td>${r.pay_date}</td>
       <td>${escapeHtml(r.employee_name)}</td>
       <td>${fmtMoney(r.gross_wages)}</td>
+      <td>${fmtMoney(r.federal_tax_withheld)}</td>
+      <td>${fmtMoney(r.state_tax_withheld)}</td>
+      <td>${fmtMoney(r.fica_employee_withheld)}</td>
+      <td>${fmtMoney(r.other_deductions)}</td>
       <td>${fmtMoney(r.net_pay)}</td>
+      <td>${fmtMoney(r.employer_fica_match)}</td>
+      <td>${fmtMoney(r.employer_unemployment_tax)}</td>
       <td>${fmtMoney(r.employer_tax_total)}</td>
       <td><button type="button" class="pr-void-btn linklike" data-id="${r.id}">Void</button></td>
     </tr>
@@ -5265,7 +5271,7 @@ function renderTrialBalance(data) {
       (a) => `
     <tr>
       <td>${escapeHtml(a.code)}</td>
-      <td>${escapeHtml(a.name)}</td>
+      <td>${accountDrillButton(a.account_id, a.name, { to: data.as_of })}</td>
       <td>${a.type}</td>
       <td>${a.debit ? fmtMoney(a.debit) : ""}</td>
       <td>${a.credit ? fmtMoney(a.credit) : ""}</td>
@@ -5286,12 +5292,88 @@ function renderTrialBalance(data) {
 // the backend) -- nothing here creates or stores a statement, so there's
 // no cache to invalidate on a mutation the way the ledger tabs above have.
 
-function statementAccountRows(accounts) {
+// `period` is {from, to} (either may be omitted) -- passed straight through
+// to the account-ledger drill-down so it opens showing exactly the window
+// this row's amount was computed over.
+function statementAccountRows(accounts, period = {}) {
   if (!accounts.length) return `<tr><td colspan="3" class="table-empty-row">No activity in this period.</td></tr>`;
   return accounts
-    .map((a) => `<tr><td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.name)}</td><td>${fmtMoney(a.amount)}</td></tr>`)
+    .map(
+      (a) => `<tr><td>${escapeHtml(a.code)}</td><td>${accountDrillButton(a.account_id, a.name, period)}</td><td>${fmtMoney(a.amount)}</td></tr>`
+    )
     .join("");
 }
+
+function accountDrillButton(accountId, name, { from = "", to = "" } = {}) {
+  return `<button type="button" class="linklike account-drill-btn" data-account-id="${escapeHtml(accountId)}" data-account-name="${escapeHtml(name)}" data-from="${escapeHtml(from || "")}" data-to="${escapeHtml(to || "")}">${escapeHtml(name)}</button>`;
+}
+
+// ---- Account ledger drill-down ----
+// "How was this number calculated" for any amount on the trial balance,
+// income statement, or balance sheet: the actual posted lines that sum to
+// it, oldest first, with a running balance. See routes/accounts.js's
+// GET /api/accounts/:id/ledger.
+
+async function openAccountLedger(accountId, accountName, from, to) {
+  const modal = document.getElementById("account-ledger-modal");
+  document.getElementById("account-ledger-title").textContent = accountName;
+  document.getElementById("account-ledger-period").textContent = "Loading…";
+  document.getElementById("account-ledger-body").innerHTML = "";
+  document.getElementById("account-ledger-summary").textContent = "";
+  modal.style.display = "flex";
+
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const query = params.toString();
+  const res = await apiFetch(`/api/accounts/${accountId}/ledger${query ? `?${query}` : ""}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    document.getElementById("account-ledger-period").textContent = data.detail || "Couldn't load this account's activity.";
+    return;
+  }
+
+  document.getElementById("account-ledger-period").textContent =
+    from && to ? `Activity from ${from} through ${to}.` : to ? `Everything posted through ${to}.` : "Everything posted to date.";
+
+  document.getElementById("account-ledger-body").innerHTML = data.rows.length
+    ? data.rows
+        .map(
+          (r) => `
+    <tr>
+      <td>${r.entry_date}</td>
+      <td>${escapeHtml(r.memo || "—")}</td>
+      <td>${JOURNAL_ENTRY_SOURCE_LABELS[r.source] || r.source}</td>
+      <td>${escapeHtml(r.other_accounts.join(", ") || "—")}</td>
+      <td>${r.debit ? fmtMoney(r.debit) : ""}</td>
+      <td>${r.credit ? fmtMoney(r.credit) : ""}</td>
+      <td>${fmtMoney(r.balance)}</td>
+    </tr>`
+        )
+        .join("")
+    : `<tr><td colspan="7" class="table-empty-row">No activity in this window.</td></tr>`;
+
+  document.getElementById("account-ledger-summary").textContent =
+    `Opening balance ${fmtMoney(data.opening_balance)} -- closing balance ${fmtMoney(data.closing_balance)}.`;
+}
+
+function closeAccountLedger() {
+  document.getElementById("account-ledger-modal").style.display = "none";
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".account-drill-btn");
+  if (btn) {
+    openAccountLedger(btn.dataset.accountId, btn.dataset.accountName, btn.dataset.from || null, btn.dataset.to || null);
+  }
+});
+document.getElementById("account-ledger-close").addEventListener("click", closeAccountLedger);
+document.getElementById("account-ledger-modal").addEventListener("click", (e) => {
+  if (e.target.id === "account-ledger-modal") closeAccountLedger();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.getElementById("account-ledger-modal").style.display === "flex") closeAccountLedger();
+});
 
 // The period inputs default to the same window the API does when asked for
 // nothing (year to date), so what's shown in the form always matches what's
@@ -5316,7 +5398,8 @@ async function loadProfitAndLoss() {
 }
 
 function renderProfitAndLoss(data) {
-  document.getElementById("pnl-revenue-body").innerHTML = statementAccountRows(data.revenue.accounts);
+  const period = { from: data.from, to: data.to };
+  document.getElementById("pnl-revenue-body").innerHTML = statementAccountRows(data.revenue.accounts, period);
   document.getElementById("pnl-revenue-total").textContent = fmtMoney(data.revenue.total);
 
   // The cost-of-revenue block only appears once something is actually
@@ -5327,12 +5410,12 @@ function renderProfitAndLoss(data) {
   const hasCogs = cogs.accounts.length > 0;
   document.getElementById("pnl-cogs-section").hidden = !hasCogs;
   if (hasCogs) {
-    document.getElementById("pnl-cogs-body").innerHTML = statementAccountRows(cogs.accounts);
+    document.getElementById("pnl-cogs-body").innerHTML = statementAccountRows(cogs.accounts, period);
     document.getElementById("pnl-cogs-total").textContent = fmtMoney(cogs.total);
     document.getElementById("pnl-gross-profit").textContent = fmtMoney(data.gross_profit);
   }
 
-  document.getElementById("pnl-expenses-body").innerHTML = statementAccountRows(data.expenses.accounts);
+  document.getElementById("pnl-expenses-body").innerHTML = statementAccountRows(data.expenses.accounts, period);
   document.getElementById("pnl-expenses-total").textContent = fmtMoney(data.expenses.total);
 
   document.getElementById("pnl-operating-income").textContent = fmtMoney(data.operating_income);
@@ -5457,9 +5540,10 @@ async function loadBalanceSheet() {
 }
 
 function renderBalanceSheet(data) {
-  document.getElementById("bs-assets-body").innerHTML = statementAccountRows(data.assets.accounts);
+  const period = { to: data.as_of };
+  document.getElementById("bs-assets-body").innerHTML = statementAccountRows(data.assets.accounts, period);
   document.getElementById("bs-assets-total").textContent = fmtMoney(data.assets.total);
-  document.getElementById("bs-liabilities-body").innerHTML = statementAccountRows(data.liabilities.accounts);
+  document.getElementById("bs-liabilities-body").innerHTML = statementAccountRows(data.liabilities.accounts, period);
   document.getElementById("bs-liabilities-total").textContent = fmtMoney(data.liabilities.total);
 
   // Both earnings figures are appended as their own rows rather than being
@@ -5467,7 +5551,7 @@ function renderBalanceSheet(data) {
   // why they're derived instead of posted. Retained earnings is settled
   // history (prior fiscal years); current-year earnings is the year in
   // progress and reconciles to a P&L run over the same window.
-  const equityRows = statementAccountRows(data.equity.accounts).replace(
+  const equityRows = statementAccountRows(data.equity.accounts, period).replace(
     /<tr><td colspan="3" class="table-empty-row">.*?<\/tr>/,
     ""
   );

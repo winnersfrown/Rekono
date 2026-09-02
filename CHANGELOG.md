@@ -4,6 +4,21 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.62
+
+Every account amount on the trial balance, income statement, and balance
+sheet is now a link -- click it and a drill-down shows the actual posted
+journal lines that sum to it, oldest first, with a running balance, ending
+in the same total the report shows. There was previously no way to see
+that from the app itself; the only route was reading the raw journal
+entries tab and adding lines up by hand. New endpoint: `GET
+/api/accounts/:id/ledger` (optional `from`/`to`), reusing
+financialStatements.js's own normal-balance-by-account-type logic so the
+drill-down can't drift out of sync with what the reports actually compute.
+Each row also lists the other account(s) the entry touched, so a payroll
+run or bill payment reads as the transaction it was, not a bare debit or
+credit.
+
 ## v1.61
 
 A bookkeeping rule the special-purpose journals (v1.56) didn't fully
