@@ -44,31 +44,43 @@ function Workpaper() {
       <table className="w-full border-collapse text-[0.86rem]">
         <thead>
           <tr className="border-b border-rule-soft">
-            <th className="label px-lg py-sm text-left font-medium">Account</th>
-            <th className="label py-sm pr-md text-right font-medium">Debit</th>
-            <th className="label py-sm pr-lg text-right font-medium">Credit</th>
+            <th className="label px-md py-sm text-left font-medium">Account</th>
+            <th className="label py-sm pr-sm text-right font-medium">Debit</th>
+            <th className="label py-sm pr-md text-right font-medium">Credit</th>
           </tr>
         </thead>
         <tbody>
+          {/* max-w-0 w-full + truncate: the panel sits at a fixed 560px cap
+              on a wide screen but shares the row with the copy column from
+              768px up, and narrows further on a phone -- at both of the
+              narrow widths "Accounts Receivable" used to wrap to a second
+              line while the figures stayed put on the first, exactly the
+              kind of misalignment this artifact's whole thesis (a ledger
+              that ties out, precisely) can't afford. Truncating instead
+              keeps every row one line at any panel width; the padding is
+              fixed rather than widening past a breakpoint because the
+              panel's own width depends on the two-column grid, not the
+              viewport, so a viewport-keyed breakpoint re-tightens the
+              account column exactly when the panel is narrowest (~768px). */}
           {TRIAL_BALANCE.map((row) => (
             <tr key={row.code} className="border-b border-rule-soft">
-              <td className="px-lg py-sm">
+              <td className="max-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap px-md py-sm">
                 <span className="code mr-sm text-muted">{row.code}</span>
                 <span className="text-ink-soft">{row.name}</span>
               </td>
-              <td className="figures py-sm pr-md text-right text-ink">{row.debit}</td>
-              <td className="figures py-sm pr-lg text-right text-ink">{row.credit}</td>
+              <td className="figures py-sm pr-sm text-right text-ink">{row.debit}</td>
+              <td className="figures py-sm pr-md text-right text-ink">{row.credit}</td>
             </tr>
           ))}
           {/* The double rule under a total is a real convention, not
               decoration: it is how a ruled statement says "this line is
               the sum of everything above it and nothing is missing". */}
           <tr className="border-b-4 border-double border-ink/70">
-            <td className="px-lg py-sm">
+            <td className="px-md py-sm">
               <span className="label">Total</span>
             </td>
+            <td className="figures py-sm pr-sm text-right font-medium text-ink">745,220.00</td>
             <td className="figures py-sm pr-md text-right font-medium text-ink">745,220.00</td>
-            <td className="figures py-sm pr-lg text-right font-medium text-ink">745,220.00</td>
           </tr>
         </tbody>
       </table>
