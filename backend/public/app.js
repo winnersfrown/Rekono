@@ -292,16 +292,19 @@ document.querySelectorAll("[data-tab]").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-// "Add an account" from Home jumps to the real Chart of Accounts form
-// (code, and the full asset/liability/equity/revenue/expense type set) --
-// deliberately not the Net Worth widget's own simpler add-account form
-// just above, which only ever tracks personal assets/liabilities and has
-// no notion of code/equity/revenue/expense at all. Focusing the name
-// field on arrival means the click actually lands you ready to type,
-// not just on the right page.
-document.getElementById("dash-add-account-btn").addEventListener("click", () => {
-  setTimeout(() => document.getElementById("account-create-name")?.focus(), 0);
-});
+// "Add an account" from Home opens the real Chart of Accounts fields in a
+// modal -- name, code, and the full asset/liability/equity/revenue/expense
+// type set -- rather than navigating to another tab. The complaint this
+// answers was that adding an account *on the home page* was missing code,
+// equity, revenue and expenses; sending someone to a different page is a
+// workaround for that, not a fix, and it loses the place they were.
+//
+// Deliberately not the Net Worth widget's own form further down the page,
+// which tracks a personal asset or liability and has no notion of a code
+// or an income-statement account. That form previously shared the heading
+// "Add an account" with this button, which is how the two got conflated in
+// the first place; it now says "Add a net worth account".
+document.getElementById("dash-add-account-btn").addEventListener("click", openAccountModal);
 
 function fmtMoney(v) {
   if (v === null || v === undefined) return "—";
@@ -366,9 +369,11 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     const summary = uploaded ? `Uploaded ${uploaded} of ${files.length}. ` : "";
     statusEl.textContent = `${summary}Failed: ${failures.join("; ")}`;
   } else {
+    // No "open the review queue" link any more -- the queue is the rest of
+    // this same tab now, so the link would point at the page you're already
+    // looking at.
     const what = uploaded > 1 ? `Uploaded ${uploaded} documents` : "Uploaded";
-    statusEl.innerHTML = `${what} — queued for extraction. <button type="button" class="linklike" id="upload-goto-review">Open the review queue →</button>`;
-    document.getElementById("upload-goto-review").addEventListener("click", () => switchTab("review"));
+    statusEl.textContent = `${what} — queued for extraction. They'll appear in the review queue below as they finish.`;
   }
 
   fileInput.value = "";
@@ -474,7 +479,7 @@ const INVOICE_EMPTY_QUEUE_DETAIL = `
   <div class="empty-state">
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0-12 4 4m-4-4-4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
     <p class="hint">No invoices yet. Upload one to see it extracted, confidence-scored, and ready to review.</p>
-    <button type="button" data-tab="upload">Upload your first invoice</button>
+    <button type="button" data-tab="review">Upload your first invoice</button>
   </div>
 `;
 
@@ -504,7 +509,7 @@ function renderInvoices({ items: invoices, total }) {
     </tr>
   `).join("") || (
     isEmptyOrg
-      ? `<tr><td colspan='5' class='table-empty-row'>No invoices yet -- <button type="button" class="linklike" data-tab="upload">upload one</button> to get started.</td></tr>`
+      ? `<tr><td colspan='5' class='table-empty-row'>No invoices yet -- <button type="button" class="linklike" data-tab="review">upload one</button> to get started.</td></tr>`
       : "<tr><td colspan='5' class='table-empty-row'>No invoices match this filter.</td></tr>"
   );
 
@@ -4644,34 +4649,101 @@ function renderAccounts(data) {
   });
 }
 
-document.getElementById("account-create-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const statusEl = document.getElementById("account-create-status");
-  const nameInput = document.getElementById("account-create-name");
+// The one create path, shared by the Chart of Accounts form and the Home
+// modal. Both offer the same four fields, so the only thing worth having
+// twice is the markup -- two copies of the POST, the cache invalidation
+// and the reload is how one of them ends up quietly missing a step.
+// Returns an error string, or null on success.
+async function createAccount({ name, type, subtype, code }) {
   try {
     const res = await apiFetch("/api/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: nameInput.value,
-        type: document.getElementById("account-create-type").value,
-        subtype: document.getElementById("account-create-subtype").value,
-        code: document.getElementById("account-create-code").value,
-      }),
+      body: JSON.stringify({ name, type, subtype, code }),
     });
     const body = await res.json();
-    if (!res.ok) {
-      statusEl.textContent = body.detail || "Something went wrong.";
-      return;
-    }
-    statusEl.textContent = "";
-    e.target.reset();
+    if (!res.ok) return errorText(body.detail, "Something went wrong.");
     invalidateCache("__accounts__");
     invalidateCache("__journal_entry_accounts__");
     loadAccounts();
+    return null;
   } catch (err) {
-    statusEl.textContent = err.message || String(err);
+    return err.message || String(err);
   }
+}
+
+document.getElementById("account-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("account-create-status");
+  const error = await createAccount({
+    name: document.getElementById("account-create-name").value,
+    type: document.getElementById("account-create-type").value,
+    subtype: document.getElementById("account-create-subtype").value,
+    code: document.getElementById("account-create-code").value,
+  });
+  statusEl.textContent = error || "";
+  if (!error) e.target.reset();
+});
+
+// ---- "Add an account" modal (Home) ----
+
+async function openAccountModal() {
+  const form = document.getElementById("account-modal-form");
+  form.reset();
+  hideAccountModalError();
+  document.getElementById("account-modal").style.display = "flex";
+  document.getElementById("account-modal-name").focus();
+
+  // The taxonomy is only fetched when the Chart of Accounts tab opens, and
+  // reaching this modal from Home doesn't go through that tab -- so without
+  // this the Category dropdown offers nothing but "Uncategorized" until
+  // you've visited Chart of Accounts at least once this session. Cached, so
+  // it's a no-op every time after the first.
+  await loadAccountSubtypes();
+  // Populated from the selected type, same as the Chart of Accounts form --
+  // the category list is per-type, so a stale one would offer, say, "Cost
+  // of revenue" under an asset.
+  populateAccountModalSubtypes();
+}
+
+function closeAccountModal() {
+  document.getElementById("account-modal").style.display = "none";
+}
+
+function hideAccountModalError() {
+  const el = document.getElementById("account-modal-error");
+  el.textContent = "";
+  el.style.display = "none";
+}
+
+function populateAccountModalSubtypes() {
+  const type = document.getElementById("account-modal-type").value;
+  document.getElementById("account-modal-subtype").innerHTML = subtypeOptionsHtml(type, "");
+}
+
+document.getElementById("account-modal-type").addEventListener("change", populateAccountModalSubtypes);
+document.getElementById("account-modal-cancel").addEventListener("click", closeAccountModal);
+
+document.getElementById("account-modal-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  hideAccountModalError();
+  const error = await createAccount({
+    name: document.getElementById("account-modal-name").value,
+    type: document.getElementById("account-modal-type").value,
+    subtype: document.getElementById("account-modal-subtype").value,
+    code: document.getElementById("account-modal-code").value,
+  });
+  if (error) {
+    // Kept open on failure, with the typing intact, for the same reason
+    // saveCorrections returns before re-rendering: a duplicate code or a
+    // name clash is something you fix in the field you just filled in, not
+    // by reopening the form and starting again.
+    const el = document.getElementById("account-modal-error");
+    el.textContent = error;
+    el.style.display = "";
+    return;
+  }
+  closeAccountModal();
 });
 
 // Cached separately from __accounts__ above: the manual-entry form only
@@ -7676,7 +7748,7 @@ function renderVolumeChart(trend) {
   const total = trend.reduce((sum, d) => sum + d.count, 0);
 
   if (!total) {
-    el.innerHTML = `<p class="dash-empty">Nothing processed in the last 14 days. <button type="button" class="linklike" data-tab="upload">Upload a document</button> to get started.</p>`;
+    el.innerHTML = `<p class="dash-empty">Nothing processed in the last 14 days. <button type="button" class="linklike" data-tab="review">Upload a document</button> to get started.</p>`;
     el.querySelector("[data-tab]").addEventListener("click", (e) => switchTab(e.currentTarget.dataset.tab));
     return;
   }
@@ -8287,7 +8359,7 @@ function nwStartEdit(account) {
   document.getElementById("nw-category").value = account.category;
   document.getElementById("nw-balance").value = account.current_balance;
   document.getElementById("nw-notes").value = account.notes || "";
-  document.getElementById("nw-form-title").textContent = "Edit account";
+  document.getElementById("nw-form-title").textContent = "Edit net worth account";
   document.getElementById("nw-submit").textContent = "Save changes";
   document.getElementById("nw-cancel").style.display = "";
   document.getElementById("nw-name").focus();
@@ -8297,7 +8369,7 @@ function nwResetForm() {
   nwEditingId = null;
   document.getElementById("nw-form").reset();
   document.getElementById("nw-form-id").value = "";
-  document.getElementById("nw-form-title").textContent = "Add an account";
+  document.getElementById("nw-form-title").textContent = "Add a net worth account";
   document.getElementById("nw-submit").textContent = "Add account";
   document.getElementById("nw-cancel").style.display = "none";
   document.getElementById("nw-form-status").textContent = "";

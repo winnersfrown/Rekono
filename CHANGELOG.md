@@ -4,6 +4,62 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.59
+
+Two "Website UI/Design" items reported as still broken after v1.56 closed
+them. Both reports were right; v1.56 had answered adjacent questions.
+
+**"Add an account" on Home now adds an account.** The complaint was that it
+was missing account code, equity, revenue and expenses. v1.56 read that as
+being about the dashboard's quick-action button and pointed it at the Chart
+of Accounts tab -- but the thing someone lands on when they go looking for
+"add an account" on the home page is the *Net Worth widget's form*, which
+was headed exactly that and offers Name, Category, Balance and Notes, with
+categories running cash/investment/property/credit card/loan. No code
+field, and no equity, revenue or expense, because a net-worth tracker has
+no use for any of them. The report described that form precisely.
+
+Two forms on one page were claiming the same name, so the fix is in two
+parts. The net-worth form is now headed "Add a net worth account" (and
+"Edit net worth account"), which is what it has always been. The Home quick
+action opens a real Chart of Accounts form in a modal -- name, the full
+asset/liability/equity/revenue/expense type set, category, and the code
+whose absence was reported -- rather than navigating to another tab, since
+"fix adding an account on the home page" is not answered by leaving the
+home page.
+
+Both that modal and the Chart of Accounts form post through one
+`createAccount()`, so the POST, the two cache invalidations and the reload
+exist once rather than twice. The modal loads the account-subtype taxonomy
+on open: it's otherwise fetched only when the Chart of Accounts tab opens,
+and reaching this modal from Home doesn't go through that tab, so the
+Category dropdown would have offered nothing but "Uncategorized" until
+you'd visited that tab once. On a rejected save the modal stays open with
+its fields intact and names what failed, same reasoning as v1.45's
+correction handler -- a duplicate name is fixed in the field you just
+filled in.
+
+**Invoice upload and the review queue are one tab.** Every other document
+type -- Expenses, Vendor Docs, Leases, Tax Docs, Checks -- has always had
+its upload form sitting directly above its own queue. Invoices were the
+sole exception, split across two tabs, and v1.56 added cross-links between
+them. The ask was to make switching between the two easier, and the way to
+do that is to remove the switch rather than signpost it.
+
+The upload form now sits at the top of the review tab, which is titled
+"Invoices" and carries a "Review queue" heading over the list. The separate
+Upload tab, its two cross-links, and the post-upload "open the review
+queue" button are gone -- that button pointed at the page you were already
+on. The Documents menu drops from seven entries to six, one per document
+type.
+
+Verified by running the UI, since `backend/public/` has no automated
+coverage: created a revenue account with code 4200 from Home (checking the
+type list, the code field, and that categories repopulate when the type
+changes), confirmed a duplicate name keeps the modal open with a readable
+message and the typing intact, and confirmed the merged tab renders the
+upload form above the queue with no orphaned references to the removed tab.
+
 ## v1.58
 
 Two real craft fixes found by actually rendering both surfaces (not just
