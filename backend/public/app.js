@@ -3778,7 +3778,9 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
   answerEl.textContent = "Thinking…";
 
   entry.append(questionEl, answerEl);
-  document.getElementById("ask-thread").prepend(entry);
+  const thread = document.getElementById("ask-thread");
+  thread.append(entry);
+  thread.scrollTop = thread.scrollHeight;
   input.value = "";
   input.disabled = true;
 
@@ -3805,6 +3807,10 @@ document.getElementById("ask-form").addEventListener("submit", async (e) => {
   } finally {
     input.disabled = false;
     input.focus();
+    // The answer replacing "Thinking…" can change the entry's height (a
+    // long answer, or an error message wrapping differently), so scroll
+    // again rather than trusting the pre-answer scroll to still reach it.
+    thread.scrollTop = thread.scrollHeight;
   }
 });
 
