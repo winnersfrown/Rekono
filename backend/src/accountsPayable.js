@@ -12,8 +12,9 @@
 // everything else: balanced entries only, closed periods refused, voids as
 // reversals.
 
+import { Op } from "sequelize";
 import { LedgerError, centsToDollars, dollarsToCents, postJournalEntry, voidJournalEntry } from "./ledger.js";
-import { Account, BillPayment, Invoice, JournalEntry, VendorCreditMemo, VendorCreditMemoApplication } from "./models/index.js";
+import { Account, BillPayment, Invoice, JournalEntry, Vendor, VendorCreditMemo, VendorCreditMemoApplication } from "./models/index.js";
 import { buildVendorResolver } from "./vendors.js";
 
 // Only an approved bill is a payable -- that's the status whose approval
@@ -430,5 +431,107 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
       total: centsToDollars(grandTotalCents),
       discount_available: centsToDollars(discountTotalCents),
     },
+  };
+}
+
+// A vendor's own AP activity over a period with a running balance -- the
+// AP mirror of accountsReceivable.js's computeCustomerStatement.
+//
+// Unlike a customer invoice (which posts at its own issueDate),
+// postInvoiceApproval never takes an entryDate -- every bill approval
+// posts dated to whenever the approval actually ran (see accountsPayable.js's
+// header comment and CLAUDE.md). So a bill's statement event can't use
+// invoice.invoiceDate; it has to read the journal entry approval actually
+// posted, or the event would show up on the wrong day (or not tie to the
+// ledger at all, for a bill approved into a closed period that never
+// posted -- excluded here for exactly that reason). Payments and vendor
+// credit memos both already carry their own accurate posting date, same
+// as the AR side.
+//
+// Resolved by vendor identity (the same vendors.js resolver AP aging
+// uses), not a raw name match, so a bill approved before the vendor
+// record existed still appears once merged/aliased.
+export async function computeVendorStatement(orgId, vendorId, { from, to } = {}) {
+  const vendor = await Vendor.findOne({ where: { id: vendorId, orgId } });
+  if (!vendor) return null;
+
+  const toDate = to || todayIso();
+  const fromDate = from || "0000-01-01";
+  const targetKey = `id:${vendor.id}`;
+
+  const [invoices, resolveVendor] = await Promise.all([
+    Invoice.scope("withSamples").findAll({ where: { orgId, status: PAYABLE_INVOICE_STATUS } }),
+    buildVendorResolver(orgId),
+  ]);
+  const vendorInvoices = invoices.filter((i) => resolveVendor(i).key === targetKey);
+  const invoiceIds = vendorInvoices.map((i) => i.id);
+
+  const [approvalEntries, payments, credits] = await Promise.all([
+    invoiceIds.length
+      ? JournalEntry.findAll({
+          where: { orgId, sourceType: "invoice", sourceId: { [Op.in]: invoiceIds }, status: "posted" },
+          attributes: ["sourceId", "entryDate"],
+          raw: true,
+        })
+      : [],
+    invoiceIds.length ? BillPayment.findAll({ where: { orgId, invoiceId: { [Op.in]: invoiceIds } } }) : [],
+    VendorCreditMemo.findAll({ where: { orgId, status: "issued" } }),
+  ]);
+  const entryDateByInvoiceId = new Map(approvalEntries.map((e) => [e.sourceId, e.entryDate]));
+  const vendorCredits = credits.filter(
+    (c) => resolveVendor({ vendorName: c.vendorName, vendorId: null }).key === targetKey
+  );
+
+  const events = [
+    // A bill whose approval never posted (a closed period it was approved
+    // into, see postInvoiceApproval) has nothing on the ledger to show --
+    // excluded rather than shown on a fabricated date, same reasoning
+    // computeApAging only counts a bill once it's actually a payable.
+    ...vendorInvoices
+      .filter((i) => entryDateByInvoiceId.has(i.id))
+      .map((i) => ({
+        date: entryDateByInvoiceId.get(i.id),
+        type: "bill",
+        description: `Bill ${i.invoiceNumber || i.id.slice(0, 8)}`,
+        amountCents: invoiceTotalCents(i),
+      })),
+    ...payments.map((p) => ({
+      date: p.paymentDate,
+      type: "payment",
+      description: "Payment sent",
+      amountCents: -(p.amountCents + (p.discountCents || 0)),
+    })),
+    ...vendorCredits.map((c) => ({
+      date: c.issueDate,
+      type: "credit_memo",
+      description: `Credit memo ${c.creditNumber}`,
+      amountCents: -c.amountCents,
+    })),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const openingCents = events.filter((e) => e.date < fromDate).reduce((sum, e) => sum + e.amountCents, 0);
+
+  let runningCents = openingCents;
+  const activity = events
+    .filter((e) => e.date >= fromDate && e.date <= toDate)
+    .map((e) => {
+      runningCents += e.amountCents;
+      return {
+        date: e.date,
+        type: e.type,
+        description: e.description,
+        amount: centsToDollars(e.amountCents),
+        balance: centsToDollars(runningCents),
+      };
+    });
+
+  return {
+    vendor_id: vendor.id,
+    vendor_name: vendor.name,
+    from: fromDate === "0000-01-01" ? null : fromDate,
+    to: toDate,
+    opening_balance: centsToDollars(openingCents),
+    closing_balance: centsToDollars(runningCents),
+    activity,
   };
 }

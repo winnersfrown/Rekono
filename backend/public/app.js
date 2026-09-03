@@ -6198,12 +6198,15 @@ document.getElementById("customer-create-form").addEventListener("submit", async
   }
 });
 
-// ---- Customer statements ----
-// A customer's own AR activity with a running balance -- see
-// computeCustomerStatement (accountsReceivable.js). Rendered as a print
-// window, same pattern printWrittenCheck uses for a check.
+// ---- Statements (customers and vendors) ----
+// A customer's or vendor's own AR/AP activity with a running balance --
+// see computeCustomerStatement (accountsReceivable.js) and
+// computeVendorStatement (accountsPayable.js). Rendered as a print
+// window, same pattern printWrittenCheck uses for a check. One modal
+// serves both; `statementModalKind` picks the endpoint and print labels.
 
-let statementModalCustomerId = null;
+let statementModalId = null;
+let statementModalKind = "customer";
 
 function monthToDateRange() {
   const now = new Date();
@@ -6212,9 +6215,10 @@ function monthToDateRange() {
   return { from, to };
 }
 
-function openStatementModal(customerId, customerName) {
-  statementModalCustomerId = customerId;
-  document.getElementById("customer-statement-modal-title").textContent = `Statement for ${customerName}`;
+function openStatementModal(id, name, kind = "customer") {
+  statementModalId = id;
+  statementModalKind = kind;
+  document.getElementById("customer-statement-modal-title").textContent = `Statement for ${name}`;
   const { from, to } = monthToDateRange();
   document.getElementById("customer-statement-modal-from").value = from;
   document.getElementById("customer-statement-modal-to").value = to;
@@ -6229,19 +6233,21 @@ document.getElementById("customer-statement-modal-form").addEventListener("submi
   e.preventDefault();
   const from = document.getElementById("customer-statement-modal-from").value;
   const to = document.getElementById("customer-statement-modal-to").value;
-  const res = await apiFetch(`/api/customers/${statementModalCustomerId}/statement?from=${from}&to=${to}`);
+  const path = statementModalKind === "vendor" ? "vendors" : "customers";
+  const res = await apiFetch(`/api/${path}/${statementModalId}/statement?from=${from}&to=${to}`);
   const statement = await res.json().catch(() => ({}));
   if (!res.ok) {
     await alertDialog("Couldn't load that statement", statement.detail || "Something went wrong.");
     return;
   }
   document.getElementById("customer-statement-modal").style.display = "none";
-  printCustomerStatement(statement);
+  printStatement(statement, statementModalKind);
 });
 
-function printCustomerStatement(statement) {
+function printStatement(statement, kind) {
   const win = window.open("", "_blank", "width=800,height=900");
   if (!win) return;
+  const name = kind === "vendor" ? statement.vendor_name : statement.customer_name;
   const rows = statement.activity
     .map(
       (a) => `
@@ -6258,7 +6264,7 @@ function printCustomerStatement(statement) {
     <!doctype html>
     <html>
     <head>
-      <title>Statement -- ${escapeHtml(statement.customer_name)}</title>
+      <title>Statement -- ${escapeHtml(name)}</title>
       <style>
         body { font-family: Georgia, serif; padding: 2rem; color: #101a33; }
         h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
@@ -6270,7 +6276,7 @@ function printCustomerStatement(statement) {
       </style>
     </head>
     <body onload="window.print()">
-      <h1>Statement -- ${escapeHtml(statement.customer_name)}</h1>
+      <h1>Statement -- ${escapeHtml(name)}</h1>
       <div class="period">${statement.from || "Inception"} to ${statement.to}</div>
       <table>
         <thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th><th class="amt">Balance</th></tr></thead>
@@ -9470,6 +9476,7 @@ function renderVendors(items) {
       <td>${fmtMoney(v.amount_outstanding)}</td>
       <td>${v.active ? "Active" : "Inactive"}</td>
       <td>
+        <button type="button" class="vendor-statement-btn linklike" data-id="${v.id}" data-name="${escapeHtml(v.name)}">Statement</button>
         ${items.length > 1 ? `<button type="button" class="vendor-merge-btn" data-id="${v.id}" data-name="${escapeHtml(v.name)}">Merge</button>` : ""}
         ${v.active ? `<button type="button" class="vendor-deactivate-btn linklike" data-id="${v.id}">Deactivate</button>` : ""}
       </td>
@@ -9477,6 +9484,10 @@ function renderVendors(items) {
   `
     )
     .join("");
+
+  body.querySelectorAll(".vendor-statement-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openStatementModal(btn.dataset.id, btn.dataset.name, "vendor"))
+  );
 
   body.querySelectorAll(".vendor-merge-btn").forEach((btn) =>
     btn.addEventListener("click", async () => {

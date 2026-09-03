@@ -4,6 +4,29 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.81
+
+Added vendor statements -- the AP mirror of v1.80's customer statements. A
+vendor's own AP activity over a period with a running balance, for
+reconciling against a vendor's own statement or answering "what do we
+still owe them."
+
+Built the same way the AR side is, with one real wrinkle: a customer
+invoice posts at its own issue date, but `postInvoiceApproval` never takes
+an entryDate -- every bill approval posts dated to whenever the approval
+actually ran (see accountsPayable.js's header comment). So a bill's
+statement line can't use its own invoice date; it looks up the journal
+entry the approval actually posted and uses that date, or excludes the
+bill entirely if approval never posted (a closed period, most likely) --
+same reasoning `computeApAging` only counts a bill once it's actually a
+payable. Payments and vendor credit memos both already carry their own
+accurate posting date. Resolved by vendor identity (the same resolver AP
+aging uses), so a bill approved before a merge still lands on the right
+statement once merged.
+
+New "Statement" action on each vendor in the Vendors tab, sharing the same
+period-picker modal and printable output the Customers tab already added.
+
 ## v1.80
 
 Added customer statements -- a customer's own AR activity over a period
