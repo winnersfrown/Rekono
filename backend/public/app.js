@@ -404,7 +404,7 @@ function switchTab(name) {
     loadBillPayments();
     loadWrittenChecks();
   }
-  if (name === "apaging") loadApAging();
+  if (name === "apaging") { loadApAging(); loadForm1099(); }
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -8364,6 +8364,75 @@ function renderApAging(data) {
 document.getElementById("ap-aging-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadApAging();
+});
+
+// ---- 1099-NEC prep ----
+// Which vendors crossed the reporting threshold this year, and whether
+// each has a TIN on file or has been marked exempt (see form1099.js).
+
+async function loadForm1099() {
+  const yearEl = document.getElementById("form1099-year");
+  if (!yearEl.value) yearEl.value = new Date().getFullYear();
+  renderForm1099(await (await apiFetch(`/api/reports/1099-nec?year=${yearEl.value}`)).json());
+}
+
+function form1099StatusHtml(row) {
+  if (row.exempt) return `<span class="hint">Exempt</span>`;
+  if (row.missing_tin) return `<span class="kpi-sub-warning">Missing TIN</span>`;
+  return "TIN on file";
+}
+
+function renderForm1099(data) {
+  const body = document.getElementById("form1099-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="5" class="table-empty-row">No vendor has crossed the ${fmtMoney(data.threshold)} threshold this year.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (row) => `
+    <tr>
+      <td>${escapeHtml(row.vendor_name)}</td>
+      <td>${fmtMoney(row.total)}</td>
+      <td>
+        <input type="text" class="form1099-tax-id-input" data-vendor-id="${row.vendor_id}" placeholder="${row.tax_id_last4 ? `on file, ending ${escapeHtml(row.tax_id_last4)}` : "Enter TIN"}" style="width: 10rem;" />
+        <button type="button" class="form1099-save-tax-id-btn linklike" data-vendor-id="${row.vendor_id}">Save</button>
+      </td>
+      <td>${form1099StatusHtml(row)}</td>
+      <td><button type="button" class="form1099-exempt-btn linklike" data-vendor-id="${row.vendor_id}" data-exempt="${row.exempt}">${row.exempt ? "Un-exempt" : "Mark exempt"}</button></td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".form1099-save-tax-id-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const input = body.querySelector(`.form1099-tax-id-input[data-vendor-id="${btn.dataset.vendorId}"]`);
+      if (!input.value.trim()) return;
+      await apiFetch(`/api/vendors/${btn.dataset.vendorId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tax_id: input.value.trim() }),
+      });
+      loadForm1099();
+    })
+  );
+
+  body.querySelectorAll(".form1099-exempt-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      await apiFetch(`/api/vendors/${btn.dataset.vendorId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ form_1099_exempt: btn.dataset.exempt !== "true" }),
+      });
+      loadForm1099();
+    })
+  );
+}
+
+document.getElementById("form1099-year-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadForm1099();
 });
 
 // ---- Vendors ----

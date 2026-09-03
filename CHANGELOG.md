@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.72
+
+Added 1099-NEC prep: which vendors this org paid enough, and by what
+method, to owe them a Form 1099-NEC for the year. Before this, answering
+"who do we need to send a 1099 to" meant pulling every vendor's payment
+history by hand and remembering, vendor by vendor, which of those payments
+even count.
+
+Two rules do the filtering, both straight from the form's own
+instructions rather than anything invented here: $600 or more in a
+calendar year, and paid by cash, check, or bank transfer -- a payment made
+by credit card is excluded by statute (IRC 6050W), since the card network
+reports it on a 1099-K instead, and reporting the same payment on both
+forms is the actual bug this guards against. `paymentAccountId`'s own
+subtype on `BillPayment` is the signal `form1099.js` uses: `credit_card`
+means it doesn't count, anything else does.
+
+Whether a given vendor is a corporation (generally exempt from 1099-NEC
+regardless of amount) is not something Rekono can know without asking, so
+that's a vendor-level flag a human sets, defaulting to *not* exempt -- an
+unmarked vendor over the threshold shows up as needing attention rather
+than silently dropping off the report. `Vendor.taxIdLast4` keeps the same
+last-four-only stance `TaxDocument.recipientTinLast4` already established
+for the exact same reason: a full SSN in a database column is a liability
+with no matching upside for what this app needs a TIN for.
+
 ## v1.71
 
 Added a real bank reconciliation: tying a cash account's book balance to
