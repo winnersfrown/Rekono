@@ -4,6 +4,21 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.75
+
+Fixed "Ask Rekono" showing new messages at the top of the thread instead
+of the bottom. The widget's `#ask-thread` is a plain top-to-bottom column
+(not reversed), but each new question/answer was `prepend`ed into it --
+so asking a second question pushed the first one down instead of adding
+below it, and a longer conversation read newest-first, backwards from
+every other chat surface. `prepend` is now `append`, with the thread
+scrolled to the bottom on both the question appearing and the answer
+replacing "Thinking…" (a long answer can grow the entry after the first
+scroll already landed). This is exactly the kind of bug the backend test
+suite can't see -- `backend/public/` has no automated coverage, so it
+shipped and sat unnoticed until someone actually opened the widget and
+had a two-question conversation.
+
 ## v1.74
 
 Added budget vs actual, the last of this batch's six improvement ideas.
