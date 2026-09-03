@@ -44,6 +44,7 @@ import { BankConnection } from "./BankConnection.js";
 import { BankAccount } from "./BankAccount.js";
 import { Employee } from "./Employee.js";
 import { PayrollRun } from "./PayrollRun.js";
+import { BankReconciliation, ReconciledJournalLine } from "./BankReconciliation.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -239,6 +240,14 @@ PayrollRun.belongsTo(Account, { foreignKey: "wagesExpenseAccountId", as: "wagesE
 PayrollRun.belongsTo(Account, { foreignKey: "payrollTaxExpenseAccountId", as: "payrollTaxExpenseAccount" });
 PayrollRun.belongsTo(Account, { foreignKey: "liabilityAccountId", as: "liabilityAccount" });
 
+// No cascade on the reconciliation -> cleared-line relationship: a
+// completed reconciliation is a historical attestation, and the lines it
+// swept up should stay attributed to it even if something upstream
+// changes, same reasoning JournalEntry rows are never deleted.
+BankReconciliation.hasMany(ReconciledJournalLine, { foreignKey: "reconciliationId", as: "clearedLines" });
+ReconciledJournalLine.belongsTo(BankReconciliation, { foreignKey: "reconciliationId" });
+BankReconciliation.belongsTo(Account, { foreignKey: "cashAccountId", as: "cashAccount" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -386,4 +395,6 @@ export {
   BankAccount,
   Employee,
   PayrollRun,
+  BankReconciliation,
+  ReconciledJournalLine,
 };

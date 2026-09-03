@@ -382,6 +382,7 @@ function switchTab(name) {
   if (name === "journalentries") { loadJournalEntryAccounts(); loadJournalEntries(); }
   if (name === "payroll") { loadPayrollAccounts(); loadEmployees(); loadPayrollRuns(); }
   if (name === "trialbalance") loadTrialBalance();
+  if (name === "bankreconciliation") loadBankReconciliation();
   if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
@@ -5452,6 +5453,195 @@ function renderTrialBalance(data) {
   banner.textContent = data.balanced ? "Balanced." : "Not balanced -- this shouldn't happen; please contact support.";
   banner.className = data.balanced ? "hint" : "hint kpi-sub-warning";
 }
+
+// ---- Bank reconciliation ----
+// Tying a cash account's book balance to a bank statement -- see
+// bankReconciliation.js for the accounting. bankRecOpenId tracks whichever
+// reconciliation the detail panel below is currently showing, so a clear/
+// unclear click knows which one to post against without re-reading it out
+// of the DOM.
+
+let bankRecOpenId = null;
+let bankRecAccountNames = new Map();
+
+async function loadBankReconciliation() {
+  const dateEl = document.getElementById("bankrec-statement-date");
+  if (!dateEl.value) dateEl.value = new Date().toISOString().slice(0, 10);
+
+  const [accountsData, historyData] = await Promise.all([
+    apiFetch("/api/bank-reconciliations/accounts").then((r) => r.json()),
+    apiFetch("/api/bank-reconciliations").then((r) => r.json()),
+  ]);
+
+  document.getElementById("bankrec-account").innerHTML = accountsData.items
+    .map((a) => `<option value="${a.id}">${escapeHtml(a.code ? `${a.code} - ${a.name}` : a.name)}</option>`)
+    .join("");
+  bankRecAccountNames = new Map(accountsData.items.map((a) => [a.id, a.code ? `${a.code} - ${a.name}` : a.name]));
+
+  renderBankRecHistory(historyData.items);
+
+  if (bankRecOpenId && historyData.items.some((r) => r.id === bankRecOpenId)) {
+    openBankReconciliation(bankRecOpenId);
+  }
+}
+
+function renderBankRecHistory(items) {
+  const body = document.getElementById("bankrec-history-body");
+  if (!items.length) {
+    body.innerHTML = `<tr><td colspan="5" class="table-empty-row">No reconciliations yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = items
+    .map(
+      (r) => `
+    <tr>
+      <td>${escapeHtml(bankRecAccountNames.get(r.cash_account_id) || "")}</td>
+      <td>${escapeHtml(r.statement_date)}</td>
+      <td>${fmtMoney(r.statement_ending_balance)}</td>
+      <td>${r.status === "completed" ? "Reconciled" : "In progress"}</td>
+      <td><button type="button" class="bankrec-open-btn" data-id="${r.id}">${r.status === "completed" ? "View" : "Resume"}</button></td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".bankrec-open-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openBankReconciliation(btn.dataset.id))
+  );
+}
+
+document.getElementById("bankrec-start-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("bankrec-start-status");
+  const res = await apiFetch("/api/bank-reconciliations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cash_account_id: document.getElementById("bankrec-account").value,
+      statement_date: document.getElementById("bankrec-statement-date").value,
+      statement_ending_balance: Number(document.getElementById("bankrec-ending-balance").value) || 0,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = "";
+  document.getElementById("bankrec-ending-balance").value = "";
+  await loadBankReconciliation();
+  renderBankRecDetail(parsed);
+});
+
+function bankRecLineRow(line) {
+  const amount = line.credit || line.debit;
+  return `
+    <tr>
+      <td>${escapeHtml(line.entry_date)}</td>
+      <td>${escapeHtml(line.memo || "")}</td>
+      <td>${fmtMoney(amount)}</td>
+      <td><button type="button" class="bankrec-clear-btn" data-line-id="${line.journal_line_id}" data-cleared="false">Clear</button></td>
+    </tr>
+  `;
+}
+
+function bankRecClearedRow(line) {
+  const amount = line.credit || line.debit;
+  return `
+    <tr>
+      <td>${escapeHtml(line.entry_date)}</td>
+      <td>${escapeHtml(line.memo || "")}</td>
+      <td>${fmtMoney(amount)}</td>
+      <td><button type="button" class="bankrec-clear-btn" data-line-id="${line.journal_line_id}" data-cleared="true">Undo</button></td>
+    </tr>
+  `;
+}
+
+async function openBankReconciliation(id) {
+  const data = await (await apiFetch(`/api/bank-reconciliations/${id}`)).json();
+  renderBankRecDetail(data);
+}
+
+function renderBankRecDetail(data) {
+  bankRecOpenId = data.id;
+  const panel = document.getElementById("bankrec-detail");
+  panel.hidden = false;
+
+  document.getElementById("bankrec-detail-title").textContent =
+    `${data.cash_account_name} -- statement ${data.statement_date}`;
+  document.getElementById("bankrec-d-statement").textContent = fmtMoney(data.statement_ending_balance);
+  document.getElementById("bankrec-d-cleared").textContent = fmtMoney(data.cleared_balance);
+  document.getElementById("bankrec-d-difference").textContent = fmtMoney(data.difference);
+  document.getElementById("bankrec-d-book").textContent = fmtMoney(data.book_balance);
+
+  const banner = document.getElementById("bankrec-detail-banner");
+  if (data.status === "completed") {
+    banner.textContent = "Reconciled.";
+    banner.className = "hint";
+  } else if (data.difference === 0) {
+    banner.textContent = "Everything cleared ties out to the statement -- ready to mark reconciled.";
+    banner.className = "hint";
+  } else {
+    banner.textContent = `Off by ${fmtMoney(Math.abs(data.difference))}. Check for a missing bank fee or interest, or a line cleared by mistake.`;
+    banner.className = "hint kpi-sub-warning";
+  }
+
+  const isOpen = data.status !== "completed";
+  const outstandingBody = document.getElementById("bankrec-outstanding-body");
+  outstandingBody.innerHTML = data.outstanding_checks.length
+    ? data.outstanding_checks.map(bankRecLineRow).join("")
+    : `<tr><td colspan="4" class="table-empty-row">Nothing outstanding.</td></tr>`;
+
+  const depositsBody = document.getElementById("bankrec-deposits-body");
+  depositsBody.innerHTML = data.deposits_in_transit.length
+    ? data.deposits_in_transit.map(bankRecLineRow).join("")
+    : `<tr><td colspan="4" class="table-empty-row">Nothing in transit.</td></tr>`;
+
+  const clearedBody = document.getElementById("bankrec-cleared-body");
+  clearedBody.innerHTML = data.cleared_lines.length
+    ? data.cleared_lines.map(bankRecClearedRow).join("")
+    : `<tr><td colspan="4" class="table-empty-row">Nothing cleared yet.</td></tr>`;
+
+  panel.querySelectorAll(".bankrec-clear-btn").forEach((btn) => {
+    btn.disabled = !isOpen;
+    btn.addEventListener("click", async () => {
+      const res = await apiFetch(`/api/bank-reconciliations/${data.id}/clear`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ journal_line_id: btn.dataset.lineId, cleared: btn.dataset.cleared !== "true" }),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (res.ok) renderBankRecDetail(parsed);
+    });
+  });
+
+  document.getElementById("bankrec-complete-btn").hidden = !isOpen;
+  document.getElementById("bankrec-reopen-btn").hidden = isOpen;
+}
+
+document.getElementById("bankrec-complete-btn").addEventListener("click", async () => {
+  if (!bankRecOpenId) return;
+  const confirmed = await confirmDialog("Mark this reconciliation reconciled?", "You can reopen it later if you need to change what's cleared.", {
+    confirmLabel: "Mark reconciled",
+  });
+  if (!confirmed) return;
+  const res = await apiFetch(`/api/bank-reconciliations/${bankRecOpenId}/complete`, { method: "POST" });
+  const parsed = await res.json().catch(() => ({}));
+  if (res.ok) {
+    renderBankRecDetail(parsed);
+    loadBankReconciliation();
+  }
+});
+
+document.getElementById("bankrec-reopen-btn").addEventListener("click", async () => {
+  if (!bankRecOpenId) return;
+  const res = await apiFetch(`/api/bank-reconciliations/${bankRecOpenId}/reopen`, { method: "POST" });
+  const parsed = await res.json().catch(() => ({}));
+  if (res.ok) {
+    renderBankRecDetail(parsed);
+    loadBankReconciliation();
+  }
+});
 
 // ---- Financial statements (P&L, balance sheet, cash flow) ----
 // All three are read-only views over the ledger (financialStatements.js on
