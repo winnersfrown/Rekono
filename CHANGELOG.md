@@ -4,6 +4,34 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.71
+
+Added a real bank reconciliation: tying a cash account's book balance to
+what a bank statement actually reports, with outstanding checks and
+deposits in transit called out by name. Before this, the only way to
+sanity-check a Cash account against a real statement was to eyeball the
+ledger --
+there was no record of which transactions the bank had actually seen, and
+no way to see, deposit by deposit and check by check, why a running
+balance didn't match paper.
+
+`BankReconciliation` and its `ReconciledJournalLine` join table
+(`bankReconciliation.js`) never touch `JournalLine` itself -- posted
+entries stay immutable, exactly as `ledger.js` requires; "cleared" is
+reconciliation bookkeeping recorded alongside the ledger, not a fact
+stamped onto it. Starting a reconciliation asks for the statement's ending
+balance (supplied, never derived, the same "don't invent a number" stance
+`incomeTax.js` and `salesTax.js` already take on their own inputs); ticking
+off a line moves it out of "outstanding," and the reconciliation reports
+its difference as the statement balance against what's actually been
+cleared per the books, not a guess. A line can only ever be claimed by one
+reconciliation -- once one completes, its cleared lines are locked in, so
+a later statement can't accidentally re-clear the same check. Completing a
+reconciliation is an attestation like a period close, not an enforced
+gate: it doesn't stop a later entry from landing on the account, it just
+records that a human tied out to this statement, and it can be reopened if
+that attestation turns out to be wrong.
+
 ## v1.70
 
 Added sales tax as its own liability, instead of it disappearing into

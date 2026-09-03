@@ -75,6 +75,8 @@ const DIRECT_ORG_TABLES = [
   "vendors",
   "vendor_documents",
   "vendor_expense_accounts",
+  "bank_reconciliations",
+  "reconciled_journal_lines",
 ];
 
 // Tables with no orgId of their own, reached through a parent that has one.
