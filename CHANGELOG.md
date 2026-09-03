@@ -4,6 +4,31 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.76
+
+Added recurring vendor bills -- the AP mirror of v1.69's recurring customer
+invoices, for rent, subscriptions, and retainers you pay every period
+instead of billing to someone else. Save a template once (vendor, expense
+account, amount, frequency) and each period creates a real bill in the
+Review Queue for a human to approve, or check "Auto-approve" to have it
+post to Accounts Payable on its own.
+
+An occurrence is a real `Invoice` row (the AP bill model), not a separate
+table -- it goes through the same Review Queue, the same
+`postInvoiceApproval`, and the same AP aging every manually-entered bill
+does, so a recurring bill can't drift from what one looks like. There's no
+line-item sub-table the way `RecurringInvoice` has one: `postInvoiceApproval`
+has never split an approved bill's total across more than one expense
+account, so a template mirrors that shape with one flat amount and one
+account rather than modeling a breakdown the ledger would ignore anyway.
+
+One thing worth knowing if you go looking for the posted entry: unlike the
+AR side's `postCustomerInvoice` (dated to the invoice's own `issueDate`),
+`postInvoiceApproval` has never taken an `entryDate` -- every bill approval,
+recurring or manual, posts dated to whenever the approval actually ran. An
+auto-approved occurrence for a back-dated period still shows up on the
+books today, not on the period it's for.
+
 ## v1.75
 
 Fixed "Ask Rekono" showing new messages at the top of the thread instead

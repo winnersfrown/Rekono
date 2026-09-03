@@ -1552,6 +1552,42 @@
             <thead><tr><th>Check #</th><th>Payee</th><th>Date</th><th>Bill</th><th>Amount</th><th></th></tr></thead>
             <tbody id="written-checks-body"></tbody>
           </table>
+
+          <h3>Recurring bills</h3>
+          <p class="hint">For rent, subscriptions, and retainers you pay every period. Each period creates a bill in the Review Queue for you to approve -- check "Auto-approve" to have it post to Accounts Payable on its own instead.</p>
+          <div class="panel">
+            <h3>New recurring bill</h3>
+            <form id="recurring-bill-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Vendor<input type="text" id="rb-vendor" maxlength="512" placeholder="e.g. Meridian Property Partners" required /></label>
+                <label>Name<input type="text" id="rb-name" maxlength="256" placeholder="e.g. Monthly rent" required /></label>
+                <label>Expense account<select id="rb-account" required></select></label>
+                <label>Amount<input type="number" id="rb-amount" min="0.01" step="0.01" required /></label>
+                <label>Frequency<select id="rb-frequency">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                </select></label>
+                <label>First period<input type="date" id="rb-start" required /></label>
+                <label>Last period<input type="date" id="rb-end" /></label>
+                <label><input type="checkbox" id="rb-auto-approve" /> Auto-approve</label>
+              </div>
+              <div class="line-item-footer">
+                <button type="submit" class="line-item-submit">Save template</button>
+              </div>
+              <div id="recurring-bill-status" class="hint"></div>
+            </form>
+          </div>
+          <form id="recurring-bill-run-form" class="statement-period">
+            <label>Run through<input type="date" id="rb-as-of" /></label>
+            <button type="button" class="btn-quiet" id="rb-preview">Preview</button>
+            <button type="submit">Run</button>
+          </form>
+          <div id="recurring-bill-run-status" class="hint"></div>
+          <table>
+            <thead><tr><th>Name</th><th>Vendor</th><th>Expense account</th><th>Amount</th><th>Frequency</th><th>Last issued</th><th>Next due</th><th>Auto-approve</th><th>Status</th><th></th></tr></thead>
+            <tbody id="recurring-bills-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-apaging" class="tab-panel">

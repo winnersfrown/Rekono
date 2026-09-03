@@ -35,6 +35,7 @@ import { Vendor } from "./Vendor.js";
 import { RevenueScheduleEntry } from "./RevenueScheduleEntry.js";
 import { RecurringEntry, RecurringEntryLine } from "./RecurringEntry.js";
 import { RecurringInvoice, RecurringInvoiceLine } from "./RecurringInvoice.js";
+import { RecurringBill } from "./RecurringBill.js";
 import { FixedAsset } from "./FixedAsset.js";
 import { WrittenCheck } from "./WrittenCheck.js";
 import { EquityTransaction } from "./EquityTransaction.js";
@@ -152,6 +153,10 @@ RecurringInvoice.belongsTo(Customer, { foreignKey: "customerId", as: "customer" 
 Invoice.hasMany(BillPayment, { foreignKey: "invoiceId", as: "billPayments", onDelete: "CASCADE", hooks: true });
 BillPayment.belongsTo(Invoice, { foreignKey: "invoiceId" });
 BillPayment.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+
+// The AP mirror of RecurringInvoice -- no line sub-table (see RecurringBill.js's
+// own comment on why), just a direct link to the one expense account it bills.
+RecurringBill.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
 
 // A written check is the paper trail around one BillPayment (see
 // writtenChecks.js) -- no cascade from BillPayment, since voidWrittenCheck
@@ -389,6 +394,7 @@ export {
   RecurringEntryLine,
   RecurringInvoice,
   RecurringInvoiceLine,
+  RecurringBill,
   FixedAsset,
   WrittenCheck,
   EquityTransaction,
