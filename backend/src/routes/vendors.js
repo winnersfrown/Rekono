@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Op } from "sequelize";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
-import { PAYABLE_INVOICE_STATUS, amountPaidCents, invoiceTotalCents } from "../accountsPayable.js";
+import { PAYABLE_INVOICE_STATUS, amountPaidCents, computeVendorStatement, invoiceTotalCents } from "../accountsPayable.js";
 import { VendorError, mergeVendors, normalizeVendorName } from "../vendors.js";
 import { AuditLog, Invoice, Vendor, VendorAlias } from "../models/index.js";
 import { FORM_1099_NEC_THRESHOLD_CENTS, compute1099Summary } from "../form1099.js";
@@ -166,6 +166,23 @@ router.patch("/api/vendors/:id", requireAuth, requireActivePlan, async (req, res
     await vendor.save();
 
     res.json(serializeVendor(vendor));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// A vendor's own AP activity over a period with a running balance -- the
+// AP mirror of GET /api/customers/:id/statement. See
+// computeVendorStatement for why each event is dated the way it is.
+router.get("/api/vendors/:id/statement", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const from = ISO_DATE.test(req.query.from || "") ? req.query.from : undefined;
+    const to = ISO_DATE.test(req.query.to || "") ? req.query.to : undefined;
+    const statement = await computeVendorStatement(req.currentUser.orgId, req.params.id, { from, to });
+    if (!statement) return res.status(404).json({ detail: "Vendor not found" });
+    res.json(statement);
   } catch (err) {
     next(err);
   }
