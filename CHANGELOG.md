@@ -4,7 +4,24 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
-## v1.79
+## v1.80
+
+Added customer statements -- a customer's own AR activity over a period
+with a running balance, for the "here's what you owe" email or collections
+call that AR aging alone can't answer (aging says who's overdue right now;
+a statement says how a balance got to where it is).
+
+Built from the same three events that actually move a customer's AR
+balance in the ledger, each dated to when it did: an invoice at its issue
+date (Debit AR), a payment at its payment date (Credit AR), and a credit
+memo at its own issue date -- not whichever invoice it's later applied to,
+since `postCustomerCreditMemo` credits AR the moment the memo posts.
+Activity before the requested period folds into an opening balance instead
+of appearing as a line, the same convention a bank statement uses.
+
+New "Statement" action on each customer in the Customers tab: pick a
+period, and it opens a printable statement in a new window (same pattern
+the Bill Payments tab already uses for printing a check).
 
 Added prepaid expense amortization -- the AP mirror of the deferred
 revenue engine, for money paid up front for something consumed over time

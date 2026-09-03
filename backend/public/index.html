@@ -2834,6 +2834,24 @@
     </div>
   </div>
 
+  <!-- Picks the period before generating a printable customer statement --
+       see computeCustomerStatement (accountsReceivable.js). -->
+  <div id="customer-statement-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2 id="customer-statement-modal-title">Customer statement</h2>
+      <form id="customer-statement-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>From<input type="date" id="customer-statement-modal-from" required /></label>
+          <label>To<input type="date" id="customer-statement-modal-to" required /></label>
+        </div>
+        <div class="confirm-modal-actions">
+          <button type="button" id="customer-statement-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">View / print</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- The AP mirror of the modal above -- applying a vendor credit memo
        needs to know which open bill from that vendor it's offsetting. -->
   <div id="apply-vendor-credit-modal" class="modal-overlay" style="display: none;">

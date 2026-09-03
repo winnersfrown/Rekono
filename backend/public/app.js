@@ -6128,11 +6128,17 @@ function renderCustomers(data) {
         c.tax_exempt ? "Exempt" : "Taxable"
       }</button></td>
       <td>${c.active ? "Active" : "Inactive"}</td>
-      <td>${c.active ? `<button type="button" class="customer-deactivate-btn" data-customer-id="${c.id}">Deactivate</button>` : ""}</td>
+      <td>
+        <button type="button" class="customer-statement-btn linklike" data-customer-id="${c.id}" data-customer-name="${escapeHtml(c.name)}">Statement</button>
+        ${c.active ? `<button type="button" class="customer-deactivate-btn" data-customer-id="${c.id}">Deactivate</button>` : ""}
+      </td>
     </tr>
   `
     )
     .join("");
+  body.querySelectorAll(".customer-statement-btn").forEach((btn) => {
+    btn.addEventListener("click", () => openStatementModal(btn.dataset.customerId, btn.dataset.customerName));
+  });
   body.querySelectorAll(".customer-deactivate-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const confirmed = await confirmDialog("Deactivate this customer?", "Their past invoices stay exactly as they are; you just won't be able to bill them again.", {
@@ -6191,6 +6197,94 @@ document.getElementById("customer-create-form").addEventListener("submit", async
     statusEl.textContent = err.message || String(err);
   }
 });
+
+// ---- Customer statements ----
+// A customer's own AR activity with a running balance -- see
+// computeCustomerStatement (accountsReceivable.js). Rendered as a print
+// window, same pattern printWrittenCheck uses for a check.
+
+let statementModalCustomerId = null;
+
+function monthToDateRange() {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+  const to = now.toISOString().slice(0, 10);
+  return { from, to };
+}
+
+function openStatementModal(customerId, customerName) {
+  statementModalCustomerId = customerId;
+  document.getElementById("customer-statement-modal-title").textContent = `Statement for ${customerName}`;
+  const { from, to } = monthToDateRange();
+  document.getElementById("customer-statement-modal-from").value = from;
+  document.getElementById("customer-statement-modal-to").value = to;
+  document.getElementById("customer-statement-modal").style.display = "flex";
+}
+
+document.getElementById("customer-statement-modal-cancel").addEventListener("click", () => {
+  document.getElementById("customer-statement-modal").style.display = "none";
+});
+
+document.getElementById("customer-statement-modal-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const from = document.getElementById("customer-statement-modal-from").value;
+  const to = document.getElementById("customer-statement-modal-to").value;
+  const res = await apiFetch(`/api/customers/${statementModalCustomerId}/statement?from=${from}&to=${to}`);
+  const statement = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    await alertDialog("Couldn't load that statement", statement.detail || "Something went wrong.");
+    return;
+  }
+  document.getElementById("customer-statement-modal").style.display = "none";
+  printCustomerStatement(statement);
+});
+
+function printCustomerStatement(statement) {
+  const win = window.open("", "_blank", "width=800,height=900");
+  if (!win) return;
+  const rows = statement.activity
+    .map(
+      (a) => `
+    <tr>
+      <td>${a.date}</td>
+      <td>${escapeHtml(a.description)}</td>
+      <td class="amt">${a.amount < 0 ? `(${fmtMoney(Math.abs(a.amount))})` : fmtMoney(a.amount)}</td>
+      <td class="amt">${fmtMoney(a.balance)}</td>
+    </tr>
+  `
+    )
+    .join("");
+  win.document.write(`
+    <!doctype html>
+    <html>
+    <head>
+      <title>Statement -- ${escapeHtml(statement.customer_name)}</title>
+      <style>
+        body { font-family: Georgia, serif; padding: 2rem; color: #101a33; }
+        h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+        .period { color: #555; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #ddd; text-align: left; font-size: 0.9rem; }
+        th.amt, td.amt { text-align: right; }
+        .opening td, .closing td { font-weight: bold; border-top: 2px solid #333; }
+      </style>
+    </head>
+    <body onload="window.print()">
+      <h1>Statement -- ${escapeHtml(statement.customer_name)}</h1>
+      <div class="period">${statement.from || "Inception"} to ${statement.to}</div>
+      <table>
+        <thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th><th class="amt">Balance</th></tr></thead>
+        <tbody>
+          <tr class="opening"><td colspan="3">Opening balance</td><td class="amt">${fmtMoney(statement.opening_balance)}</td></tr>
+          ${rows}
+          <tr class="closing"><td colspan="3">Closing balance</td><td class="amt">${fmtMoney(statement.closing_balance)}</td></tr>
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `);
+  win.document.close();
+}
 
 // The new-invoice form needs both active customers and revenue accounts to
 // populate its dropdowns -- fetched together so the form is never half
