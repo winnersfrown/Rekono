@@ -2161,6 +2161,12 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .kpi-sub { font-size: 0.76rem; color: var(--muted); }
 .kpi-sub-bad { color: var(--neg); font-weight: 500; }
 
+/* A variance's sign means opposite things for revenue and expense
+   accounts (budget.js computes which is which), so the color has to come
+   from that computed answer, never the raw sign of the number. */
+.variance-favorable { color: var(--pos); }
+.variance-unfavorable { color: var(--neg); }
+
 /* Only rendered where a real denominator exists (see kpiCard's `meter`).
    Sits between the value and its sub-line so the fraction reads as part of
    the number rather than as a separate widget. */
