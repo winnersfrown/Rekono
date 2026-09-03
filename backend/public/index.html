@@ -1175,7 +1175,7 @@
 
           <div class="panel">
             <h3>Fixed assets</h3>
-            <p class="hint">Cost, salvage value, and useful life for something you're depreciating -- this builds the monthly recurring entry for you, straight-line, instead of you working out the amount and the two-line template by hand.</p>
+            <p class="hint">Cost, salvage value, and useful life for something you're depreciating. Straight-line builds the monthly recurring entry for you; declining-balance posts on its own since its amount changes every period -- supply the annual rate yourself (e.g. 50% for double-declining on a 4-year asset), since that's a number this app has no business guessing.</p>
             <form id="fixed-asset-form" class="line-item-form">
               <div class="line-item-fields">
                 <label>Name<input type="text" id="fa-name" maxlength="256" required /></label>
@@ -1183,6 +1183,11 @@
                 <label>Salvage value<input type="number" id="fa-salvage" step="0.01" min="0" value="0" /></label>
                 <label>Useful life (months)<input type="number" id="fa-life" min="1" step="1" required /></label>
                 <label>Acquired<input type="date" id="fa-acquired" required /></label>
+                <label>Method<select id="fa-method">
+                  <option value="straight_line">Straight-line</option>
+                  <option value="declining_balance">Declining balance</option>
+                </select></label>
+                <label id="fa-rate-row" hidden>Annual rate (%)<input type="number" id="fa-rate" min="0.01" step="0.01" placeholder="e.g. 50 for double-declining" /></label>
                 <label>Asset account<select id="fa-asset-account" required></select></label>
                 <label>Depreciation expense account<select id="fa-expense-account" required></select></label>
                 <label>Accumulated depreciation account<select id="fa-accum-account" required></select></label>
@@ -1195,7 +1200,7 @@
             </form>
           </div>
           <table>
-            <thead><tr><th>Name</th><th>Cost</th><th>Accum. depreciation</th><th>Book value</th><th>Monthly</th><th>Next due</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Method</th><th>Cost</th><th>Accum. depreciation</th><th>Book value</th><th>Next amount</th><th>Next due</th><th>Status</th><th></th></tr></thead>
             <tbody id="fixed-assets-body"></tbody>
           </table>
 

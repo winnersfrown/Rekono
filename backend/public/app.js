@@ -7626,22 +7626,40 @@ function updateFixedAssetMonthlyPreview() {
   const cost = Number(document.getElementById("fa-cost").value) || 0;
   const salvage = Number(document.getElementById("fa-salvage").value) || 0;
   const months = Number(document.getElementById("fa-life").value) || 0;
+  const method = document.getElementById("fa-method").value;
   const el = document.getElementById("fa-monthly-preview");
-  if (cost > 0 && months > 0 && salvage <= cost) {
-    el.textContent = `${fmtMoney((cost - salvage) / months)} a month, straight-line.`;
-  } else {
+  if (!(cost > 0 && months > 0 && salvage <= cost)) {
     el.textContent = "";
+    return;
+  }
+  if (method === "declining_balance") {
+    const rate = Number(document.getElementById("fa-rate").value) || 0;
+    if (rate > 0) {
+      el.textContent = `${fmtMoney(Math.min((cost * rate) / 100 / 12, cost - salvage))} the first month -- shrinks every month after as book value drops.`;
+    } else {
+      el.textContent = "";
+    }
+  } else {
+    el.textContent = `${fmtMoney((cost - salvage) / months)} a month, straight-line.`;
   }
 }
-["fa-cost", "fa-salvage", "fa-life"].forEach((id) =>
+["fa-cost", "fa-salvage", "fa-life", "fa-rate"].forEach((id) =>
   document.getElementById(id).addEventListener("input", updateFixedAssetMonthlyPreview)
 );
+document.getElementById("fa-method").addEventListener("change", () => {
+  const isDeclining = document.getElementById("fa-method").value === "declining_balance";
+  document.getElementById("fa-rate-row").hidden = !isDeclining;
+  document.getElementById("fa-rate").required = isDeclining;
+  updateFixedAssetMonthlyPreview();
+});
+
+const DEPRECIATION_METHOD_LABELS = { straight_line: "Straight-line", declining_balance: "Declining balance" };
 
 async function loadFixedAssets() {
   const data = await (await apiFetch("/api/fixed-assets")).json();
   const body = document.getElementById("fixed-assets-body");
   if (!data.items.length) {
-    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No fixed assets yet — add one above.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" class="table-empty-row">No fixed assets yet — add one above.</td></tr>`;
     return;
   }
   body.innerHTML = data.items
@@ -7649,6 +7667,7 @@ async function loadFixedAssets() {
       (a) => `
     <tr>
       <td>${escapeHtml(a.name)}</td>
+      <td>${DEPRECIATION_METHOD_LABELS[a.method] || a.method}</td>
       <td>${fmtMoney(a.cost)}</td>
       <td>${fmtMoney(a.accumulated_depreciation)}</td>
       <td>${fmtMoney(a.book_value)}</td>
@@ -7662,6 +7681,11 @@ async function loadFixedAssets() {
             : `<button type="button" class="fa-toggle-btn" data-id="${a.id}" data-active="${a.active}">${
                 a.active ? "Pause" : "Resume"
               }</button>`
+        }
+        ${
+          a.method === "declining_balance" && !a.fully_depreciated && a.active
+            ? `<button type="button" class="fa-run-btn" data-id="${a.id}">Run depreciation</button>`
+            : ""
         }
         <button type="button" class="fa-delete-btn linklike" data-id="${a.id}">Delete</button>
       </td>
@@ -7677,6 +7701,21 @@ async function loadFixedAssets() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: btn.dataset.active !== "true" }),
       });
+      loadFixedAssets();
+    })
+  );
+  body.querySelectorAll(".fa-run-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const res = await apiFetch(`/api/fixed-assets/${btn.dataset.id}/run-depreciation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ as_of: new Date().toISOString().slice(0, 10) }),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't run depreciation", parsed.detail || "Something went wrong.");
+        return;
+      }
       loadFixedAssets();
     })
   );
@@ -7696,6 +7735,7 @@ async function loadFixedAssets() {
 document.getElementById("fixed-asset-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("fixed-asset-status");
+  const method = document.getElementById("fa-method").value;
   const res = await apiFetch("/api/fixed-assets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -7705,6 +7745,10 @@ document.getElementById("fixed-asset-form").addEventListener("submit", async (e)
       salvage_value: Number(document.getElementById("fa-salvage").value) || 0,
       useful_life_months: Number(document.getElementById("fa-life").value),
       acquisition_date: document.getElementById("fa-acquired").value,
+      method,
+      ...(method === "declining_balance"
+        ? { declining_balance_rate_percent: Number(document.getElementById("fa-rate").value) || 0 }
+        : {}),
       asset_account_id: document.getElementById("fa-asset-account").value,
       expense_account_id: document.getElementById("fa-expense-account").value,
       accumulated_depreciation_account_id: document.getElementById("fa-accum-account").value,
@@ -7715,8 +7759,9 @@ document.getElementById("fixed-asset-form").addEventListener("submit", async (e)
     statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
     return;
   }
-  statusEl.textContent = `Added "${parsed.name}" -- ${fmtMoney(parsed.monthly_amount)} a month.`;
+  statusEl.textContent = `Added "${parsed.name}" -- ${fmtMoney(parsed.monthly_amount)} the first period.`;
   e.target.reset();
+  document.getElementById("fa-rate-row").hidden = true;
   updateFixedAssetMonthlyPreview();
   loadFixedAssets();
 });
