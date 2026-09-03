@@ -9,6 +9,8 @@ import { requireActivePlan } from "../plan.js";
 import { PAYABLE_INVOICE_STATUS, amountPaidCents, invoiceTotalCents } from "../accountsPayable.js";
 import { VendorError, mergeVendors, normalizeVendorName } from "../vendors.js";
 import { AuditLog, Invoice, Vendor, VendorAlias } from "../models/index.js";
+import { FORM_1099_NEC_THRESHOLD_CENTS, compute1099Summary } from "../form1099.js";
+import { tinLast4 } from "../extractionTaxDocs.js";
 
 const router = Router();
 
@@ -23,6 +25,8 @@ function serializeVendor(v, extra = {}) {
     notes: v.notes,
     active: v.active,
     auto_created: v.autoCreated,
+    tax_id_last4: v.taxIdLast4,
+    form_1099_exempt: v.form1099Exempt,
     ...extra,
   };
 }
@@ -129,7 +133,16 @@ router.post("/api/vendors", requireAuth, requireActivePlan, async (req, res, nex
   }
 });
 
-const vendorPatchSchema = vendorSchema.partial().extend({ active: z.boolean().optional() });
+const vendorPatchSchema = vendorSchema.partial().extend({
+  active: z.boolean().optional(),
+  // Free text on the way in -- a human might paste "12-3456789" or just
+  // the last four digits they were given. tinLast4 (extractionTaxDocs.js)
+  // reduces either to the last four digits actually stored; sending an
+  // explicit empty string clears it, same "" vs. undefined convention
+  // Customer.taxExempt-style fields use elsewhere in this file.
+  tax_id: z.string().max(32).optional(),
+  form_1099_exempt: z.boolean().optional(),
+});
 
 router.patch("/api/vendors/:id", requireAuth, requireActivePlan, async (req, res, next) => {
   try {
@@ -146,11 +159,34 @@ router.patch("/api/vendors/:id", requireAuth, requireActivePlan, async (req, res
     if (parsed.data.early_pay_discount_days !== undefined) vendor.earlyPayDiscountDays = parsed.data.early_pay_discount_days;
     if (parsed.data.notes !== undefined) vendor.notes = parsed.data.notes;
     if (parsed.data.active !== undefined) vendor.active = parsed.data.active;
+    if (parsed.data.tax_id !== undefined) vendor.taxIdLast4 = tinLast4(parsed.data.tax_id);
+    if (parsed.data.form_1099_exempt !== undefined) vendor.form1099Exempt = parsed.data.form_1099_exempt;
     // A vendor a human has edited is no longer just whatever OCR produced.
     if (parsed.data.name !== undefined) vendor.autoCreated = false;
     await vendor.save();
 
     res.json(serializeVendor(vendor));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/reports/1099-nec", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const year = /^\d{4}$/.test(req.query.year || "") ? Number(req.query.year) : new Date().getFullYear();
+    const rows = await compute1099Summary(req.currentUser.orgId, year);
+    res.json({
+      year,
+      threshold: FORM_1099_NEC_THRESHOLD_CENTS / 100,
+      items: rows.map((r) => ({
+        vendor_id: r.vendor_id,
+        vendor_name: r.vendor_name,
+        total: r.total_cents / 100,
+        tax_id_last4: r.tax_id_last4,
+        exempt: r.exempt,
+        missing_tin: r.missing_tin,
+      })),
+    });
   } catch (err) {
     next(err);
   }

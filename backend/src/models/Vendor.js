@@ -45,6 +45,21 @@ export const Vendor = sequelize.define(
     // needs a look" ones to the top of the merge UI -- an auto-created
     // vendor is exactly the kind that turns out to be a duplicate.
     autoCreated: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    // ONLY the last four digits of the vendor's TIN/SSN/EIN, never the
+    // whole number -- same reasoning as TaxDocument.recipientTinLast4: a
+    // full SSN sitting in a database column is a liability with no
+    // matching upside for what this app actually needs it for (matching a
+    // 1099-NEC line to the right vendor), and last-four is the standard
+    // key for that. Collected via routes/vendors.js's PATCH, which keeps
+    // only the last four digits of whatever's typed in.
+    taxIdLast4: { type: DataTypes.STRING(8), allowNull: false, defaultValue: "" },
+    // A human's attestation that this vendor doesn't need a 1099-NEC even
+    // if paid over the threshold -- almost always because they're a
+    // corporation, which Rekono has no way to know on its own (see
+    // form1099.js). Defaults to false rather than true: an unmarked vendor
+    // paid over the threshold should show up as needing attention, not
+    // silently drop off the report.
+    form1099Exempt: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   },
   {
     tableName: "vendors",

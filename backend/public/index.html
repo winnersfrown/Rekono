@@ -1558,6 +1558,17 @@
             <tbody id="ap-aging-body"></tbody>
             <tfoot><tr id="ap-aging-totals"></tr></tfoot>
           </table>
+
+          <h3 style="margin-top: 1.5rem;">1099-NEC prep</h3>
+          <p class="hint">Vendors paid $600 or more this year by cash, check, or bank transfer -- payments made by credit card are excluded here since the card network reports those on a 1099-K instead. Mark a vendor exempt if they're a corporation; enter their TIN once you have a W-9 on file.</p>
+          <form id="form1099-year-form" class="statement-period">
+            <label>Year<input type="number" id="form1099-year" min="2000" max="2100" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <table class="report">
+            <thead><tr><th>Vendor</th><th>Amount</th><th>Tax ID</th><th>Status</th><th></th></tr></thead>
+            <tbody id="form1099-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-chartofaccounts" class="tab-panel">
