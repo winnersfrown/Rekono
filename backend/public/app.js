@@ -6458,6 +6458,7 @@ function renderCustomerInvoices(data) {
       <td>
         ${inv.status === "draft" ? `<button type="button" class="ci-send-btn" data-id="${inv.id}">Send</button>` : ""}
         ${inv.status === "sent" ? `<button type="button" class="ci-pay-btn" data-id="${inv.id}" data-outstanding="${inv.amount_outstanding}">Record payment</button>` : ""}
+        ${["sent", "paid"].includes(inv.status) && inv.amount_outstanding > 0 ? `<button type="button" class="ci-write-off-btn linklike" data-id="${inv.id}" data-outstanding="${inv.amount_outstanding}">Write off</button>` : ""}
         ${["draft", "sent"].includes(inv.status) ? `<button type="button" class="ci-void-btn linklike" data-id="${inv.id}">Void</button>` : ""}
       </td>
     </tr>
@@ -6512,7 +6513,64 @@ function renderCustomerInvoices(data) {
       });
     })
   );
+
+  body.querySelectorAll(".ci-write-off-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const writeOff = await writeOffDialog(Number(btn.dataset.outstanding));
+      if (!writeOff) return;
+      await act(btn.dataset.id, "write-off", {
+        amount: writeOff.amount,
+        write_off_date: writeOff.write_off_date,
+        memo: writeOff.memo,
+      });
+    })
+  );
 }
+
+let writeOffModalResolve = null;
+
+async function writeOffDialog(outstandingDollars) {
+  document.getElementById("write-off-modal-message").textContent =
+    `Outstanding balance is ${fmtMoney(outstandingDollars)}. This posts to Bad Debt Expense -- the original sale stays booked.`;
+  document.getElementById("write-off-modal-amount").value = outstandingDollars.toFixed(2);
+  document.getElementById("write-off-modal-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("write-off-modal-memo").value = "";
+  const errorEl = document.getElementById("write-off-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("write-off-modal").style.display = "flex";
+  document.getElementById("write-off-modal-amount").focus();
+
+  return new Promise((resolve) => {
+    writeOffModalResolve = resolve;
+  });
+}
+
+function closeWriteOffModal(result) {
+  document.getElementById("write-off-modal").style.display = "none";
+  if (writeOffModalResolve) {
+    writeOffModalResolve(result);
+    writeOffModalResolve = null;
+  }
+}
+
+document.getElementById("write-off-modal-cancel").addEventListener("click", () => closeWriteOffModal(null));
+
+document.getElementById("write-off-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const amount = Number(document.getElementById("write-off-modal-amount").value);
+  const errorEl = document.getElementById("write-off-modal-error");
+  if (!(amount > 0)) {
+    errorEl.textContent = "Enter an amount greater than zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  closeWriteOffModal({
+    amount,
+    write_off_date: document.getElementById("write-off-modal-date").value,
+    memo: document.getElementById("write-off-modal-memo").value,
+  });
+});
 
 // ---- Credit memos ----
 

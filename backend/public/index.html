@@ -2834,6 +2834,28 @@
     </div>
   </div>
 
+  <!-- Writing off an invoice's balance as uncollectible -- see
+       writeOffInvoice (accountsReceivable.js). Not a void: the sale stays
+       booked, only the receivable balance is recognized as an expense. -->
+  <div id="write-off-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Write off this invoice</h2>
+      <p id="write-off-modal-message"></p>
+      <form id="write-off-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Amount<input type="number" id="write-off-modal-amount" step="0.01" min="0.01" required /></label>
+          <label>Date<input type="date" id="write-off-modal-date" required /></label>
+          <label>Memo (optional)<input type="text" id="write-off-modal-memo" maxlength="512" /></label>
+        </div>
+        <p id="write-off-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="write-off-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Write off</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Picks the period before generating a printable customer statement --
        see computeCustomerStatement (accountsReceivable.js). -->
   <div id="customer-statement-modal" class="modal-overlay" style="display: none;">

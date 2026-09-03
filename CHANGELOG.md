@@ -4,6 +4,21 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.82
+
+Added bad debt write-offs for customer invoices -- recognizing a customer
+balance as uncollectible without pretending the sale never happened. A
+write-off posts Debit Bad Debt Expense / Credit Accounts Receivable, dated
+to when it was written off; the original revenue stays booked exactly as
+billed. Deliberately not a void: a void reverses the sale itself, a
+write-off is a separate claim about collectibility made later. Supports
+partial write-offs (a second write-off can finish one), can't exceed
+what's still actually outstanding once payments and credit memos are
+netted out, and only applies to invoices that were actually sent (a draft
+or void has no receivable to write off). Written-off amounts drop off AR
+aging, show up on the customer statement at their own date, and are
+audit-logged like every other balance-changing action here.
+
 ## v1.81
 
 Added vendor statements -- the AP mirror of v1.80's customer statements. A
