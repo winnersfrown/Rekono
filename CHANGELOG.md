@@ -4,6 +4,37 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.73
+
+Added declining-balance depreciation as a second method alongside
+straight-line. `models/FixedAsset.js` used to scope this out on purpose --
+"declining-balance and MACRS are tax concepts more than bookkeeping ones" --
+and that reasoning still holds for full MACRS: the IRS's recovery-period
+tables and half-year/mid-quarter conventions are a tax-filing lookup this
+app has no business guessing, the same reason `incomeTax.js` refuses to
+invent a tax rate. Declining-balance itself, though, is just a different
+real ledger calculation, and the objection was specifically to *picking a
+method for the user* -- so this adds it as an explicit opt-in where the
+user supplies the annual rate directly (e.g. 50% for double-declining on a
+4-year asset), never derived or defaulted.
+
+The harder problem was mechanical: every existing consumer of
+`RecurringEntry` (accruals, rent, prepaid amortization, straight-line
+depreciation itself) posts the same fixed line amount every occurrence --
+`runRecurringEntries` reads a template's lines once and replays them
+unchanged across every due date in a run. A declining-balance asset's
+amount shrinks every period, which that machinery has no way to express,
+so retrofitting it there risked every other adjusting entry to serve one
+new method. Instead, a declining-balance asset skips the template
+entirely and posts through its own action
+(`runDecliningBalanceDepreciation`), computing each period's amount off
+the *actual* accumulated balance the ledger shows right before it, not a
+running total kept in memory -- so posting several missed months at once,
+or in any order, is self-correcting rather than compounding drift. It
+floors at salvage value and simply stops, since pure declining-balance
+never reaches zero on its own; a real switch-to-straight-line convention
+is exactly the kind of MACRS-specific rule this stays out of.
+
 ## v1.72
 
 Added 1099-NEC prep: which vendors this org paid enough, and by what

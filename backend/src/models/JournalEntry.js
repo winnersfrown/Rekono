@@ -16,6 +16,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "customer_payment", // AR: a customer paid
   "revenue_recognition", // AR: a month of deferred revenue was earned
   "recurring_entry", // an adjusting entry posted from a recurring template
+  "fixed_asset_depreciation", // a declining-balance asset's own posting action (no recurring template -- see fixedAssets.js)
   "reversing_entry", // the auto-reverse mirror image of an accrual, posted the first of the next month
   "closing_entry", // year-end: revenue and expense zeroed into retained earnings
   "equity_transaction", // a dividend *declared* -- no cash moves, so this one stays out of the cash journals

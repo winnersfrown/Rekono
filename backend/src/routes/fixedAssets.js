@@ -9,7 +9,8 @@ import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { LedgerError } from "../ledger.js";
-import { createFixedAsset, dollarsToFixedAssetCents, serializeFixedAsset } from "../fixedAssets.js";
+import { DEPRECIATION_METHODS } from "../models/FixedAsset.js";
+import { createFixedAsset, dollarsToFixedAssetCents, runDecliningBalanceDepreciation, serializeFixedAsset } from "../fixedAssets.js";
 import { FixedAsset, RecurringEntry, AuditLog } from "../models/index.js";
 
 const router = Router();
@@ -37,6 +38,12 @@ const createSchema = z.object({
   asset_account_id: z.string().min(1),
   expense_account_id: z.string().min(1),
   accumulated_depreciation_account_id: z.string().min(1),
+  method: z.enum(DEPRECIATION_METHODS).default("straight_line"),
+  // Required only for declining_balance; validated against the method in
+  // fixedAssets.js's createFixedAsset rather than here, same reasoning
+  // salvage-vs-cost is checked below instead of in the schema -- it's a
+  // cross-field rule, not a shape rule.
+  declining_balance_rate_percent: z.number().positive().max(1000).optional(),
 });
 
 router.post("/api/fixed-assets", requireAuth, requireActivePlan, async (req, res, next) => {
@@ -58,6 +65,8 @@ router.post("/api/fixed-assets", requireAuth, requireActivePlan, async (req, res
       assetAccountId: d.asset_account_id,
       expenseAccountId: d.expense_account_id,
       accumulatedDepreciationAccountId: d.accumulated_depreciation_account_id,
+      method: d.method,
+      decliningBalanceRatePercent: d.declining_balance_rate_percent ?? null,
     });
 
     await AuditLog.create({
@@ -88,19 +97,55 @@ router.patch("/api/fixed-assets/:id", requireAuth, requireActivePlan, async (req
       await asset.save();
     }
     if (parsed.data.active !== undefined) {
-      // Pausing/resuming depreciation is really pausing/resuming the
-      // RecurringEntry it owns -- the asset record itself doesn't carry an
-      // active flag of its own, so there's exactly one place "is this
-      // depreciating right now" can disagree with itself.
-      const template = await RecurringEntry.findOne({ where: { id: asset.recurringEntryId, orgId: req.currentUser.orgId } });
-      if (template) {
-        template.active = parsed.data.active;
-        await template.save();
+      if (asset.method === "declining_balance") {
+        // No RecurringEntry to defer to -- this asset's own flag is the
+        // one place "is this depreciating right now" lives.
+        asset.active = parsed.data.active;
+        await asset.save();
+      } else {
+        // Pausing/resuming straight-line depreciation is really pausing/
+        // resuming the RecurringEntry it owns.
+        const template = await RecurringEntry.findOne({ where: { id: asset.recurringEntryId, orgId: req.currentUser.orgId } });
+        if (template) {
+          template.active = parsed.data.active;
+          await template.save();
+        }
       }
     }
 
     res.json(await serializeFixedAsset(asset));
   } catch (err) {
+    next(err);
+  }
+});
+
+// Declining-balance depreciation has no RecurringEntry to run alongside
+// everything else on the Adjustments tab's "run due entries" button --
+// each asset posts through this dedicated action instead (see
+// fixedAssets.js's runDecliningBalanceDepreciation).
+router.post("/api/fixed-assets/:id/run-depreciation", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = z.object({ as_of: z.string().regex(ISO_DATE).optional() }).safeParse(req.body || {});
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+    const asOf = parsed.data.as_of || new Date().toISOString().slice(0, 10);
+
+    const posted = await runDecliningBalanceDepreciation(orgId, req.params.id, asOf, { postedByUserId: req.currentUser.id });
+
+    if (posted.length) {
+      await AuditLog.create({
+        orgId,
+        userId: req.currentUser.id,
+        action: "fixed_asset_depreciation_run",
+        actor: req.currentUser.email,
+        details: { fixed_asset_id: req.params.id, posted: posted.length },
+      });
+    }
+
+    const asset = await FixedAsset.findOne({ where: { id: req.params.id, orgId } });
+    res.json({ posted, asset: await serializeFixedAsset(asset) });
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
     next(err);
   }
 });
