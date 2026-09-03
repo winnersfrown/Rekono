@@ -15,6 +15,7 @@ import { createSchedulesForInvoice, ensureDeferredRevenueAccount, lineIsDeferred
 import { ensureSalesTaxPayableAccount } from "./salesTax.js";
 import {
   Account,
+  BadDebtWriteOff,
   Customer,
   CustomerCreditMemo,
   CustomerCreditMemoApplication,
@@ -261,7 +262,11 @@ export async function applyCreditMemoToInvoice(creditMemo, invoice, amountCents,
     throw new LedgerError(`This credit memo only has ${centsToDollars(available)} left unapplied.`);
   }
 
-  const alreadyOwed = invoice.totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+  const alreadyOwed =
+    invoice.totalCents -
+    (await amountPaidCents(invoice.id)) -
+    (await amountCreditedCents(invoice.id)) -
+    (await amountWrittenOffCents(invoice.id));
   if (amountCents > alreadyOwed) {
     throw new LedgerError(`That would over-apply the credit. This invoice only has ${centsToDollars(alreadyOwed)} outstanding.`);
   }
@@ -319,12 +324,100 @@ export async function amountPaidCents(customerInvoiceId) {
   return payments.reduce((sum, p) => sum + p.amountCents, 0);
 }
 
-// A sent invoice becomes "paid" once payments plus applied credits cover
-// it, and drops back to "sent" if either is later removed. Derived
-// rather than set by hand, so the two can't disagree.
+export const BAD_DEBT_EXPENSE_SUBTYPE = "bad_debt_expense";
+
+// The Bad Debt Expense account, created on demand -- same pattern as
+// ensureDeferredRevenueAccount, for an org that predates this release.
+export async function ensureBadDebtExpenseAccount(orgId) {
+  const existing = await Account.findOne({ where: { orgId, type: "expense", subtype: BAD_DEBT_EXPENSE_SUBTYPE } });
+  if (existing) return existing;
+  return Account.create({
+    orgId,
+    code: "5900",
+    name: "Bad Debt Expense",
+    type: "expense",
+    subtype: BAD_DEBT_EXPENSE_SUBTYPE,
+    isSystemAccount: true,
+  });
+}
+
+// How much of an invoice's balance has been recognized as uncollectible --
+// the write-off equivalent of amountPaidCents, added alongside it and
+// amountCreditedCents everywhere an invoice's outstanding balance is
+// computed, so a written-off invoice drops off AR aging the same way a
+// paid one does.
+export async function amountWrittenOffCents(customerInvoiceId) {
+  const writeOffs = await BadDebtWriteOff.findAll({
+    where: { customerInvoiceId },
+    attributes: ["amountCents"],
+    raw: true,
+  });
+  return writeOffs.reduce((sum, w) => sum + w.amountCents, 0);
+}
+
+// Posts Debit Bad Debt Expense / Credit Accounts Receivable -- the
+// balance is gone from AR, but revenue stays exactly as billed. See
+// BadDebtWriteOff.js for why this is not modeled as a void.
+export async function postBadDebtWriteOff(writeOff, invoice, { postedByUserId = null } = {}) {
+  const arAccount = await findSystemAccount(invoice.orgId, "asset", "accounts_receivable");
+  if (!arAccount) throw new LedgerError("No Accounts Receivable account found in the chart of accounts.", 409);
+  const badDebtAccount = await ensureBadDebtExpenseAccount(invoice.orgId);
+
+  return postJournalEntry(invoice.orgId, {
+    entryDate: writeOff.writeOffDate,
+    memo: `Write-off -- ${invoice.invoiceNumber}`,
+    source: "bad_debt_write_off",
+    sourceType: "bad_debt_write_off",
+    sourceId: writeOff.id,
+    postedByUserId,
+    lines: [
+      { accountId: badDebtAccount.id, debitCents: writeOff.amountCents },
+      { accountId: arAccount.id, creditCents: writeOff.amountCents },
+    ],
+  });
+}
+
+// Records and posts a write-off in one step, unwinding the row if the
+// ledger refuses -- same recoverable-on-refusal shape recordBillPayment
+// uses on the AP side. Only a sent (or already-partly-settled) invoice has
+// a receivable balance worth writing off; a draft never posted one and a
+// void already reversed it.
+export async function writeOffInvoice(invoice, { amountCents, writeOffDate, memo = "", postedByUserId = null } = {}) {
+  if (!Number.isInteger(amountCents) || amountCents <= 0) throw new LedgerError("Enter an amount greater than zero.");
+
+  const alreadySettled =
+    (await amountPaidCents(invoice.id)) + (await amountCreditedCents(invoice.id)) + (await amountWrittenOffCents(invoice.id));
+  const outstandingCents = invoice.totalCents - alreadySettled;
+  if (amountCents > outstandingCents) {
+    throw new LedgerError(`That would over-write-off this invoice. It only has ${centsToDollars(outstandingCents)} outstanding.`);
+  }
+
+  const writeOff = await BadDebtWriteOff.create({
+    orgId: invoice.orgId,
+    customerInvoiceId: invoice.id,
+    amountCents,
+    writeOffDate,
+    memo,
+  });
+
+  try {
+    await postBadDebtWriteOff(writeOff, invoice, { postedByUserId });
+  } catch (err) {
+    await writeOff.destroy();
+    throw err;
+  }
+
+  await refreshInvoiceStatus(invoice);
+  return writeOff;
+}
+
+// A sent invoice becomes "paid" once payments, applied credits, and
+// write-offs together cover it, and drops back to "sent" if any is later
+// removed. Derived rather than set by hand, so the two can't disagree.
 export async function refreshInvoiceStatus(invoice) {
   if (!["sent", "paid"].includes(invoice.status)) return invoice;
-  const settled = (await amountPaidCents(invoice.id)) + (await amountCreditedCents(invoice.id));
+  const settled =
+    (await amountPaidCents(invoice.id)) + (await amountCreditedCents(invoice.id)) + (await amountWrittenOffCents(invoice.id));
   const nextStatus = settled >= invoice.totalCents ? "paid" : "sent";
   if (invoice.status !== nextStatus) {
     invoice.status = nextStatus;
@@ -365,7 +458,10 @@ export async function computeArAging(orgId, { asOf = null } = {}) {
 
   for (const invoice of invoices) {
     const outstandingCents =
-      invoice.totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+      invoice.totalCents -
+      (await amountPaidCents(invoice.id)) -
+      (await amountCreditedCents(invoice.id)) -
+      (await amountWrittenOffCents(invoice.id));
     if (outstandingCents <= 0) continue; // fully settled but not yet re-statused
 
     const daysPastDue = daysBetween(invoice.dueDate, asOfDate);
@@ -427,11 +523,14 @@ export async function computeCustomerStatement(orgId, customerId, { from, to } =
   });
   const invoiceIds = invoices.map((i) => i.id);
 
-  const [payments, credits] = await Promise.all([
+  const [payments, credits, writeOffs] = await Promise.all([
     invoiceIds.length
       ? CustomerPayment.findAll({ where: { orgId, customerInvoiceId: { [Op.in]: invoiceIds } } })
       : [],
     CustomerCreditMemo.findAll({ where: { orgId, customerId, status: "issued" } }),
+    invoiceIds.length
+      ? BadDebtWriteOff.findAll({ where: { orgId, customerInvoiceId: { [Op.in]: invoiceIds } } })
+      : [],
   ]);
 
   const events = [
@@ -452,6 +551,12 @@ export async function computeCustomerStatement(orgId, customerId, { from, to } =
       type: "credit_memo",
       description: `Credit memo ${c.creditNumber}`,
       amountCents: -c.totalCents,
+    })),
+    ...writeOffs.map((w) => ({
+      date: w.writeOffDate,
+      type: "write_off",
+      description: "Written off",
+      amountCents: -w.amountCents,
     })),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 

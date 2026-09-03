@@ -54,6 +54,7 @@ import { VendorCreditMemo } from "./VendorCreditMemo.js";
 import { VendorCreditMemoApplication } from "./VendorCreditMemoApplication.js";
 import { PrepaidExpense } from "./PrepaidExpense.js";
 import { PrepaidExpenseScheduleEntry } from "./PrepaidExpenseScheduleEntry.js";
+import { BadDebtWriteOff } from "./BadDebtWriteOff.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -279,6 +280,9 @@ CustomerCreditMemoApplication.belongsTo(CustomerCreditMemo, { foreignKey: "custo
 CustomerInvoice.hasMany(CustomerCreditMemoApplication, { foreignKey: "customerInvoiceId", as: "creditApplications", onDelete: "CASCADE", hooks: true });
 CustomerCreditMemoApplication.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
 
+CustomerInvoice.hasMany(BadDebtWriteOff, { foreignKey: "customerInvoiceId", as: "writeOffs", onDelete: "CASCADE", hooks: true });
+BadDebtWriteOff.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
+
 // The AP mirror -- no line sub-table, same reasoning as RecurringBill (see
 // VendorCreditMemo.js).
 VendorCreditMemo.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
@@ -454,4 +458,5 @@ export {
   VendorCreditMemoApplication,
   PrepaidExpense,
   PrepaidExpenseScheduleEntry,
+  BadDebtWriteOff,
 };

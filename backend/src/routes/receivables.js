@@ -14,6 +14,7 @@ import {
   amountAppliedFromCreditMemoCents,
   amountCreditedCents,
   amountPaidCents,
+  amountWrittenOffCents,
   applyCreditMemoToInvoice,
   computeArAging,
   computeCustomerStatement,
@@ -26,6 +27,7 @@ import {
   unappliedCreditMemoCents,
   voidCustomerCreditMemoEntry,
   voidCustomerInvoiceEntry,
+  writeOffInvoice,
 } from "../accountsReceivable.js";
 import { dropUnrecognizedSchedule } from "../revenueRecognition.js";
 import { computeInvoiceTaxCents, recordSalesTaxRemittance, salesTaxPayableCents } from "../salesTax.js";
@@ -84,9 +86,10 @@ function serializeLine(line) {
   };
 }
 
-function serializeInvoice(invoice, { lines, paidCents, creditedCents } = {}) {
+function serializeInvoice(invoice, { lines, paidCents, creditedCents, writtenOffCents } = {}) {
   const paid = paidCents ?? 0;
   const credited = creditedCents ?? 0;
+  const writtenOff = writtenOffCents ?? 0;
   return {
     id: invoice.id,
     customer_id: invoice.customerId,
@@ -101,7 +104,8 @@ function serializeInvoice(invoice, { lines, paidCents, creditedCents } = {}) {
     total: centsToDollars(invoice.totalCents),
     amount_paid: centsToDollars(paid),
     amount_credited: centsToDollars(credited),
-    amount_outstanding: centsToDollars(invoice.totalCents - paid - credited),
+    amount_written_off: centsToDollars(writtenOff),
+    amount_outstanding: centsToDollars(invoice.totalCents - paid - credited - writtenOff),
     sent_at: invoice.sentAt,
     ...(lines ? { lines: lines.map(serializeLine) } : {}),
   };
@@ -460,6 +464,7 @@ router.get("/api/customer-invoices", requireAuth, requireActivePlan, async (req,
         serializeInvoice(inv, {
           paidCents: await amountPaidCents(inv.id),
           creditedCents: await amountCreditedCents(inv.id),
+          writtenOffCents: await amountWrittenOffCents(inv.id),
         })
       )
     );
@@ -579,6 +584,7 @@ router.get("/api/customer-invoices/:id", requireAuth, requireActivePlan, async (
         lines: await loadLines(invoice.id),
         paidCents: await amountPaidCents(invoice.id),
         creditedCents: await amountCreditedCents(invoice.id),
+        writtenOffCents: await amountWrittenOffCents(invoice.id),
       })
     );
   } catch (err) {
@@ -730,6 +736,59 @@ router.post("/api/customer-invoices/:id/payments", requireAuth, requireActivePla
         lines: await loadLines(invoice.id),
         paidCents: await amountPaidCents(invoice.id),
         creditedCents: await amountCreditedCents(invoice.id),
+        writtenOffCents: await amountWrittenOffCents(invoice.id),
+      })
+    );
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+// ---- Bad debt write-offs ----
+
+const writeOffSchema = z.object({
+  amount: z.number().positive(),
+  write_off_date: z.string().min(1),
+  memo: z.string().max(512).optional(),
+});
+
+// Recognizes an invoice's remaining balance as uncollectible. Not a void
+// -- see BadDebtWriteOff.js for why the sale stays booked as revenue and
+// only the receivable is written off.
+router.post("/api/customer-invoices/:id/write-off", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = writeOffSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+
+    const invoice = await getOwnedInvoice(req.params.id, orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (!["sent", "paid"].includes(invoice.status)) {
+      return res.status(409).json({ detail: `Can't write off a ${invoice.status} invoice.` });
+    }
+
+    await writeOffInvoice(invoice, {
+      amountCents: dollarsToCents(parsed.data.amount),
+      writeOffDate: parsed.data.write_off_date,
+      memo: parsed.data.memo || "",
+      postedByUserId: req.currentUser.id,
+    });
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "customer_invoice_written_off",
+      actor: req.currentUser.email,
+      details: { invoice_number: invoice.invoiceNumber, amount: parsed.data.amount },
+    });
+
+    res.status(201).json(
+      serializeInvoice(invoice, {
+        lines: await loadLines(invoice.id),
+        paidCents: await amountPaidCents(invoice.id),
+        creditedCents: await amountCreditedCents(invoice.id),
+        writtenOffCents: await amountWrittenOffCents(invoice.id),
       })
     );
   } catch (err) {
@@ -978,6 +1037,7 @@ router.post("/api/customer-credit-memos/:id/apply", requireAuth, requireActivePl
         lines: await loadLines(invoice.id),
         paidCents: await amountPaidCents(invoice.id),
         creditedCents: await amountCreditedCents(invoice.id),
+        writtenOffCents: await amountWrittenOffCents(invoice.id),
       })
     );
   } catch (err) {
