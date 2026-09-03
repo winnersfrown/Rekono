@@ -16,6 +16,7 @@ import {
   amountPaidCents,
   applyCreditMemoToInvoice,
   computeArAging,
+  computeCustomerStatement,
   nextCreditMemoNumber,
   nextInvoiceNumber,
   postCustomerCreditMemo,
@@ -179,6 +180,21 @@ router.patch("/api/customers/:id", requireAuth, requireActivePlan, async (req, r
     }
     await customer.save();
     res.json(serializeCustomer(customer));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A customer's own AR activity over a period with a running balance --
+// what a collections call or a "here's what you owe" statement needs.
+// See computeCustomerStatement for why each event is dated the way it is.
+router.get("/api/customers/:id/statement", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const from = ISO_DATE.test(req.query.from || "") ? req.query.from : undefined;
+    const to = ISO_DATE.test(req.query.to || "") ? req.query.to : undefined;
+    const statement = await computeCustomerStatement(req.currentUser.orgId, req.params.id, { from, to });
+    if (!statement) return res.status(404).json({ detail: "Customer not found" });
+    res.json(statement);
   } catch (err) {
     next(err);
   }

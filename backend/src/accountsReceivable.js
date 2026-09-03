@@ -403,3 +403,83 @@ export async function computeArAging(orgId, { asOf = null } = {}) {
     },
   };
 }
+
+// A customer's own AR activity over a period, with a running balance --
+// what a collections call or a "here's what you owe" email needs, as
+// opposed to computeArAging's org-wide, point-in-time view.
+//
+// Built from the three sources that actually move a customer's AR
+// balance, each dated to when it did: an invoice at its issueDate (Debit
+// AR), a payment at its paymentDate (Credit AR), and a credit memo at its
+// own issueDate -- not whichever invoice it was later applied to, since
+// postCustomerCreditMemo credits AR the moment the memo posts, same as
+// the ledger itself would show. Draft and void invoices, and void credit
+// memos, never touched AR and are excluded, same as computeArAging.
+export async function computeCustomerStatement(orgId, customerId, { from, to } = {}) {
+  const customer = await Customer.findOne({ where: { id: customerId, orgId } });
+  if (!customer) return null;
+
+  const toDate = to || todayIso();
+  const fromDate = from || "0000-01-01";
+
+  const invoices = await CustomerInvoice.findAll({
+    where: { orgId, customerId, status: { [Op.in]: ["sent", "paid"] } },
+  });
+  const invoiceIds = invoices.map((i) => i.id);
+
+  const [payments, credits] = await Promise.all([
+    invoiceIds.length
+      ? CustomerPayment.findAll({ where: { orgId, customerInvoiceId: { [Op.in]: invoiceIds } } })
+      : [],
+    CustomerCreditMemo.findAll({ where: { orgId, customerId, status: "issued" } }),
+  ]);
+
+  const events = [
+    ...invoices.map((i) => ({
+      date: i.issueDate,
+      type: "invoice",
+      description: `Invoice ${i.invoiceNumber}`,
+      amountCents: i.totalCents,
+    })),
+    ...payments.map((p) => ({
+      date: p.paymentDate,
+      type: "payment",
+      description: "Payment received",
+      amountCents: -p.amountCents,
+    })),
+    ...credits.map((c) => ({
+      date: c.issueDate,
+      type: "credit_memo",
+      description: `Credit memo ${c.creditNumber}`,
+      amountCents: -c.totalCents,
+    })),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  const openingCents = events
+    .filter((e) => e.date < fromDate)
+    .reduce((sum, e) => sum + e.amountCents, 0);
+
+  let runningCents = openingCents;
+  const activity = events
+    .filter((e) => e.date >= fromDate && e.date <= toDate)
+    .map((e) => {
+      runningCents += e.amountCents;
+      return {
+        date: e.date,
+        type: e.type,
+        description: e.description,
+        amount: centsToDollars(e.amountCents),
+        balance: centsToDollars(runningCents),
+      };
+    });
+
+  return {
+    customer_id: customer.id,
+    customer_name: customer.name,
+    from: fromDate === "0000-01-01" ? null : fromDate,
+    to: toDate,
+    opening_balance: centsToDollars(openingCents),
+    closing_balance: centsToDollars(runningCents),
+    activity,
+  };
+}
