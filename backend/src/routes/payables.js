@@ -12,16 +12,24 @@ import { rateLimitMiddleware } from "../rateLimit.js";
 import { LedgerError, centsToDollars, dollarsToCents } from "../ledger.js";
 import {
   PAYABLE_INVOICE_STATUS,
+  amountCreditedCents,
+  amountAppliedFromVendorCreditMemoCents,
   amountPaidCents,
+  applyVendorCreditMemoToBill,
   computeApAging,
   invoiceTotalCents,
   isValidPaymentAccount,
+  nextVendorCreditMemoNumber,
+  postVendorCreditMemo,
   recordBillPayment,
+  unappliedVendorCreditMemoCents,
   voidBillPaymentEntry,
+  voidVendorCreditMemoEntry,
 } from "../accountsPayable.js";
+import { buildVendorResolver } from "../vendors.js";
 import { dueDates, previewRecurringBills, runRecurringBills } from "../recurringBills.js";
 import { RECURRING_BILL_FREQUENCIES } from "../models/RecurringBill.js";
-import { Account, AuditLog, BillPayment, Invoice, RecurringBill } from "../models/index.js";
+import { Account, AuditLog, BillPayment, Invoice, RecurringBill, VendorCreditMemo, VendorCreditMemoApplication } from "../models/index.js";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -60,11 +68,13 @@ async function paymentsPayload(invoice) {
   const totalCents = invoiceTotalCents(invoice);
   // Amount+discount both relieve the payable -- see amountPaidCents.
   const paidCents = payments.reduce((sum, p) => sum + p.amountCents + (p.discountCents || 0), 0);
+  const creditedCents = await amountCreditedCents(invoice.id);
   return {
     invoice_id: invoice.id,
     total: centsToDollars(totalCents),
     amount_paid: centsToDollars(paidCents),
-    amount_outstanding: centsToDollars(totalCents - paidCents),
+    amount_credited: centsToDollars(creditedCents),
+    amount_outstanding: centsToDollars(totalCents - paidCents - creditedCents),
     items: payments.map((p) => serializePayment(p, byId.get(p.paymentAccountId))),
   };
 }
@@ -96,12 +106,25 @@ router.get("/api/bills", requireAuth, requireActivePlan, async (req, res, next) 
       paidByInvoice.set(p.invoiceId, (paidByInvoice.get(p.invoiceId) || 0) + p.amountCents + (p.discountCents || 0));
     }
 
+    // Same one-query-for-the-org shape as payments above, so a bill settled
+    // partly by vendor credit doesn't sit on this list as still fully owed.
+    const creditApplications = await VendorCreditMemoApplication.findAll({
+      where: { orgId },
+      attributes: ["invoiceId", "amountCents"],
+      raw: true,
+    });
+    const creditedByInvoice = new Map();
+    for (const a of creditApplications) {
+      creditedByInvoice.set(a.invoiceId, (creditedByInvoice.get(a.invoiceId) || 0) + a.amountCents);
+    }
+
     const outstandingOnly = req.query.outstanding !== "false";
     const items = [];
     for (const invoice of invoices) {
       const totalCents = invoiceTotalCents(invoice);
       const paidCents = paidByInvoice.get(invoice.id) || 0;
-      const outstandingCents = totalCents - paidCents;
+      const creditedCents = creditedByInvoice.get(invoice.id) || 0;
+      const outstandingCents = totalCents - paidCents - creditedCents;
       if (outstandingOnly && outstandingCents <= 0) continue;
       items.push({
         invoice_id: invoice.id,
@@ -110,6 +133,7 @@ router.get("/api/bills", requireAuth, requireActivePlan, async (req, res, next) 
         due_date: invoice.dueDate,
         total: centsToDollars(totalCents),
         amount_paid: centsToDollars(paidCents),
+        amount_credited: centsToDollars(creditedCents),
         amount_outstanding: centsToDollars(outstandingCents),
       });
     }
@@ -242,6 +266,197 @@ router.get("/api/reports/ap-aging", requireAuth, requireActivePlan, async (req, 
     const asOf = /^\d{4}-\d{2}-\d{2}$/.test(req.query.as_of || "") ? req.query.as_of : null;
     res.json(await computeApAging(req.currentUser.orgId, { asOf }));
   } catch (err) {
+    next(err);
+  }
+});
+
+// ---- Vendor credit memos ----
+
+function serializeVendorCreditMemo(memo, { unappliedCents } = {}) {
+  return {
+    id: memo.id,
+    vendor_name: memo.vendorName,
+    expense_account_id: memo.expenseAccountId,
+    expense_account_name: memo.expenseAccount?.name,
+    credit_number: memo.creditNumber,
+    issue_date: memo.issueDate,
+    status: memo.status,
+    amount: centsToDollars(memo.amountCents),
+    memo: memo.memo,
+    ...(unappliedCents !== undefined ? { unapplied: centsToDollars(unappliedCents) } : {}),
+  };
+}
+
+async function getOwnedVendorCreditMemo(id, orgId) {
+  return VendorCreditMemo.findOne({
+    where: { id, orgId },
+    include: [{ model: Account, as: "expenseAccount", attributes: ["id", "name"] }],
+  });
+}
+
+router.get("/api/vendor-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const where = { orgId: req.currentUser.orgId };
+    if (req.query.status) where.status = req.query.status;
+
+    const memos = await VendorCreditMemo.findAll({
+      where,
+      include: [{ model: Account, as: "expenseAccount", attributes: ["id", "name"] }],
+      order: [["issueDate", "DESC"], ["createdAt", "DESC"]],
+    });
+
+    const items = await Promise.all(
+      memos.map(async (m) => serializeVendorCreditMemo(m, { unappliedCents: await unappliedVendorCreditMemoCents(m) }))
+    );
+    res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const vendorCreditMemoSchema = z.object({
+  vendor_name: z.string().min(1).max(512),
+  expense_account_id: z.string().min(1),
+  issue_date: z.string().min(1),
+  amount: z.number().positive(),
+  memo: z.string().max(512).optional(),
+});
+
+// Posted immediately -- see VendorCreditMemo.js for why this skips the
+// Review Queue every other bill-related write path here goes through.
+router.post("/api/vendor-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = vendorCreditMemoSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+
+    const expenseAccount = await Account.findOne({ where: { id: parsed.data.expense_account_id, orgId, type: "expense" } });
+    if (!expenseAccount) {
+      return res.status(422).json({ detail: "This credit must reverse an expense account in your chart of accounts." });
+    }
+
+    const creditMemo = await VendorCreditMemo.create({
+      orgId,
+      vendorName: parsed.data.vendor_name,
+      expenseAccountId: expenseAccount.id,
+      creditNumber: await nextVendorCreditMemoNumber(orgId),
+      issueDate: parsed.data.issue_date,
+      memo: parsed.data.memo || "",
+      amountCents: dollarsToCents(parsed.data.amount),
+    });
+
+    try {
+      await postVendorCreditMemo(creditMemo, { postedByUserId: req.currentUser.id });
+    } catch (err) {
+      await creditMemo.destroy();
+      throw err;
+    }
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "vendor_credit_memo_issued",
+      actor: req.currentUser.email,
+      details: { credit_number: creditMemo.creditNumber, vendor: creditMemo.vendorName, amount: parsed.data.amount },
+    });
+
+    creditMemo.expenseAccount = expenseAccount;
+    res.status(201).json(serializeVendorCreditMemo(creditMemo, { unappliedCents: creditMemo.amountCents }));
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+router.get("/api/vendor-credit-memos/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const creditMemo = await getOwnedVendorCreditMemo(req.params.id, req.currentUser.orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+    res.json(serializeVendorCreditMemo(creditMemo, { unappliedCents: await unappliedVendorCreditMemoCents(creditMemo) }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/vendor-credit-memos/:id/void", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const creditMemo = await getOwnedVendorCreditMemo(req.params.id, req.currentUser.orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+    if (creditMemo.status === "void") return res.status(409).json({ detail: "This credit memo is already void." });
+
+    // Mirrors the AR side's guard: unwinding a credit that's already been
+    // used to settle a bill is a conversation with that bill, not something
+    // to silently reverse out from under it.
+    if ((await amountAppliedFromVendorCreditMemoCents(creditMemo.id)) > 0) {
+      return res.status(409).json({
+        detail: "This credit memo has been applied to a bill. That application can't be undone from here.",
+      });
+    }
+
+    await voidVendorCreditMemoEntry(req.currentUser.orgId, creditMemo.id, { postedByUserId: req.currentUser.id });
+    creditMemo.status = "void";
+    await creditMemo.save();
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      action: "vendor_credit_memo_voided",
+      actor: req.currentUser.email,
+      details: { credit_number: creditMemo.creditNumber },
+    });
+
+    res.json(serializeVendorCreditMemo(creditMemo, { unappliedCents: 0 }));
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+const applyVendorCreditSchema = z.object({
+  invoice_id: z.string().min(1),
+  amount: z.number().positive(),
+  applied_date: z.string().min(1).optional(),
+});
+
+router.post("/api/vendor-credit-memos/:id/apply", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = applyVendorCreditSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+
+    const creditMemo = await getOwnedVendorCreditMemo(req.params.id, orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+
+    const invoice = await getOwnedInvoice(parsed.data.invoice_id, orgId);
+    if (!invoice) return res.status(404).json({ detail: "Bill not found" });
+    if (invoice.status !== PAYABLE_INVOICE_STATUS) {
+      return res.status(409).json({ detail: `Can't apply a credit to a ${invoice.status} bill.` });
+    }
+
+    const resolveVendor = await buildVendorResolver(orgId);
+    await applyVendorCreditMemoToBill(
+      creditMemo,
+      invoice,
+      dollarsToCents(parsed.data.amount),
+      parsed.data.applied_date || todayIso(),
+      resolveVendor
+    );
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      invoiceId: invoice.id,
+      action: "vendor_credit_memo_applied",
+      actor: req.currentUser.email,
+      details: { credit_number: creditMemo.creditNumber, invoice_number: invoice.invoiceNumber, amount: parsed.data.amount },
+    });
+
+    res.json({
+      credit_memo: serializeVendorCreditMemo(creditMemo, { unappliedCents: await unappliedVendorCreditMemoCents(creditMemo) }),
+      bill: await paymentsPayload(invoice),
+    });
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
     next(err);
   }
 });

@@ -4,6 +4,33 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.78
+
+Added vendor credit memos -- a return, a billing error, or a goodwill
+adjustment a vendor issues against what you owe them. The AP mirror of
+v1.77's customer credit memos, and closes the last asymmetry between the
+two sides of the ledger this app models.
+
+A vendor credit memo (`VendorCreditMemo`) posts immediately on creation --
+Debit Accounts Payable / Credit the expense account it reverses -- with no
+draft stage, same reasoning as the AR side: something already billed needs
+correcting, so there's no "not on the books yet" state worth modeling.
+Unlike `CustomerCreditMemo`, there's no line-item sub-table: `postInvoiceApproval`
+has never split an approved bill's total across more than one expense
+account, so a credit against that bill mirrors the same one-account,
+one-amount shape `RecurringBill` already settled on for the identical
+reason.
+
+Applying a credit to a specific bill (`VendorCreditMemoApplication`) posts
+no journal entry of its own -- the money already moved when the memo
+posted -- and is validated against the bill's *resolved* vendor identity
+(via the same `vendors.js` resolver AP aging uses), not a raw name match,
+so a credit can't be misapplied to a similarly-named vendor's bill.
+`amountCreditedCents` is added alongside `amountPaidCents` everywhere a
+bill's outstanding balance is computed (Bill Payments, AP aging), so a
+bill settled partly by credit drops off both the same way a cash payment
+would.
+
 ## v1.77
 
 Added customer credit memos -- a return, a billing error, or a goodwill

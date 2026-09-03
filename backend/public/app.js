@@ -406,6 +406,7 @@ function switchTab(name) {
     loadWrittenChecks();
     loadRecurringBillFormData();
     loadRecurringBills();
+    loadVendorCreditMemos();
   }
   if (name === "apaging") { loadApAging(); loadForm1099(); }
 }
@@ -8464,6 +8465,7 @@ async function loadPaymentAccounts() {
 async function loadRecurringBillFormData() {
   await loadPaymentAccounts();
   document.getElementById("rb-account").innerHTML = groupedAccountOptionsHtml(rbExpenseAccounts, null);
+  document.getElementById("vcm-account").innerHTML = groupedAccountOptionsHtml(rbExpenseAccounts, null);
 }
 
 async function loadBillPayments() {
@@ -8808,6 +8810,185 @@ document.getElementById("recurring-bill-run-form").addEventListener("submit", as
   invalidateCache("__ap_aging__");
   loadBillPayments();
   loadRecurringBills();
+});
+
+// ---- Vendor credit memos ----
+// See accountsPayable.js's postVendorCreditMemo/applyVendorCreditMemoToBill.
+// The AP mirror of the customer credit memos section above -- one flat
+// amount and one expense account, same reasoning as recurring bills.
+
+document.getElementById("vendor-credit-memo-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("vendor-credit-memo-status");
+  const res = await apiFetch("/api/vendor-credit-memos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      vendor_name: document.getElementById("vcm-vendor").value,
+      expense_account_id: document.getElementById("vcm-account").value,
+      issue_date: document.getElementById("vcm-date").value,
+      amount: Number(document.getElementById("vcm-amount").value) || 0,
+      memo: document.getElementById("vcm-memo").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Issued ${parsed.credit_number}.`;
+  document.getElementById("vcm-vendor").value = "";
+  document.getElementById("vcm-amount").value = "";
+  document.getElementById("vcm-memo").value = "";
+  invalidateCache("__ap_aging__");
+  loadVendorCreditMemos();
+  loadBillPayments();
+});
+
+async function loadVendorCreditMemos() {
+  const data = await (await apiFetch("/api/vendor-credit-memos")).json();
+  renderVendorCreditMemos(data);
+}
+
+let applyVendorCreditModalResolve = null;
+
+function renderVendorCreditMemos(data) {
+  const body = document.getElementById("vendor-credit-memos-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No vendor credit memos yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (m) => `
+    <tr>
+      <td>${escapeHtml(m.credit_number)}</td>
+      <td>${escapeHtml(m.vendor_name)}</td>
+      <td>${m.issue_date}</td>
+      <td>${fmtMoney(m.amount)}</td>
+      <td>${fmtMoney(m.unapplied)}</td>
+      <td>${m.status}</td>
+      <td>
+        ${
+          m.status === "issued" && m.unapplied > 0
+            ? `<button type="button" class="vcm-apply-btn" data-id="${m.id}" data-vendor="${escapeHtml(m.vendor_name)}" data-unapplied="${m.unapplied}">Apply to bill</button>`
+            : ""
+        }
+        ${m.status === "issued" ? `<button type="button" class="vcm-void-btn linklike" data-id="${m.id}">Void</button>` : ""}
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".vcm-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog(
+        "Void this credit memo?",
+        "This posts a reversing entry. The credit memo stays on record either way.",
+        { confirmLabel: "Void", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/vendor-credit-memos/${btn.dataset.id}/void`, { method: "POST" });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't void that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__ap_aging__");
+      loadVendorCreditMemos();
+    })
+  );
+
+  body.querySelectorAll(".vcm-apply-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const result = await applyVendorCreditDialog(btn.dataset.vendor, Number(btn.dataset.unapplied));
+      if (!result) return;
+      const res = await apiFetch(`/api/vendor-credit-memos/${btn.dataset.id}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't apply that credit", parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__ap_aging__");
+      loadVendorCreditMemos();
+      loadBillPayments();
+    })
+  );
+}
+
+// Which of this vendor's bills still have a balance a credit could offset.
+// Matched by name against the same /api/bills list Bill Payments shows --
+// the server does the authoritative resolved-vendor-identity check when the
+// apply actually posts, so a name match here is only ever a convenience
+// filter, never the source of truth.
+async function openBillsForVendor(vendorName) {
+  const data = await (await apiFetch("/api/bills?outstanding=true")).json();
+  return data.items.filter((b) => b.vendor_name === vendorName);
+}
+
+async function applyVendorCreditDialog(vendorName, unappliedDollars) {
+  const bills = await openBillsForVendor(vendorName);
+  if (!bills.length) {
+    await alertDialog("No open bills", "This vendor has no open bills to apply a credit to.");
+    return null;
+  }
+
+  document.getElementById("apply-vendor-credit-modal-message").textContent = `${fmtMoney(unappliedDollars)} unapplied on this credit memo.`;
+  document.getElementById("apply-vendor-credit-modal-bill").innerHTML = bills
+    .map(
+      (b) =>
+        `<option value="${b.invoice_id}" data-outstanding="${b.amount_outstanding}">${escapeHtml(b.invoice_number || b.invoice_id.slice(0, 8))} -- ${fmtMoney(b.amount_outstanding)} outstanding</option>`
+    )
+    .join("");
+  const amountEl = document.getElementById("apply-vendor-credit-modal-amount");
+  const billEl = document.getElementById("apply-vendor-credit-modal-bill");
+  const setDefaultAmount = () => {
+    const outstanding = Number(billEl.selectedOptions[0]?.dataset.outstanding || 0);
+    amountEl.value = Math.min(unappliedDollars, outstanding).toFixed(2);
+  };
+  billEl.onchange = setDefaultAmount;
+  setDefaultAmount();
+  document.getElementById("apply-vendor-credit-modal-date").value = new Date().toISOString().slice(0, 10);
+  const errorEl = document.getElementById("apply-vendor-credit-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("apply-vendor-credit-modal").style.display = "flex";
+  amountEl.focus();
+
+  return new Promise((resolve) => {
+    applyVendorCreditModalResolve = resolve;
+  });
+}
+
+function closeApplyVendorCreditModal(result) {
+  document.getElementById("apply-vendor-credit-modal").style.display = "none";
+  if (applyVendorCreditModalResolve) {
+    applyVendorCreditModalResolve(result);
+    applyVendorCreditModalResolve = null;
+  }
+}
+
+document.getElementById("apply-vendor-credit-modal-cancel").addEventListener("click", () => closeApplyVendorCreditModal(null));
+
+document.getElementById("apply-vendor-credit-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const amount = Number(document.getElementById("apply-vendor-credit-modal-amount").value);
+  const errorEl = document.getElementById("apply-vendor-credit-modal-error");
+  if (!(amount > 0)) {
+    errorEl.textContent = "Enter an amount greater than zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  closeApplyVendorCreditModal({
+    invoice_id: document.getElementById("apply-vendor-credit-modal-bill").value,
+    amount,
+    applied_date: document.getElementById("apply-vendor-credit-modal-date").value,
+  });
 });
 
 // Standard check-printing convention: the amount spelled out in words is
