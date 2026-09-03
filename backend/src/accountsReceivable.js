@@ -16,6 +16,8 @@ import { ensureSalesTaxPayableAccount } from "./salesTax.js";
 import {
   Account,
   Customer,
+  CustomerCreditMemo,
+  CustomerCreditMemoApplication,
   CustomerInvoice,
   CustomerInvoiceLine,
   CustomerPayment,
@@ -40,6 +42,20 @@ export async function nextInvoiceNumber(orgId) {
     if (match) highest = Math.max(highest, Number(match[1]));
   }
   return `INV-${String(highest + 1).padStart(4, "0")}`;
+}
+
+// Sequential per org: CM-0001, CM-0002, ... Same derivation-from-history
+// approach as nextInvoiceNumber, and for the same reason: a credit memo
+// is cut rarely enough that a stored counter buys correctness no one
+// needs at the cost of one more thing to keep in sync.
+export async function nextCreditMemoNumber(orgId) {
+  const memos = await CustomerCreditMemo.findAll({ where: { orgId }, attributes: ["creditNumber"], raw: true });
+  let highest = 0;
+  for (const { creditNumber } of memos) {
+    const match = /^CM-(\d+)$/.exec(creditNumber || "");
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  return `CM-${String(highest + 1).padStart(4, "0")}`;
 }
 
 export function addDays(isoDate, days) {
@@ -142,6 +158,125 @@ export async function postCustomerPayment(payment, invoice, { postedByUserId = n
   });
 }
 
+// Posts Debit each line's revenue account (+ Debit Sales Tax Payable, for
+// the tax portion) / Credit Accounts Receivable -- the mirror image of
+// postCustomerInvoice. A credit memo reduces revenue and what the
+// customer owes; it never touches Deferred Revenue, even when it's
+// crediting back something originally billed on a service period (see
+// CustomerCreditMemo.js) -- by the time someone cuts a credit, working
+// out how much of the original line was already recognized versus still
+// deferred is a judgment call this app isn't in a position to make
+// silently, so it books the credit against revenue directly and leaves
+// any deferred-revenue correction to a manual journal entry.
+export async function postCustomerCreditMemo(creditMemo, lines, { postedByUserId = null } = {}) {
+  const arAccount = await findSystemAccount(creditMemo.orgId, "asset", "accounts_receivable");
+  if (!arAccount) throw new LedgerError("No Accounts Receivable account found in the chart of accounts.", 409);
+
+  const lineTotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);
+  const taxCents = creditMemo.taxCents || 0;
+  if (lineTotalCents + taxCents !== creditMemo.totalCents) {
+    throw new LedgerError("This credit memo's total doesn't match the sum of its lines and tax.");
+  }
+
+  const debitsByAccount = new Map();
+  for (const line of lines) {
+    debitsByAccount.set(line.revenueAccountId, (debitsByAccount.get(line.revenueAccountId) || 0) + line.amountCents);
+  }
+  if (taxCents > 0) {
+    const taxAccount = await ensureSalesTaxPayableAccount(creditMemo.orgId);
+    debitsByAccount.set(taxAccount.id, (debitsByAccount.get(taxAccount.id) || 0) + taxCents);
+  }
+
+  return postJournalEntry(creditMemo.orgId, {
+    entryDate: creditMemo.issueDate,
+    memo: `${creditMemo.creditNumber} -- ${creditMemo.customerName || "Customer"}`,
+    docNumber: creditMemo.creditNumber || "",
+    source: "customer_credit_memo",
+    sourceType: "customer_credit_memo",
+    sourceId: creditMemo.id,
+    postedByUserId,
+    lines: [
+      ...[...debitsByAccount].map(([accountId, debitCents]) => ({ accountId, debitCents })),
+      { accountId: arAccount.id, creditCents: creditMemo.totalCents },
+    ],
+  });
+}
+
+// Reverses whatever a credit memo posted, if anything. Same
+// (sourceType, sourceId) lookup as voidCustomerInvoiceEntry.
+export async function voidCustomerCreditMemoEntry(orgId, customerCreditMemoId, { postedByUserId = null } = {}) {
+  const entry = await JournalEntry.findOne({
+    where: { orgId, sourceType: "customer_credit_memo", sourceId: customerCreditMemoId, status: "posted" },
+  });
+  if (!entry) return null;
+  return voidJournalEntry(orgId, entry.id, { postedByUserId });
+}
+
+// How much of a credit memo has already been used against invoices.
+export async function amountAppliedFromCreditMemoCents(customerCreditMemoId) {
+  const applications = await CustomerCreditMemoApplication.findAll({
+    where: { customerCreditMemoId },
+    attributes: ["amountCents"],
+    raw: true,
+  });
+  return applications.reduce((sum, a) => sum + a.amountCents, 0);
+}
+
+// What's left of a credit memo to apply to some invoice -- 0 once fully
+// used, and always 0 for a void memo (nothing left to give: the credit
+// itself was reversed).
+export async function unappliedCreditMemoCents(creditMemo) {
+  if (creditMemo.status === "void") return 0;
+  return creditMemo.totalCents - (await amountAppliedFromCreditMemoCents(creditMemo.id));
+}
+
+// How much of an invoice's balance has been offset by credit memos --
+// the credit-memo equivalent of amountPaidCents, and added to it
+// everywhere an invoice's outstanding balance is computed, so a customer
+// who was credited instead of refunded doesn't sit on the aging report
+// forever.
+export async function amountCreditedCents(customerInvoiceId) {
+  const applications = await CustomerCreditMemoApplication.findAll({
+    where: { customerInvoiceId },
+    attributes: ["amountCents"],
+    raw: true,
+  });
+  return applications.reduce((sum, a) => sum + a.amountCents, 0);
+}
+
+// Applies (part of) a credit memo against a specific invoice. Posts no
+// journal entry of its own -- see CustomerCreditMemoApplication.js for
+// why the money already moved when the memo was issued -- so this is
+// pure validation plus a row, the same shape a payment would be if
+// payments needed no ledger entry.
+export async function applyCreditMemoToInvoice(creditMemo, invoice, amountCents, appliedDate) {
+  if (creditMemo.status === "void") throw new LedgerError("This credit memo has been voided.");
+  if (creditMemo.customerId !== invoice.customerId) {
+    throw new LedgerError("A credit memo can only be applied to an invoice for the same customer.");
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) throw new LedgerError("Enter an amount greater than zero.");
+
+  const available = await unappliedCreditMemoCents(creditMemo);
+  if (amountCents > available) {
+    throw new LedgerError(`This credit memo only has ${centsToDollars(available)} left unapplied.`);
+  }
+
+  const alreadyOwed = invoice.totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+  if (amountCents > alreadyOwed) {
+    throw new LedgerError(`That would over-apply the credit. This invoice only has ${centsToDollars(alreadyOwed)} outstanding.`);
+  }
+
+  const application = await CustomerCreditMemoApplication.create({
+    orgId: creditMemo.orgId,
+    customerCreditMemoId: creditMemo.id,
+    customerInvoiceId: invoice.id,
+    amountCents,
+    appliedDate,
+  });
+  await refreshInvoiceStatus(invoice);
+  return application;
+}
+
 // Draft -> sent, the moment an invoice becomes a real receivable. Posts
 // the ledger entry, creates any deferred-revenue schedule its lines need,
 // and marks the invoice sent -- the exact three steps the manual "Send"
@@ -184,13 +319,13 @@ export async function amountPaidCents(customerInvoiceId) {
   return payments.reduce((sum, p) => sum + p.amountCents, 0);
 }
 
-// A sent invoice becomes "paid" once payments cover it, and drops back to
-// "sent" if a payment is later removed. Derived from the payments rather
-// than set by hand, so the two can't disagree.
+// A sent invoice becomes "paid" once payments plus applied credits cover
+// it, and drops back to "sent" if either is later removed. Derived
+// rather than set by hand, so the two can't disagree.
 export async function refreshInvoiceStatus(invoice) {
   if (!["sent", "paid"].includes(invoice.status)) return invoice;
-  const paid = await amountPaidCents(invoice.id);
-  const nextStatus = paid >= invoice.totalCents ? "paid" : "sent";
+  const settled = (await amountPaidCents(invoice.id)) + (await amountCreditedCents(invoice.id));
+  const nextStatus = settled >= invoice.totalCents ? "paid" : "sent";
   if (invoice.status !== nextStatus) {
     invoice.status = nextStatus;
     await invoice.save();
@@ -229,8 +364,9 @@ export async function computeArAging(orgId, { asOf = null } = {}) {
   let grandTotalCents = 0;
 
   for (const invoice of invoices) {
-    const outstandingCents = invoice.totalCents - (await amountPaidCents(invoice.id));
-    if (outstandingCents <= 0) continue; // fully paid but not yet re-statused
+    const outstandingCents =
+      invoice.totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+    if (outstandingCents <= 0) continue; // fully settled but not yet re-statused
 
     const daysPastDue = daysBetween(invoice.dueDate, asOfDate);
     const bucket = AGING_BUCKETS.find((b) => daysPastDue >= b.min && daysPastDue <= b.max);

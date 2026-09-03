@@ -4,6 +4,39 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.77
+
+Added customer credit memos -- a return, a billing error, or a goodwill
+adjustment that reduces what a customer owes. Until now the only way to
+correct a sent invoice was voiding it outright, which refuses once any
+payment exists, or leaving the AR balance simply wrong.
+
+A credit memo is its own document (`CustomerCreditMemo` + line items, its
+own `CM-0001` numbering) rather than a reversal of specific invoice lines,
+and posts immediately -- Debit each line's revenue account (+ the taxable
+share of Sales Tax Payable) / Credit Accounts Receivable -- with no draft
+stage: by the time someone cuts a credit, there's no future commitment to
+stage the way an invoice has. It doesn't unwind a deferred-revenue
+schedule even when crediting a line that was originally billed on a
+service period; working out how much of that line was already recognized
+is a judgment call this app punts to a manual journal entry rather than
+guess at silently.
+
+Applying a credit to a specific invoice (`CustomerCreditMemoApplication`)
+posts no journal entry of its own -- the money already moved when the
+memo posted, so this is bookkeeping for the AR sub-ledger only, same
+relationship a payment has to the invoice it's recorded against.
+`amountCreditedCents` is added alongside `amountPaidCents` everywhere an
+invoice's outstanding balance is computed (status, aging, the invoice
+API's `amount_outstanding`), so a customer settled by credit instead of
+cash behaves identically everywhere: the invoice flips to paid, and it
+drops off AR aging the same way a cash payment would.
+
+A credit memo can only be voided before it's been applied to anything
+(mirrors the existing rule for a paid invoice), and an application is
+bounded on both sides -- it can't exceed what the memo has left unapplied,
+and it can't exceed what the invoice still owes.
+
 ## v1.76
 
 Added recurring vendor bills -- the AP mirror of v1.69's recurring customer

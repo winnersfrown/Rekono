@@ -390,7 +390,7 @@ function switchTab(name) {
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
   if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
-  if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); loadRecurringInvoices(); }
+  if (name === "customerinvoices") { loadCustomerInvoiceFormData(); loadCustomerInvoices(); loadRecurringInvoices(); loadCreditMemos(); }
   if (name === "araging") { loadArAging(); loadSalesTax(); }
   if (name === "revenue") loadDeferredRevenue();
   if (name === "adjustments") {
@@ -6214,8 +6214,10 @@ async function loadCustomerInvoiceFormData() {
       const customerOptionsHtml = customers.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
       document.getElementById("ci-customer").innerHTML = customerOptionsHtml;
       document.getElementById("ri-customer").innerHTML = customerOptionsHtml;
+      document.getElementById("cm-customer").innerHTML = customerOptionsHtml;
       if (!document.getElementById("ci-lines-body").children.length) addCustomerInvoiceLineRow();
       if (!document.getElementById("ri-lines-body").children.length) addRecurringInvoiceLineRow();
+      if (!document.getElementById("cm-lines-body").children.length) addCreditMemoLineRow();
     }
   );
 }
@@ -6404,6 +6406,242 @@ function renderCustomerInvoices(data) {
     })
   );
 }
+
+// ---- Credit memos ----
+
+function creditMemoAccountOptions() {
+  return groupedAccountOptionsHtml(ciRevenueAccounts, null);
+}
+
+// Same estimate-only reasoning as updateCustomerInvoiceTotal -- the server
+// recomputes tax from scratch on issue.
+function updateCreditMemoTotal() {
+  const rows = [...document.getElementById("cm-lines-body").querySelectorAll("tr")];
+  const subtotal = rows.reduce((sum, row) => sum + (Number(row.querySelector(".cm-amount").value) || 0), 0);
+  const selectedCustomer = ciCustomers.find((c) => c.id === document.getElementById("cm-customer").value);
+  const taxExempt = selectedCustomer?.tax_exempt;
+  const taxableSubtotal = taxExempt
+    ? 0
+    : rows.reduce(
+        (sum, row) => (row.querySelector(".cm-taxable").checked ? sum + (Number(row.querySelector(".cm-amount").value) || 0) : sum),
+        0
+      );
+  const tax = ciSalesTaxRatePercent ? Math.round(taxableSubtotal * ciSalesTaxRatePercent) / 100 : 0;
+  document.getElementById("cm-total-indicator").textContent = taxExempt
+    ? `Subtotal: ${fmtMoney(subtotal)}. Tax-exempt customer -- no tax. Total: ${fmtMoney(subtotal)}.`
+    : tax > 0
+      ? `Subtotal: ${fmtMoney(subtotal)}. Tax (${ciSalesTaxRatePercent}%): ${fmtMoney(tax)}. Total: ${fmtMoney(subtotal + tax)}.`
+      : `Credit total: ${fmtMoney(subtotal)}`;
+}
+
+function addCreditMemoLineRow() {
+  const body = document.getElementById("cm-lines-body");
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td><select class="cm-account" required>${creditMemoAccountOptions()}</select></td>
+    <td><input type="text" class="cm-desc" maxlength="512" placeholder="What's being credited?" /></td>
+    <td><input type="number" class="cm-amount" step="0.01" min="0" placeholder="0.00" /></td>
+    <td><input type="checkbox" class="cm-taxable" checked /></td>
+    <td><button type="button" class="cm-remove-line linklike">Remove</button></td>
+  `;
+  body.appendChild(row);
+  row.querySelectorAll(".cm-amount, .cm-taxable").forEach((i) => i.addEventListener("input", updateCreditMemoTotal));
+  row.querySelector(".cm-remove-line").addEventListener("click", () => {
+    row.remove();
+    updateCreditMemoTotal();
+  });
+  updateCreditMemoTotal();
+}
+
+document.getElementById("cm-add-line").addEventListener("click", addCreditMemoLineRow);
+document.getElementById("cm-customer").addEventListener("change", updateCreditMemoTotal);
+
+document.getElementById("credit-memo-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("credit-memo-status");
+  const rows = [...document.getElementById("cm-lines-body").querySelectorAll("tr")];
+  try {
+    const res = await apiFetch("/api/customer-credit-memos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customer_id: document.getElementById("cm-customer").value,
+        issue_date: document.getElementById("cm-issue-date").value,
+        memo: document.getElementById("cm-memo").value,
+        lines: rows.map((row) => ({
+          revenue_account_id: row.querySelector(".cm-account").value,
+          description: row.querySelector(".cm-desc").value,
+          amount: Number(row.querySelector(".cm-amount").value) || 0,
+          taxable: row.querySelector(".cm-taxable").checked,
+        })),
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      statusEl.textContent = body.detail?.[0]?.message || body.detail || "Something went wrong.";
+      return;
+    }
+    statusEl.textContent = `Issued ${body.credit_number} for ${fmtMoney(body.total)}${
+      body.tax > 0 ? ` (incl. ${fmtMoney(body.tax)} tax)` : ""
+    }.`;
+    document.getElementById("cm-lines-body").innerHTML = "";
+    addCreditMemoLineRow();
+    document.getElementById("cm-memo").value = "";
+    invalidateCache("__credit_memos__");
+    invalidateCache("__customer_invoices__");
+    invalidateCache("__ar_aging__");
+    loadCreditMemos();
+  } catch (err) {
+    statusEl.textContent = err.message || String(err);
+  }
+});
+
+async function loadCreditMemos() {
+  await cachedLoad("__credit_memos__", async () => (await apiFetch("/api/customer-credit-memos")).json(), renderCreditMemos);
+}
+
+let applyCreditModalResolve = null;
+
+function renderCreditMemos(data) {
+  const body = document.getElementById("credit-memos-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No credit memos yet.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (m) => `
+    <tr>
+      <td>${escapeHtml(m.credit_number)}</td>
+      <td>${escapeHtml(m.customer_name || "—")}</td>
+      <td>${m.issue_date}</td>
+      <td>${fmtMoney(m.total)}</td>
+      <td>${fmtMoney(m.unapplied)}</td>
+      <td>${m.status}</td>
+      <td>
+        ${
+          m.status === "issued" && m.unapplied > 0
+            ? `<button type="button" class="cm-apply-btn" data-id="${m.id}" data-customer-id="${m.customer_id}" data-unapplied="${m.unapplied}">Apply to invoice</button>`
+            : ""
+        }
+        ${m.status === "issued" ? `<button type="button" class="cm-void-btn linklike" data-id="${m.id}">Void</button>` : ""}
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".cm-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog(
+        "Void this credit memo?",
+        "This posts a reversing entry. The credit memo stays on record either way.",
+        { confirmLabel: "Void", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/customer-credit-memos/${btn.dataset.id}/void`, { method: "POST" });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't void that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__credit_memos__");
+      loadCreditMemos();
+    })
+  );
+
+  body.querySelectorAll(".cm-apply-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const result = await applyCreditDialog(btn.dataset.customerId, Number(btn.dataset.unapplied));
+      if (!result) return;
+      const res = await apiFetch(`/api/customer-credit-memos/${btn.dataset.id}/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't apply that credit", parsed.detail || "Something went wrong.");
+        return;
+      }
+      invalidateCache("__credit_memos__");
+      invalidateCache("__customer_invoices__");
+      invalidateCache("__ar_aging__");
+      loadCreditMemos();
+      loadCustomerInvoices();
+    })
+  );
+}
+
+// Which of a customer's invoices still have a balance a credit could
+// offset. Fetched fresh rather than read off the cached list -- the
+// outstanding figure has to be current, since over-applying is refused
+// server-side but reads as a confusing error if the dropdown was already
+// showing a stale amount.
+async function openInvoicesForCustomer(customerId) {
+  const data = await (await apiFetch(`/api/customer-invoices?customer_id=${customerId}&status=sent`)).json();
+  return data.items.filter((inv) => inv.amount_outstanding > 0);
+}
+
+async function applyCreditDialog(customerId, unappliedDollars) {
+  const invoices = await openInvoicesForCustomer(customerId);
+  if (!invoices.length) {
+    await alertDialog("No open invoices", "This customer has no open invoices to apply a credit to.");
+    return null;
+  }
+
+  document.getElementById("apply-credit-modal-message").textContent = `${fmtMoney(unappliedDollars)} unapplied on this credit memo.`;
+  document.getElementById("apply-credit-modal-invoice").innerHTML = invoices
+    .map(
+      (inv) =>
+        `<option value="${inv.id}" data-outstanding="${inv.amount_outstanding}">${escapeHtml(inv.invoice_number)} -- ${fmtMoney(inv.amount_outstanding)} outstanding</option>`
+    )
+    .join("");
+  const amountEl = document.getElementById("apply-credit-modal-amount");
+  const invoiceEl = document.getElementById("apply-credit-modal-invoice");
+  const setDefaultAmount = () => {
+    const outstanding = Number(invoiceEl.selectedOptions[0]?.dataset.outstanding || 0);
+    amountEl.value = Math.min(unappliedDollars, outstanding).toFixed(2);
+  };
+  invoiceEl.onchange = setDefaultAmount;
+  setDefaultAmount();
+  document.getElementById("apply-credit-modal-date").value = new Date().toISOString().slice(0, 10);
+  const errorEl = document.getElementById("apply-credit-modal-error");
+  errorEl.textContent = "";
+  errorEl.style.display = "none";
+  document.getElementById("apply-credit-modal").style.display = "flex";
+  amountEl.focus();
+
+  return new Promise((resolve) => {
+    applyCreditModalResolve = resolve;
+  });
+}
+
+function closeApplyCreditModal(result) {
+  document.getElementById("apply-credit-modal").style.display = "none";
+  if (applyCreditModalResolve) {
+    applyCreditModalResolve(result);
+    applyCreditModalResolve = null;
+  }
+}
+
+document.getElementById("apply-credit-modal-cancel").addEventListener("click", () => closeApplyCreditModal(null));
+
+document.getElementById("apply-credit-modal-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const amount = Number(document.getElementById("apply-credit-modal-amount").value);
+  const errorEl = document.getElementById("apply-credit-modal-error");
+  if (!(amount > 0)) {
+    errorEl.textContent = "Enter an amount greater than zero.";
+    errorEl.style.display = "";
+    return;
+  }
+  closeApplyCreditModal({
+    invoice_id: document.getElementById("apply-credit-modal-invoice").value,
+    amount,
+    applied_date: document.getElementById("apply-credit-modal-date").value,
+  });
+});
 
 function riAccountOptions() {
   return groupedAccountOptionsHtml(ciRevenueAccounts, null);

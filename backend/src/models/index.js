@@ -47,6 +47,9 @@ import { Employee } from "./Employee.js";
 import { PayrollRun } from "./PayrollRun.js";
 import { BankReconciliation, ReconciledJournalLine } from "./BankReconciliation.js";
 import { Budget, BudgetLine } from "./Budget.js";
+import { CustomerCreditMemo } from "./CustomerCreditMemo.js";
+import { CustomerCreditMemoLine } from "./CustomerCreditMemoLine.js";
+import { CustomerCreditMemoApplication } from "./CustomerCreditMemoApplication.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -260,6 +263,18 @@ Budget.hasMany(BudgetLine, { foreignKey: "budgetId", as: "lines", onDelete: "CAS
 BudgetLine.belongsTo(Budget, { foreignKey: "budgetId" });
 BudgetLine.belongsTo(Account, { foreignKey: "accountId" });
 
+Customer.hasMany(CustomerCreditMemo, { foreignKey: "customerId", as: "creditMemos", onDelete: "CASCADE", hooks: true });
+CustomerCreditMemo.belongsTo(Customer, { foreignKey: "customerId", as: "customer" });
+
+CustomerCreditMemo.hasMany(CustomerCreditMemoLine, { foreignKey: "customerCreditMemoId", as: "lines", onDelete: "CASCADE", hooks: true });
+CustomerCreditMemoLine.belongsTo(CustomerCreditMemo, { foreignKey: "customerCreditMemoId" });
+CustomerCreditMemoLine.belongsTo(Account, { foreignKey: "revenueAccountId", as: "revenueAccount" });
+
+CustomerCreditMemo.hasMany(CustomerCreditMemoApplication, { foreignKey: "customerCreditMemoId", as: "applications", onDelete: "CASCADE", hooks: true });
+CustomerCreditMemoApplication.belongsTo(CustomerCreditMemo, { foreignKey: "customerCreditMemoId" });
+CustomerInvoice.hasMany(CustomerCreditMemoApplication, { foreignKey: "customerInvoiceId", as: "creditApplications", onDelete: "CASCADE", hooks: true });
+CustomerCreditMemoApplication.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -412,4 +427,7 @@ export {
   ReconciledJournalLine,
   Budget,
   BudgetLine,
+  CustomerCreditMemo,
+  CustomerCreditMemoLine,
+  CustomerCreditMemoApplication,
 };

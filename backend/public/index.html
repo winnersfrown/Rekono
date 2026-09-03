@@ -1456,6 +1456,35 @@
             <thead><tr><th>Name</th><th>Customer</th><th>Frequency</th><th>First period</th><th>Last issued</th><th>Next due</th><th>Auto-send</th><th>Status</th><th></th></tr></thead>
             <tbody id="recurring-invoices-body"></tbody>
           </table>
+
+          <h3>Credit memos</h3>
+          <p class="hint">A return, a billing error, or a goodwill adjustment -- reduces what a customer owes. Posted right away, then apply it to a specific open invoice whenever you're ready.</p>
+          <div class="panel">
+            <h3>New credit memo</h3>
+            <form id="credit-memo-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Customer<select id="cm-customer" required></select></label>
+                <label>Issue date<input type="date" id="cm-issue-date" required /></label>
+                <label>Memo<input type="text" id="cm-memo" maxlength="512" placeholder="Optional" /></label>
+              </div>
+              <div class="line-item-table">
+                <table>
+                  <thead><tr><th>Revenue account</th><th>Description</th><th>Amount</th><th>Taxable</th><th></th></tr></thead>
+                  <tbody id="cm-lines-body"></tbody>
+                </table>
+              </div>
+              <div class="line-item-footer">
+                <button type="button" class="btn-quiet" id="cm-add-line">+ Add line</button>
+                <p class="hint" id="cm-total-indicator"></p>
+                <button type="submit" class="line-item-submit">Issue credit</button>
+              </div>
+              <div id="credit-memo-status" class="hint"></div>
+            </form>
+          </div>
+          <table>
+            <thead><tr><th>Number</th><th>Customer</th><th>Issued</th><th>Total</th><th>Unapplied</th><th>Status</th><th></th></tr></thead>
+            <tbody id="credit-memos-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-revenue" class="tab-panel">
@@ -2705,6 +2734,29 @@
         <div class="confirm-modal-actions">
           <button type="button" id="payment-modal-cancel" class="modal-btn-cancel">Cancel</button>
           <button type="submit">Record payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Applying a credit memo needs to know which open invoice it's
+       offsetting -- that's a fact about the customer's receivables, not
+       something to guess, so it gets the same dedicated-modal treatment
+       as recording a payment. -->
+  <div id="apply-credit-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Apply credit to an invoice</h2>
+      <p id="apply-credit-modal-message"></p>
+      <form id="apply-credit-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Invoice<select id="apply-credit-modal-invoice" required></select></label>
+          <label>Amount<input type="number" id="apply-credit-modal-amount" step="0.01" min="0.01" required /></label>
+          <label>Date<input type="date" id="apply-credit-modal-date" required /></label>
+        </div>
+        <p id="apply-credit-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="apply-credit-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Apply</button>
         </div>
       </form>
     </div>

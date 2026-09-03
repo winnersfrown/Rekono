@@ -50,6 +50,15 @@ async function makeInvoice(token, customerId, lines, overrides = {}) {
   return res.body;
 }
 
+async function makeCreditMemo(token, customerId, lines, overrides = {}) {
+  const res = await request(app)
+    .post("/api/customer-credit-memos")
+    .set(authHeader(token))
+    .send({ customer_id: customerId, issue_date: TODAY, lines, ...overrides });
+  if (res.status !== 201) throw new Error(`makeCreditMemo failed: ${res.status} ${JSON.stringify(res.body)}`);
+  return res.body;
+}
+
 test("a customer can be created, listed, updated, and deactivated", async () => {
   const token = await signup(app, request);
   const customer = await makeCustomer(token);
@@ -500,4 +509,188 @@ test("Accounts Receivable is refused as a deposit account", async () => {
 
   const reloaded = await request(app).get(`/api/customer-invoices/${invoice.id}`).set(authHeader(token));
   expect(reloaded.body.amount_outstanding).toBe(2500);
+});
+
+// ---- Credit memos ----
+//
+// One signup per test is expensive enough (the org's whole chart of
+// accounts, plan, onboarding) that a run of small single-assertion tests
+// adds up: this file's signup() calls share one in-process rate limiter
+// (see auth.js's isSignupRateLimited, max 30 per 15 minutes) with every
+// other test above, so these are grouped by setup rather than split one
+// scenario per test the way an isolated file could afford to.
+
+test("a credit memo posts immediately (no draft stage), numbers sequentially, and debits revenue / credits Accounts Receivable", async () => {
+  const token = await signup(app, request);
+  const org = await orgId(token);
+  const customer = await makeCustomer(token);
+  const revenue = await accountId(token, "Uncategorized Revenue");
+  const invoice = await makeInvoice(token, customer.id, [
+    { revenue_account_id: revenue, quantity: 1, unit_price: 1000 },
+  ]);
+  await request(app).post(`/api/customer-invoices/${invoice.id}/send`).set(authHeader(token));
+
+  const memo = await makeCreditMemo(token, customer.id, [
+    { revenue_account_id: revenue, description: "Partial return", amount: 300 },
+  ]);
+  expect(memo.credit_number).toBe("CM-0001");
+  expect(memo.status).toBe("issued");
+  expect(memo.total).toBeCloseTo(300, 2);
+  expect(memo.unapplied).toBeCloseTo(300, 2);
+
+  // Unlike an invoice, this is on the books the instant it's created.
+  const entry = await JournalEntry.findOne({ where: { orgId: org, sourceType: "customer_credit_memo", sourceId: memo.id } });
+  expect(entry).toBeTruthy();
+
+  const second = await makeCreditMemo(token, customer.id, [{ revenue_account_id: revenue, amount: 50 }]);
+  expect(second.credit_number).toBe("CM-0002");
+
+  const bs = await request(app).get(`/api/statements/balance-sheet?as_of=${TODAY}`).set(authHeader(token));
+  const ar = bs.body.assets.accounts.find((a) => a.name === "Accounts Receivable");
+  expect(ar.amount).toBeCloseTo(650, 2); // 1000 billed - 300 - 50 credited
+  expect(bs.body.balanced).toBe(true);
+
+  const pnl = await request(app).get(`/api/statements/profit-and-loss?from=${YEAR_START}&to=${TODAY}`).set(authHeader(token));
+  expect(pnl.body.revenue.total).toBeCloseTo(650, 2);
+});
+
+test("applying a credit memo reduces an invoice's outstanding balance, can fully settle it, and AR aging agrees", async () => {
+  const token = await signup(app, request);
+  const customer = await makeCustomer(token);
+  const revenue = await accountId(token, "Uncategorized Revenue");
+  const invoice = await makeInvoice(token, customer.id, [
+    { revenue_account_id: revenue, quantity: 1, unit_price: 1000 },
+  ]);
+  await request(app).post(`/api/customer-invoices/${invoice.id}/send`).set(authHeader(token));
+  const memo = await makeCreditMemo(token, customer.id, [{ revenue_account_id: revenue, amount: 1000 }]);
+
+  const applied = await request(app)
+    .post(`/api/customer-credit-memos/${memo.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoice.id, amount: 400 });
+  expect(applied.status).toBe(201);
+  expect(applied.body.status).toBe("sent");
+  expect(applied.body.amount_credited).toBeCloseTo(400, 2);
+  expect(applied.body.amount_outstanding).toBeCloseTo(600, 2);
+
+  // Still partially outstanding, so it still ages.
+  const agingPartial = await request(app).get("/api/reports/ar-aging").set(authHeader(token));
+  expect(agingPartial.body.totals.total).toBeCloseTo(600, 2);
+
+  const rest = await request(app)
+    .post(`/api/customer-credit-memos/${memo.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoice.id, amount: 600 });
+  expect(rest.body.status).toBe("paid");
+  expect(rest.body.amount_outstanding).toBeCloseTo(0, 2);
+
+  const memoReloaded = await request(app).get(`/api/customer-credit-memos/${memo.id}`).set(authHeader(token));
+  expect(memoReloaded.body.unapplied).toBeCloseTo(0, 2);
+
+  // Fully settled by credit, same as if it had been paid in cash: drops
+  // off the aging report entirely.
+  const agingSettled = await request(app).get("/api/reports/ar-aging").set(authHeader(token));
+  expect(agingSettled.body.totals.total).toBe(0);
+  expect(agingSettled.body.customers).toHaveLength(0);
+});
+
+test("a credit application is bounded: can't over-apply the memo, over-settle the invoice, or cross customers", async () => {
+  const token = await signup(app, request);
+  const customerA = await makeCustomer(token, { name: "Customer A" });
+  const customerB = await makeCustomer(token, { name: "Customer B" });
+  const revenue = await accountId(token, "Uncategorized Revenue");
+  const invoiceA = await makeInvoice(token, customerA.id, [{ revenue_account_id: revenue, quantity: 1, unit_price: 100 }]);
+  const invoiceB = await makeInvoice(token, customerB.id, [{ revenue_account_id: revenue, quantity: 1, unit_price: 500 }]);
+  await request(app).post(`/api/customer-invoices/${invoiceA.id}/send`).set(authHeader(token));
+  await request(app).post(`/api/customer-invoices/${invoiceB.id}/send`).set(authHeader(token));
+  const memoA = await makeCreditMemo(token, customerA.id, [{ revenue_account_id: revenue, amount: 150 }]);
+
+  // Crosses customers.
+  const wrongCustomer = await request(app)
+    .post(`/api/customer-credit-memos/${memoA.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoiceB.id, amount: 100 });
+  expect(wrongCustomer.status).toBe(422);
+  expect(wrongCustomer.body.detail).toMatch(/same customer/i);
+
+  // More than the invoice actually owes.
+  const overInvoice = await request(app)
+    .post(`/api/customer-credit-memos/${memoA.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoiceA.id, amount: 150 });
+  expect(overInvoice.status).toBe(422);
+  expect(overInvoice.body.detail).toMatch(/over-apply/i);
+
+  // Within the invoice's balance, but more than the memo has left --
+  // apply what's left to the same invoice first, then try to stretch the
+  // now-exhausted memo across a second one.
+  await request(app)
+    .post(`/api/customer-credit-memos/${memoA.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoiceA.id, amount: 100 });
+  const invoiceA2 = await makeInvoice(token, customerA.id, [{ revenue_account_id: revenue, quantity: 1, unit_price: 500 }]);
+  await request(app).post(`/api/customer-invoices/${invoiceA2.id}/send`).set(authHeader(token));
+  const overMemo = await request(app)
+    .post(`/api/customer-credit-memos/${memoA.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoiceA2.id, amount: 100 });
+  expect(overMemo.status).toBe(422);
+  expect(overMemo.body.detail).toMatch(/left unapplied/i);
+});
+
+test("voiding an unapplied credit memo reverses it; an applied one refuses", async () => {
+  const token = await signup(app, request);
+  const customer = await makeCustomer(token);
+  const revenue = await accountId(token, "Uncategorized Revenue");
+  const invoice = await makeInvoice(token, customer.id, [{ revenue_account_id: revenue, quantity: 1, unit_price: 500 }]);
+  await request(app).post(`/api/customer-invoices/${invoice.id}/send`).set(authHeader(token));
+
+  const unapplied = await makeCreditMemo(token, customer.id, [{ revenue_account_id: revenue, amount: 100 }]);
+  const voided = await request(app).post(`/api/customer-credit-memos/${unapplied.id}/void`).set(authHeader(token));
+  expect(voided.status).toBe(200);
+  expect(voided.body.status).toBe("void");
+  const bsAfterVoid = await request(app).get(`/api/statements/balance-sheet?as_of=${TODAY}`).set(authHeader(token));
+  expect(bsAfterVoid.body.balanced).toBe(true);
+
+  const applied = await makeCreditMemo(token, customer.id, [{ revenue_account_id: revenue, amount: 100 }]);
+  await request(app)
+    .post(`/api/customer-credit-memos/${applied.id}/apply`)
+    .set(authHeader(token))
+    .send({ invoice_id: invoice.id, amount: 100 });
+  const refused = await request(app).post(`/api/customer-credit-memos/${applied.id}/void`).set(authHeader(token));
+  expect(refused.status).toBe(409);
+  expect(refused.body.detail).toMatch(/applied to an invoice/i);
+});
+
+test("sales tax is credited back proportionally on a taxable line, and every line must credit a revenue account", async () => {
+  const token = await signup(app, request);
+  await request(app).patch("/api/org/settings").set(authHeader(token)).send({ sales_tax_rate_percent: 8 });
+  const customer = await makeCustomer(token);
+  const revenue = await accountId(token, "Uncategorized Revenue");
+  const cash = await accountId(token, "Cash");
+
+  const memo = await makeCreditMemo(token, customer.id, [
+    { revenue_account_id: revenue, amount: 100, taxable: true },
+  ]);
+  expect(memo.tax).toBeCloseTo(8, 2);
+  expect(memo.total).toBeCloseTo(108, 2);
+
+  const res = await request(app)
+    .post("/api/customer-credit-memos")
+    .set(authHeader(token))
+    .send({ customer_id: customer.id, issue_date: TODAY, lines: [{ revenue_account_id: cash, amount: 50 }] });
+  expect(res.status).toBe(422);
+  expect(res.body.detail).toMatch(/revenue account/i);
+});
+
+test("credit memos are scoped to the caller's org", async () => {
+  const tokenA = await signup(app, request, { email: "a@example.co" });
+  const tokenB = await signup(app, request, { email: "b@example.co", orgName: "Org B" });
+  const customerA = await makeCustomer(tokenA);
+  const revenueA = await accountId(tokenA, "Uncategorized Revenue");
+  const memoA = await makeCreditMemo(tokenA, customerA.id, [{ revenue_account_id: revenueA, amount: 50 }]);
+
+  expect((await request(app).get("/api/customer-credit-memos").set(authHeader(tokenB))).body.items).toHaveLength(0);
+  expect((await request(app).get(`/api/customer-credit-memos/${memoA.id}`).set(authHeader(tokenB))).status).toBe(404);
+  expect((await request(app).post(`/api/customer-credit-memos/${memoA.id}/void`).set(authHeader(tokenB))).status).toBe(404);
 });
