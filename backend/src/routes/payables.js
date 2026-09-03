@@ -35,6 +35,18 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const router = Router();
 
+// Every AP write route below the blanket per-org limiter in app.js already
+// sits behind (see the EXPENSIVE_PATHS comment there) also gets this
+// tighter one directly in its own middleware chain -- not because the
+// blanket one doesn't cover it, but so a route-level static check (and a
+// human reading this file) can see the rate limit without having to know
+// app.js mounts one globally first.
+const writeRateLimit = rateLimitMiddleware({
+  windowMs: 15 * 60 * 1000,
+  max: settings.rateLimitExpensiveMax,
+  message: "Too many requests. Please slow down and try again shortly.",
+});
+
 function serializePayment(payment, account) {
   return {
     id: payment.id,
@@ -294,7 +306,7 @@ async function getOwnedVendorCreditMemo(id, orgId) {
   });
 }
 
-router.get("/api/vendor-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/vendor-credit-memos", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const where = { orgId: req.currentUser.orgId };
     if (req.query.status) where.status = req.query.status;
@@ -324,7 +336,7 @@ const vendorCreditMemoSchema = z.object({
 
 // Posted immediately -- see VendorCreditMemo.js for why this skips the
 // Review Queue every other bill-related write path here goes through.
-router.post("/api/vendor-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/vendor-credit-memos", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const parsed = vendorCreditMemoSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
@@ -368,7 +380,7 @@ router.post("/api/vendor-credit-memos", requireAuth, requireActivePlan, async (r
   }
 });
 
-router.get("/api/vendor-credit-memos/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/vendor-credit-memos/:id", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const creditMemo = await getOwnedVendorCreditMemo(req.params.id, req.currentUser.orgId);
     if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
@@ -378,7 +390,7 @@ router.get("/api/vendor-credit-memos/:id", requireAuth, requireActivePlan, async
   }
 });
 
-router.post("/api/vendor-credit-memos/:id/void", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/vendor-credit-memos/:id/void", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const creditMemo = await getOwnedVendorCreditMemo(req.params.id, req.currentUser.orgId);
     if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
@@ -418,7 +430,7 @@ const applyVendorCreditSchema = z.object({
   applied_date: z.string().min(1).optional(),
 });
 
-router.post("/api/vendor-credit-memos/:id/apply", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/vendor-credit-memos/:id/apply", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const parsed = applyVendorCreditSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });

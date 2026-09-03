@@ -6,6 +6,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
+import { settings } from "../config.js";
+import { rateLimitMiddleware } from "../rateLimit.js";
 import { LedgerError, centsToDollars, dollarsToCents } from "../ledger.js";
 import { isValidPaymentAccount } from "../accountsPayable.js";
 import {
@@ -22,6 +24,15 @@ import {
 import { Account, AuditLog, PrepaidExpense } from "../models/index.js";
 
 const router = Router();
+
+// Same rate limit routes/payables.js applies to its own write routes, in
+// each handler's own middleware chain rather than relying only on the
+// blanket per-org one app.js mounts ahead of every router.
+const writeRateLimit = rateLimitMiddleware({
+  windowMs: 15 * 60 * 1000,
+  max: settings.rateLimitExpensiveMax,
+  message: "Too many requests. Please slow down and try again shortly.",
+});
 
 const PERIOD_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -58,7 +69,7 @@ async function getOwnedPrepaidExpense(id, orgId) {
   });
 }
 
-router.get("/api/prepaid-expenses", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/prepaid-expenses", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const where = { orgId: req.currentUser.orgId };
     if (req.query.status) where.status = req.query.status;
@@ -97,7 +108,7 @@ const prepaidExpenseSchema = z.object({
 
 // Posts immediately -- see PrepaidExpense.js for why this is recorded
 // directly rather than through the bill-approval pipeline.
-router.post("/api/prepaid-expenses", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/prepaid-expenses", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const parsed = prepaidExpenseSchema.safeParse(req.body);
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
@@ -156,7 +167,7 @@ router.post("/api/prepaid-expenses", requireAuth, requireActivePlan, async (req,
   }
 });
 
-router.get("/api/prepaid-expenses/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/prepaid-expenses/:id", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const prepaid = await getOwnedPrepaidExpense(req.params.id, req.currentUser.orgId);
     if (!prepaid) return res.status(404).json({ detail: "Prepaid expense not found" });
@@ -167,7 +178,7 @@ router.get("/api/prepaid-expenses/:id", requireAuth, requireActivePlan, async (r
   }
 });
 
-router.get("/api/prepaid-expenses/:id/schedule", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/prepaid-expenses/:id/schedule", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const prepaid = await getOwnedPrepaidExpense(req.params.id, req.currentUser.orgId);
     if (!prepaid) return res.status(404).json({ detail: "Prepaid expense not found" });
@@ -181,7 +192,7 @@ router.get("/api/prepaid-expenses/:id/schedule", requireAuth, requireActivePlan,
 // here -- same reasoning voiding a credit memo already applied is refused:
 // unwinding history that's already fed into a closed or reported-on period
 // is a conversation, not something to silently reverse.
-router.post("/api/prepaid-expenses/:id/void", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/prepaid-expenses/:id/void", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const prepaid = await getOwnedPrepaidExpense(req.params.id, req.currentUser.orgId);
     if (!prepaid) return res.status(404).json({ detail: "Prepaid expense not found" });
@@ -213,7 +224,7 @@ router.post("/api/prepaid-expenses/:id/void", requireAuth, requireActivePlan, as
   }
 });
 
-router.get("/api/prepaid-expenses-pending", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/prepaid-expenses-pending", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const periodMonth = PERIOD_MONTH.test(req.query.period_month || "") ? req.query.period_month : currentPeriodMonth();
     const rows = await pendingThrough(req.currentUser.orgId, periodMonth);
@@ -236,7 +247,7 @@ router.get("/api/prepaid-expenses-pending", requireAuth, requireActivePlan, asyn
 
 const amortizeSchema = z.object({ period_month: z.string().regex(PERIOD_MONTH).optional() });
 
-router.post("/api/prepaid-expenses-amortize", requireAuth, requireActivePlan, async (req, res, next) => {
+router.post("/api/prepaid-expenses-amortize", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const parsed = amortizeSchema.safeParse(req.body || {});
     if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
@@ -261,7 +272,7 @@ router.post("/api/prepaid-expenses-amortize", requireAuth, requireActivePlan, as
   }
 });
 
-router.get("/api/reports/prepaid-expenses", requireAuth, requireActivePlan, async (req, res, next) => {
+router.get("/api/reports/prepaid-expenses", requireAuth, requireActivePlan, writeRateLimit, async (req, res, next) => {
   try {
     const months = Math.min(Math.max(Number(req.query.months) || 12, 1), 60);
     res.json(await computePrepaidExpenseWaterfall(req.currentUser.orgId, { months }));
