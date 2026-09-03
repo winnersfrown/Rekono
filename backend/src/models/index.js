@@ -50,6 +50,8 @@ import { Budget, BudgetLine } from "./Budget.js";
 import { CustomerCreditMemo } from "./CustomerCreditMemo.js";
 import { CustomerCreditMemoLine } from "./CustomerCreditMemoLine.js";
 import { CustomerCreditMemoApplication } from "./CustomerCreditMemoApplication.js";
+import { VendorCreditMemo } from "./VendorCreditMemo.js";
+import { VendorCreditMemoApplication } from "./VendorCreditMemoApplication.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -275,6 +277,15 @@ CustomerCreditMemoApplication.belongsTo(CustomerCreditMemo, { foreignKey: "custo
 CustomerInvoice.hasMany(CustomerCreditMemoApplication, { foreignKey: "customerInvoiceId", as: "creditApplications", onDelete: "CASCADE", hooks: true });
 CustomerCreditMemoApplication.belongsTo(CustomerInvoice, { foreignKey: "customerInvoiceId" });
 
+// The AP mirror -- no line sub-table, same reasoning as RecurringBill (see
+// VendorCreditMemo.js).
+VendorCreditMemo.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
+
+VendorCreditMemo.hasMany(VendorCreditMemoApplication, { foreignKey: "vendorCreditMemoId", as: "applications", onDelete: "CASCADE", hooks: true });
+VendorCreditMemoApplication.belongsTo(VendorCreditMemo, { foreignKey: "vendorCreditMemoId" });
+Invoice.hasMany(VendorCreditMemoApplication, { foreignKey: "invoiceId", as: "creditApplications", onDelete: "CASCADE", hooks: true });
+VendorCreditMemoApplication.belongsTo(Invoice, { foreignKey: "invoiceId" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -430,4 +441,6 @@ export {
   CustomerCreditMemo,
   CustomerCreditMemoLine,
   CustomerCreditMemoApplication,
+  VendorCreditMemo,
+  VendorCreditMemoApplication,
 };

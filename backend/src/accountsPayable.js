@@ -13,7 +13,7 @@
 // reversals.
 
 import { LedgerError, centsToDollars, dollarsToCents, postJournalEntry, voidJournalEntry } from "./ledger.js";
-import { Account, BillPayment, Invoice, JournalEntry } from "./models/index.js";
+import { Account, BillPayment, Invoice, JournalEntry, VendorCreditMemo, VendorCreditMemoApplication } from "./models/index.js";
 import { buildVendorResolver } from "./vendors.js";
 
 // Only an approved bill is a payable -- that's the status whose approval
@@ -134,6 +134,117 @@ export async function voidBillPaymentEntry(orgId, billPaymentId, { postedByUserI
   });
   if (!entry) return null;
   return voidJournalEntry(orgId, entry.id, { postedByUserId });
+}
+
+// Sequential per org: VCM-0001, VCM-0002, ... Same derivation-from-history
+// approach as the AR side's nextCreditMemoNumber, for the same reason: a
+// vendor credit is cut rarely enough that a stored counter buys correctness
+// no one needs at the cost of one more thing to keep in sync.
+export async function nextVendorCreditMemoNumber(orgId) {
+  const memos = await VendorCreditMemo.findAll({ where: { orgId }, attributes: ["creditNumber"], raw: true });
+  let highest = 0;
+  for (const { creditNumber } of memos) {
+    const match = /^VCM-(\d+)$/.exec(creditNumber || "");
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  return `VCM-${String(highest + 1).padStart(4, "0")}`;
+}
+
+// Posts Debit Accounts Payable / Credit the credit memo's expense account --
+// the mirror image of postInvoiceApproval. A vendor credit reduces what we
+// owe them and reverses the expense we'd already booked. Like
+// postCustomerCreditMemo it doesn't try to unwind anything more specific
+// than that (there's no deferred-revenue equivalent to worry about on the
+// expense side, and no line breakdown to preserve -- see VendorCreditMemo.js).
+export async function postVendorCreditMemo(creditMemo, { postedByUserId = null } = {}) {
+  const apAccount = await Account.findOne({ where: { orgId: creditMemo.orgId, type: "liability", subtype: "accounts_payable" } });
+  if (!apAccount) throw new LedgerError("No Accounts Payable account found in the chart of accounts.", 409);
+
+  return postJournalEntry(creditMemo.orgId, {
+    entryDate: creditMemo.issueDate,
+    memo: `${creditMemo.creditNumber} -- ${creditMemo.vendorName || "Vendor"}`,
+    docNumber: creditMemo.creditNumber || "",
+    source: "vendor_credit_memo",
+    sourceType: "vendor_credit_memo",
+    sourceId: creditMemo.id,
+    postedByUserId,
+    lines: [
+      { accountId: apAccount.id, debitCents: creditMemo.amountCents },
+      { accountId: creditMemo.expenseAccountId, creditCents: creditMemo.amountCents },
+    ],
+  });
+}
+
+// Reverses whatever a vendor credit memo posted, if anything. Same
+// (sourceType, sourceId) lookup as voidBillPaymentEntry.
+export async function voidVendorCreditMemoEntry(orgId, vendorCreditMemoId, { postedByUserId = null } = {}) {
+  const entry = await JournalEntry.findOne({
+    where: { orgId, sourceType: "vendor_credit_memo", sourceId: vendorCreditMemoId, status: "posted" },
+  });
+  if (!entry) return null;
+  return voidJournalEntry(orgId, entry.id, { postedByUserId });
+}
+
+// How much of a vendor credit memo has already been used against bills.
+export async function amountAppliedFromVendorCreditMemoCents(vendorCreditMemoId) {
+  const applications = await VendorCreditMemoApplication.findAll({
+    where: { vendorCreditMemoId },
+    attributes: ["amountCents"],
+    raw: true,
+  });
+  return applications.reduce((sum, a) => sum + a.amountCents, 0);
+}
+
+// What's left of a vendor credit memo to apply to some bill -- 0 once fully
+// used, and always 0 for a void memo.
+export async function unappliedVendorCreditMemoCents(creditMemo) {
+  if (creditMemo.status === "void") return 0;
+  return creditMemo.amountCents - (await amountAppliedFromVendorCreditMemoCents(creditMemo.id));
+}
+
+// How much of a bill's balance has been offset by vendor credit memos --
+// the credit-memo equivalent of amountPaidCents, and added to it everywhere
+// a bill's outstanding balance is computed, so a bill settled partly by
+// credit doesn't sit on the aging report forever.
+export async function amountCreditedCents(invoiceId) {
+  const applications = await VendorCreditMemoApplication.findAll({
+    where: { invoiceId },
+    attributes: ["amountCents"],
+    raw: true,
+  });
+  return applications.reduce((sum, a) => sum + a.amountCents, 0);
+}
+
+// Applies (part of) a vendor credit memo against a specific bill. Posts no
+// journal entry of its own -- see VendorCreditMemoApplication.js for why
+// the money already moved when the memo was issued -- so this is pure
+// validation plus a row, the same shape a bill payment would be if
+// payments needed no ledger entry.
+export async function applyVendorCreditMemoToBill(creditMemo, invoice, amountCents, appliedDate, resolveVendor) {
+  if (creditMemo.status === "void") throw new LedgerError("This credit memo has been voided.");
+  if (resolveVendor({ vendorName: creditMemo.vendorName, vendorId: null }).key !== resolveVendor(invoice).key) {
+    throw new LedgerError("A credit memo can only be applied to a bill from the same vendor.");
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) throw new LedgerError("Enter an amount greater than zero.");
+
+  const available = await unappliedVendorCreditMemoCents(creditMemo);
+  if (amountCents > available) {
+    throw new LedgerError(`This credit memo only has ${centsToDollars(available)} left unapplied.`);
+  }
+
+  const totalCents = invoiceTotalCents(invoice);
+  const alreadyOwed = totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+  if (amountCents > alreadyOwed) {
+    throw new LedgerError(`That would over-apply the credit. This bill only has ${centsToDollars(alreadyOwed)} outstanding.`);
+  }
+
+  return VendorCreditMemoApplication.create({
+    orgId: creditMemo.orgId,
+    vendorCreditMemoId: creditMemo.id,
+    invoiceId: invoice.id,
+    amountCents,
+    appliedDate,
+  });
 }
 
 // Records a payment and posts it, unwinding the row if the ledger refuses.
@@ -263,8 +374,8 @@ export async function computeApAging(orgId, { asOf = null } = {}) {
     const totalCents = invoiceTotalCents(invoice);
     if (totalCents <= 0) continue;
 
-    const outstandingCents = totalCents - (await amountPaidCents(invoice.id));
-    if (outstandingCents <= 0) continue; // fully paid
+    const outstandingCents = totalCents - (await amountPaidCents(invoice.id)) - (await amountCreditedCents(invoice.id));
+    if (outstandingCents <= 0) continue; // fully paid or fully credited
 
     // A bill with no due date can't be aged, so it counts as current
     // rather than being dropped -- it's still money owed, and silently

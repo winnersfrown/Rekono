@@ -1617,6 +1617,29 @@
             <thead><tr><th>Name</th><th>Vendor</th><th>Expense account</th><th>Amount</th><th>Frequency</th><th>Last issued</th><th>Next due</th><th>Auto-approve</th><th>Status</th><th></th></tr></thead>
             <tbody id="recurring-bills-body"></tbody>
           </table>
+
+          <h3>Vendor credit memos</h3>
+          <p class="hint">A return, a billing error, or a goodwill adjustment a vendor issues against what you owe them. Posted immediately -- Debit Accounts Payable / Credit the expense account it reverses -- and can be applied against any open bill from that vendor.</p>
+          <div class="panel">
+            <h3>New vendor credit memo</h3>
+            <form id="vendor-credit-memo-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Vendor<input type="text" id="vcm-vendor" maxlength="512" placeholder="e.g. Acme Supplies Inc" required /></label>
+                <label>Expense account<select id="vcm-account" required></select></label>
+                <label>Issue date<input type="date" id="vcm-date" required /></label>
+                <label>Amount<input type="number" id="vcm-amount" min="0.01" step="0.01" required /></label>
+                <label>Memo<input type="text" id="vcm-memo" maxlength="512" placeholder="Optional" /></label>
+              </div>
+              <div class="line-item-footer">
+                <button type="submit" class="line-item-submit">Issue credit memo</button>
+              </div>
+              <div id="vendor-credit-memo-status" class="hint"></div>
+            </form>
+          </div>
+          <table>
+            <thead><tr><th>Credit #</th><th>Vendor</th><th>Date</th><th>Amount</th><th>Unapplied</th><th>Status</th><th></th></tr></thead>
+            <tbody id="vendor-credit-memos-body"></tbody>
+          </table>
         </section>
 
         <section id="tab-apaging" class="tab-panel">
@@ -2756,6 +2779,27 @@
         <p id="apply-credit-modal-error" class="confirm-modal-error" style="display: none;"></p>
         <div class="confirm-modal-actions">
           <button type="button" id="apply-credit-modal-cancel" class="modal-btn-cancel">Cancel</button>
+          <button type="submit">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- The AP mirror of the modal above -- applying a vendor credit memo
+       needs to know which open bill from that vendor it's offsetting. -->
+  <div id="apply-vendor-credit-modal" class="modal-overlay" style="display: none;">
+    <div class="confirm-modal-card">
+      <h2>Apply credit to a bill</h2>
+      <p id="apply-vendor-credit-modal-message"></p>
+      <form id="apply-vendor-credit-modal-form" class="line-item-form">
+        <div class="line-item-fields">
+          <label>Bill<select id="apply-vendor-credit-modal-bill" required></select></label>
+          <label>Amount<input type="number" id="apply-vendor-credit-modal-amount" step="0.01" min="0.01" required /></label>
+          <label>Date<input type="date" id="apply-vendor-credit-modal-date" required /></label>
+        </div>
+        <p id="apply-vendor-credit-modal-error" class="confirm-modal-error" style="display: none;"></p>
+        <div class="confirm-modal-actions">
+          <button type="button" id="apply-vendor-credit-modal-cancel" class="modal-btn-cancel">Cancel</button>
           <button type="submit">Apply</button>
         </div>
       </form>
