@@ -52,6 +52,8 @@ import { CustomerCreditMemoLine } from "./CustomerCreditMemoLine.js";
 import { CustomerCreditMemoApplication } from "./CustomerCreditMemoApplication.js";
 import { VendorCreditMemo } from "./VendorCreditMemo.js";
 import { VendorCreditMemoApplication } from "./VendorCreditMemoApplication.js";
+import { PrepaidExpense } from "./PrepaidExpense.js";
+import { PrepaidExpenseScheduleEntry } from "./PrepaidExpenseScheduleEntry.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -286,6 +288,13 @@ VendorCreditMemoApplication.belongsTo(VendorCreditMemo, { foreignKey: "vendorCre
 Invoice.hasMany(VendorCreditMemoApplication, { foreignKey: "invoiceId", as: "creditApplications", onDelete: "CASCADE", hooks: true });
 VendorCreditMemoApplication.belongsTo(Invoice, { foreignKey: "invoiceId" });
 
+// The AP mirror of the CustomerInvoice/RevenueScheduleEntry relationship.
+PrepaidExpense.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
+PrepaidExpense.belongsTo(Account, { foreignKey: "paymentAccountId", as: "paymentAccount" });
+PrepaidExpense.hasMany(PrepaidExpenseScheduleEntry, { foreignKey: "prepaidExpenseId", as: "scheduleEntries", onDelete: "CASCADE", hooks: true });
+PrepaidExpenseScheduleEntry.belongsTo(PrepaidExpense, { foreignKey: "prepaidExpenseId" });
+PrepaidExpenseScheduleEntry.belongsTo(Account, { foreignKey: "expenseAccountId", as: "expenseAccount" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -443,4 +452,6 @@ export {
   CustomerCreditMemoApplication,
   VendorCreditMemo,
   VendorCreditMemoApplication,
+  PrepaidExpense,
+  PrepaidExpenseScheduleEntry,
 };

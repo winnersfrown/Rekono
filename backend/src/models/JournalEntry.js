@@ -16,6 +16,8 @@ export const JOURNAL_ENTRY_SOURCES = [
   "customer_payment", // AR: a customer paid
   "customer_credit_memo", // AR: a credit was issued against a customer's balance
   "vendor_credit_memo", // AP: a vendor issued a credit against a bill
+  "prepaid_expense", // AP: cash paid up front for something consumed over time
+  "prepaid_expense_amortization", // AP: a month of a prepaid expense was consumed
   "revenue_recognition", // AR: a month of deferred revenue was earned
   "recurring_entry", // an adjusting entry posted from a recurring template
   "fixed_asset_depreciation", // a declining-balance asset's own posting action (no recurring template -- see fixedAssets.js)

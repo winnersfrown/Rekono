@@ -4,6 +4,35 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.79
+
+Added prepaid expense amortization -- the AP mirror of the deferred
+revenue engine, for money paid up front for something consumed over time
+(a year of insurance, a prepaid lease, an annual license). Until now the
+full amount hit expense the moment it was paid, overstating that month
+and understating every month the payment actually covered.
+
+Recording one posts Debit Prepaid Expenses / Credit the payment account
+immediately -- the cash left, but nothing has been consumed yet. A month
+of amortization posts Debit the expense account / Credit Prepaid Expenses
+for everything due through the requested period, catching up any earlier
+month nobody ran, one journal entry per month.
+
+Deliberately its own record (`PrepaidExpense`) rather than something
+threaded through `postInvoiceApproval` -- that function is called from
+four different bill-approval paths with no per-bill input today, and a
+prepaid expense is the exception, not the rule. It reuses
+`revenueRecognition.js`'s `buildSchedule` directly (day-prorated, rounding
+remainder on the last month, already covered by its own tests) rather
+than reimplementing the same math on the AP side. A prepaid expense can
+only be voided before any month has been amortized, same reasoning voiding
+an applied credit memo is refused: unwinding history already fed into a
+reported-on period is a conversation, not something to silently reverse.
+
+New "Prepaid Expenses" tab under Payables, mirroring the Revenue
+Recognition tab: record, preview an amortization run before posting it,
+run it, and a waterfall of what's left and when it releases.
+
 ## v1.78
 
 Added vendor credit memos -- a return, a billing error, or a goodwill
