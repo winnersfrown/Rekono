@@ -77,6 +77,7 @@ const DIRECT_ORG_TABLES = [
   "vendor_expense_accounts",
   "bank_reconciliations",
   "reconciled_journal_lines",
+  "budgets",
 ];
 
 // Tables with no orgId of their own, reached through a parent that has one.
@@ -87,6 +88,7 @@ const DERIVED_TABLES = {
   recurring_entry_lines: `EXISTS (SELECT 1 FROM recurring_entries p WHERE p.id = recurring_entry_lines."recurringEntryId")`,
   recurring_invoice_lines: `EXISTS (SELECT 1 FROM recurring_invoices p WHERE p.id = recurring_invoice_lines."recurringInvoiceId")`,
   journal_lines: `EXISTS (SELECT 1 FROM journal_entries p WHERE p.id = journal_lines."journalEntryId")`,
+  budget_lines: `EXISTS (SELECT 1 FROM budgets p WHERE p.id = budget_lines."budgetId")`,
   line_items: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = line_items."invoiceId")`,
   match_results: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = match_results."invoiceId")`,
   match_entries: `EXISTS (SELECT 1 FROM match_sources p WHERE p.id = match_entries."sourceId")`,

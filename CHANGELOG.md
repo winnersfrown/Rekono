@@ -4,6 +4,37 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.74
+
+Added budget vs actual, the last of this batch's six improvement ideas.
+Set an annual revenue or expense target per account and see it against
+what the ledger actually shows -- until now, that comparison meant
+exporting the P&L and building it by hand every time someone wanted to
+know whether the year was on pace.
+
+A budget is set against the exact same accounts `computeProfitAndLoss`
+reports on, and `budget.js`'s notion of "actual" reuses that function's
+own normal-balance convention and closing-entry exclusion, so budget vs
+actual agrees with the P&L for the same accounts and period by
+construction -- not by two implementations happening to match. Budgets are
+keyed by fiscal year using the org's own configured year-end
+(`fiscalYear.js`), not a hardcoded calendar year, and an annual figure
+splits evenly across those months with the remainder on the last one, the
+same rounding rule `revenueRecognition.js`'s schedule uses for the same
+reason: a plan that doesn't sum to the number someone typed in is worse
+than not having one.
+
+An account with real activity but no budget line still shows up on the
+report rather than silently missing -- an unbudgeted expense is exactly
+the kind of thing this report exists to catch. Variance favorability is
+computed once, server-side, because the same sign means opposite things
+for revenue (over plan is good news) and expense (over plan is bad news):
+the frontend colors a green/red column from that computed answer instead
+of re-deriving it from a raw number and risking getting it backwards. A
+`through_month` filter turns the report into "on pace so far this year"
+instead of only ever comparing full-year figures against a
+partly-elapsed one.
+
 ## v1.73
 
 Added declining-balance depreciation as a second method alongside

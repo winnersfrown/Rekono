@@ -413,6 +413,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 7a5 5 0 0 0-5-5 5 5 0 0 0-5 5c0 6 10 4 10 10a5 5 0 0 1-5 5 5 5 0 0 1-5-5"/></svg>
             Cash Flow
           </button>
+          <button class="tab-btn" data-tab="budget">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>
+            Budget vs Actual
+          </button>
             <div class="topnav-section">Equity</div>
           <button class="tab-btn" data-tab="equity">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-8H4v8"/><path d="M1 21h22"/><path d="M12 3L2 9h20z"/><path d="M9 13v8M15 13v8"/></svg>
@@ -2160,6 +2164,42 @@
             <thead><tr><th>Activity</th><th>Amount</th></tr></thead>
             <tbody id="cash-flow-body"></tbody>
             <tfoot><tr><th>Net change in cash</th><th id="cf-net-change"></th></tr></tfoot>
+          </table>
+        </section>
+
+        <section id="tab-budget" class="tab-panel">
+          <h1>Budget vs Actual</h1>
+          <p class="hint">A revenue/expense plan for the fiscal year, set against the same accounts the Income Statement reports on -- so "actual" here always ties out to the P&amp;L for the same accounts and period. An account with real spend but no budget still shows up, since a surprise expense is exactly the thing this report should catch, not hide.</p>
+          <form id="budget-period-form" class="statement-period">
+            <label>Fiscal year ending<input type="number" id="budget-fiscal-year" min="2000" max="2100" /></label>
+            <label>Through month<input type="month" id="budget-through-month" /></label>
+            <button type="submit">Update</button>
+          </form>
+          <p id="budget-summary" class="hint"></p>
+
+          <div id="budget-create-panel" class="panel" hidden>
+            <h3>No budget yet for this fiscal year</h3>
+            <button type="button" id="budget-create-btn">Create a budget</button>
+          </div>
+
+          <div id="budget-set-panel" class="panel" hidden>
+            <h3>Set an account's annual budget</h3>
+            <form id="budget-set-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Account<select id="budget-set-account" required></select></label>
+                <label>Annual amount<input type="number" id="budget-set-amount" step="0.01" required /></label>
+              </div>
+              <div class="line-item-footer">
+                <button type="submit" class="line-item-submit">Save</button>
+              </div>
+              <div id="budget-set-status" class="hint"></div>
+            </form>
+          </div>
+
+          <table class="report">
+            <thead><tr><th>Account</th><th>Budget</th><th>Actual</th><th>Variance</th><th>Variance %</th><th></th></tr></thead>
+            <tbody id="budget-body"></tbody>
+            <tfoot><tr id="budget-totals"></tr></tfoot>
           </table>
         </section>
 

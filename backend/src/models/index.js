@@ -45,6 +45,7 @@ import { BankAccount } from "./BankAccount.js";
 import { Employee } from "./Employee.js";
 import { PayrollRun } from "./PayrollRun.js";
 import { BankReconciliation, ReconciledJournalLine } from "./BankReconciliation.js";
+import { Budget, BudgetLine } from "./Budget.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -248,6 +249,12 @@ BankReconciliation.hasMany(ReconciledJournalLine, { foreignKey: "reconciliationI
 ReconciledJournalLine.belongsTo(BankReconciliation, { foreignKey: "reconciliationId" });
 BankReconciliation.belongsTo(Account, { foreignKey: "cashAccountId", as: "cashAccount" });
 
+// A budget owns its lines the same way a RecurringEntry owns its lines --
+// deleting the plan deletes what it was made of.
+Budget.hasMany(BudgetLine, { foreignKey: "budgetId", as: "lines", onDelete: "CASCADE", hooks: true });
+BudgetLine.belongsTo(Budget, { foreignKey: "budgetId" });
+BudgetLine.belongsTo(Account, { foreignKey: "accountId" });
+
 // Postgres codes that mean "another process already created this" rather
 // than a real schema problem: 42P07 duplicate_table (a table or index by
 // that name already exists), 42710 duplicate_object, 23505 unique_violation
@@ -397,4 +404,6 @@ export {
   PayrollRun,
   BankReconciliation,
   ReconciledJournalLine,
+  Budget,
+  BudgetLine,
 };

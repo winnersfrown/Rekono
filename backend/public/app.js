@@ -386,6 +386,7 @@ function switchTab(name) {
   if (name === "profitandloss") { loadProfitAndLoss(); loadIncomeTax(); }
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
+  if (name === "budget") loadBudget();
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
   if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
@@ -5967,6 +5968,124 @@ function renderCashFlow(data) {
 document.getElementById("cf-period-form").addEventListener("submit", (e) => {
   e.preventDefault();
   loadCashFlow();
+});
+
+// ---- Budget vs actual ----
+// A revenue/expense plan for the fiscal year, compared against what the
+// ledger actually shows -- see budget.js for the accounting. budgetId
+// tracks whichever budget the report last resolved to (the current
+// fiscal year, unless the year field is filled in), so the "set an
+// account's budget" form knows which budget to post against without
+// re-deriving it.
+
+let budgetId = null;
+let budgetAccounts = [];
+
+async function loadBudget() {
+  const yearEl = document.getElementById("budget-fiscal-year");
+  const throughEl = document.getElementById("budget-through-month");
+  const params = new URLSearchParams();
+  if (yearEl.value) params.set("fiscal_year_end_year", yearEl.value);
+  if (throughEl.value) params.set("through_month", throughEl.value);
+
+  const [report, accountsData] = await Promise.all([
+    apiFetch(`/api/budget?${params}`).then((r) => r.json()),
+    apiFetch("/api/accounts?active=true").then((r) => r.json()),
+  ]);
+
+  budgetAccounts = accountsData.items.filter((a) => a.type === "revenue" || a.type === "expense");
+  document.getElementById("budget-set-account").innerHTML = groupedAccountOptionsHtml(budgetAccounts, null);
+
+  renderBudget(report);
+}
+
+function renderBudget(data) {
+  budgetId = data.budget_id;
+  const yearEl = document.getElementById("budget-fiscal-year");
+  if (!yearEl.value) yearEl.value = data.fiscal_year_end.slice(0, 4);
+
+  document.getElementById("budget-summary").textContent =
+    `${data.fiscal_year_label} (${data.fiscal_year_start} to ${data.fiscal_year_end})${data.through_month ? `, through ${data.through_month}` : ""}: ` +
+    `budgeted net income ${fmtMoney(data.totals.budget_net_income)}, actual ${fmtMoney(data.totals.actual_net_income)}.`;
+
+  document.getElementById("budget-create-panel").hidden = data.has_budget;
+  document.getElementById("budget-set-panel").hidden = !data.has_budget;
+
+  const body = document.getElementById("budget-body");
+  if (!data.rows.length) {
+    body.innerHTML = `<tr><td colspan="6" class="table-empty-row">No budget lines or activity yet for this fiscal year.</td></tr>`;
+  } else {
+    body.innerHTML = data.rows
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.account_name)}</td>
+        <td>${fmtMoney(r.budget)}</td>
+        <td>${fmtMoney(r.actual)}</td>
+        <td class="${r.favorable === true ? "variance-favorable" : r.favorable === false ? "variance-unfavorable" : ""}">${fmtMoney(r.variance)}</td>
+        <td>${r.variance_pct === null ? "—" : `${r.variance_pct}%`}</td>
+        <td>${r.budget !== 0 ? `<button type="button" class="budget-remove-btn linklike" data-account-id="${r.account_id}">Remove</button>` : ""}</td>
+      </tr>
+    `
+      )
+      .join("");
+  }
+  document.getElementById("budget-totals").innerHTML = `
+    <th>Total</th>
+    <th>${fmtMoney(data.totals.budget_revenue - data.totals.budget_expense)}</th>
+    <th>${fmtMoney(data.totals.actual_revenue - data.totals.actual_expense)}</th>
+    <th colspan="3"></th>
+  `;
+
+  body.querySelectorAll(".budget-remove-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog("Remove this account's budget?", "Its actual activity keeps showing on the report -- this only clears the plan.", {
+        confirmLabel: "Remove",
+        danger: true,
+      });
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/budget/${budgetId}/accounts/${btn.dataset.accountId}`, { method: "DELETE" });
+      const parsed = await res.json().catch(() => ({}));
+      if (res.ok) renderBudget(parsed);
+    })
+  );
+}
+
+document.getElementById("budget-period-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  loadBudget();
+});
+
+document.getElementById("budget-create-btn").addEventListener("click", async () => {
+  const yearEl = document.getElementById("budget-fiscal-year");
+  const res = await apiFetch("/api/budget", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fiscal_year_end_year: Number(yearEl.value) }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (res.ok) renderBudget(parsed);
+});
+
+document.getElementById("budget-set-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("budget-set-status");
+  const res = await apiFetch(`/api/budget/${budgetId}/accounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      account_id: document.getElementById("budget-set-account").value,
+      annual_amount: Number(document.getElementById("budget-set-amount").value) || 0,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = "";
+  document.getElementById("budget-set-amount").value = "";
+  renderBudget(parsed);
 });
 
 // ---- Receivables (customers, customer invoices, AR aging) ----
