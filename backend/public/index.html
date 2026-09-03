@@ -370,6 +370,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
             AP Aging
           </button>
+          <button class="tab-btn" data-tab="prepaidexpenses">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M8 16h5"/></svg>
+            Prepaid Expenses
+          </button>
               </div>
             </div>
 
@@ -1665,6 +1669,51 @@
           <table class="report">
             <thead><tr><th>Vendor</th><th>Amount</th><th>Tax ID</th><th>Status</th><th></th></tr></thead>
             <tbody id="form1099-body"></tbody>
+          </table>
+        </section>
+
+        <section id="tab-prepaidexpenses" class="tab-panel">
+          <h1>Prepaid Expenses</h1>
+          <p class="hint">Money paid up front for something consumed over time -- a year of insurance, a prepaid lease -- sits in Prepaid Expenses until it's used. Running a month posts that month's consumed share across to expense, and catches up any earlier month nobody ran.</p>
+          <div class="panel">
+            <h3>Record a prepaid expense</h3>
+            <form id="prepaid-expense-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Vendor<input type="text" id="pe-vendor" maxlength="512" placeholder="e.g. Acme Insurance Co" required /></label>
+                <label>Expense account<select id="pe-expense-account" required></select></label>
+                <label>Paid from<select id="pe-payment-account" required></select></label>
+                <label>Payment date<input type="date" id="pe-payment-date" required /></label>
+                <label>Amount<input type="number" id="pe-amount" min="0.01" step="0.01" required /></label>
+                <label>Service start<input type="date" id="pe-start" required /></label>
+                <label>Service end<input type="date" id="pe-end" required /></label>
+                <label>Memo<input type="text" id="pe-memo" maxlength="512" placeholder="Optional" /></label>
+              </div>
+              <div class="line-item-footer">
+                <button type="submit" class="line-item-submit">Record</button>
+              </div>
+              <div id="prepaid-expense-status" class="hint"></div>
+            </form>
+          </div>
+          <table>
+            <thead><tr><th>Vendor</th><th>Expense account</th><th>Period</th><th>Total</th><th>Unamortized</th><th>Status</th><th></th></tr></thead>
+            <tbody id="prepaid-expenses-body"></tbody>
+          </table>
+
+          <div class="panel">
+            <h3>Run amortization</h3>
+            <form id="prepaid-amortize-form" class="statement-period">
+              <label>Through<input type="month" id="pe-period" /></label>
+              <button type="button" id="pe-preview">Preview</button>
+              <button type="submit">Amortize</button>
+            </form>
+            <div id="prepaid-amortize-status" class="hint"></div>
+          </div>
+          <h3>Prepaid expense waterfall</h3>
+          <p class="hint">What's still unconsumed, and the month each part releases in.</p>
+          <table class="report">
+            <thead><tr><th>Period</th><th>Releases</th></tr></thead>
+            <tbody id="prepaid-waterfall-body"></tbody>
+            <tfoot><tr id="prepaid-waterfall-total"></tr></tfoot>
           </table>
         </section>
 

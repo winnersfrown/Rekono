@@ -83,6 +83,8 @@ const DIRECT_ORG_TABLES = [
   "customer_credit_memo_applications",
   "vendor_credit_memos",
   "vendor_credit_memo_applications",
+  "prepaid_expenses",
+  "prepaid_expense_schedule_entries",
 ];
 
 // Tables with no orgId of their own, reached through a parent that has one.

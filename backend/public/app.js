@@ -409,6 +409,12 @@ function switchTab(name) {
     loadVendorCreditMemos();
   }
   if (name === "apaging") { loadApAging(); loadForm1099(); }
+  if (name === "prepaidexpenses") {
+    loadPaymentAccounts();
+    loadPrepaidExpenseFormData();
+    loadPrepaidExpenses();
+    loadPrepaidWaterfall();
+  }
 }
 
 document.querySelectorAll("[data-tab]").forEach((btn) => {
@@ -7046,6 +7052,163 @@ document.getElementById("rev-preview").addEventListener("click", async () => {
   statusEl.textContent = `Would recognize ${fmtMoney(data.total)} across ${data.periods.length} period${
     data.periods.length === 1 ? "" : "s"
   }: ${months}.`;
+});
+
+// ---- Prepaid expenses ----
+// Money paid up front for something consumed over time (see
+// prepaidExpenses.js) sits in Prepaid Expenses until it's used. The AP
+// mirror of the Revenue Recognition tab above.
+
+async function loadPrepaidExpenseFormData() {
+  await loadPaymentAccounts();
+  document.getElementById("pe-expense-account").innerHTML = groupedAccountOptionsHtml(rbExpenseAccounts, null);
+  document.getElementById("pe-payment-account").innerHTML = groupedAccountOptionsHtml(bpPaymentAccounts, null);
+}
+
+document.getElementById("prepaid-expense-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("prepaid-expense-status");
+  const res = await apiFetch("/api/prepaid-expenses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      vendor_name: document.getElementById("pe-vendor").value,
+      expense_account_id: document.getElementById("pe-expense-account").value,
+      payment_account_id: document.getElementById("pe-payment-account").value,
+      payment_date: document.getElementById("pe-payment-date").value,
+      amount: Number(document.getElementById("pe-amount").value) || 0,
+      service_start_date: document.getElementById("pe-start").value,
+      service_end_date: document.getElementById("pe-end").value,
+      memo: document.getElementById("pe-memo").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = parsed.detail?.[0]?.message || parsed.detail || "Something went wrong.";
+    return;
+  }
+  statusEl.textContent = `Recorded ${fmtMoney(parsed.total)} prepaid to ${parsed.vendor_name}.`;
+  document.getElementById("pe-vendor").value = "";
+  document.getElementById("pe-amount").value = "";
+  document.getElementById("pe-memo").value = "";
+  loadPrepaidExpenses();
+  loadPrepaidWaterfall();
+});
+
+async function loadPrepaidExpenses() {
+  const data = await (await apiFetch("/api/prepaid-expenses")).json();
+  const body = document.getElementById("prepaid-expenses-body");
+  if (!data.items.length) {
+    body.innerHTML = `<tr><td colspan="7" class="table-empty-row">No prepaid expenses yet — record one above.</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.items
+    .map(
+      (p) => `
+    <tr>
+      <td>${escapeHtml(p.vendor_name)}</td>
+      <td>${escapeHtml(p.expense_account_name || "—")}</td>
+      <td>${p.service_start_date} to ${p.service_end_date}</td>
+      <td>${fmtMoney(p.total)}</td>
+      <td>${fmtMoney(p.unamortized)}</td>
+      <td>${p.status}</td>
+      <td>
+        ${p.status === "active" && p.unamortized === p.total ? `<button type="button" class="pe-void-btn linklike" data-id="${p.id}">Void</button>` : ""}
+      </td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".pe-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog(
+        "Void this prepaid expense?",
+        "This posts a reversing entry and drops its remaining schedule. Only possible before any month has been amortized.",
+        { confirmLabel: "Void", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/prepaid-expenses/${btn.dataset.id}/void`, { method: "POST" });
+      const parsed = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await alertDialog("Couldn't void that", parsed.detail || "Something went wrong.");
+        return;
+      }
+      loadPrepaidExpenses();
+      loadPrepaidWaterfall();
+    })
+  );
+}
+
+function pePeriod() {
+  const el = document.getElementById("pe-period");
+  if (!el.value) el.value = new Date().toISOString().slice(0, 7);
+  return el.value;
+}
+
+async function loadPrepaidWaterfall() {
+  pePeriod();
+  const data = await (await apiFetch("/api/reports/prepaid-expenses")).json();
+  const body = document.getElementById("prepaid-waterfall-body");
+  if (!data.periods.length) {
+    body.innerHTML = `<tr><td colspan="2" class="table-empty-row">Nothing prepaid — every recorded item has been consumed.</td></tr>`;
+  } else {
+    body.innerHTML = data.periods
+      .map((p) => `<tr><td>${p.period_month}</td><td>${fmtMoney(p.amount)}</td></tr>`)
+      .join("");
+    if (data.beyond.periods > 0) {
+      body.innerHTML += `<tr><td class="hint">+ ${data.beyond.periods} later period${
+        data.beyond.periods === 1 ? "" : "s"
+      }</td><td>${fmtMoney(data.beyond.amount)}</td></tr>`;
+    }
+  }
+  document.getElementById("prepaid-waterfall-total").innerHTML =
+    `<th>Total prepaid</th><th>${fmtMoney(data.total_prepaid)}</th>`;
+}
+
+document.getElementById("pe-preview").addEventListener("click", async () => {
+  const statusEl = document.getElementById("prepaid-amortize-status");
+  const data = await (await apiFetch(`/api/prepaid-expenses-pending?period_month=${pePeriod()}`)).json();
+  if (!data.entry_count) {
+    statusEl.textContent = `Nothing to amortize through ${data.period_month}.`;
+    return;
+  }
+  const months = data.periods.map((p) => `${p.period_month} ${fmtMoney(p.amount)}`).join(", ");
+  statusEl.textContent = `Would amortize ${fmtMoney(data.total)} across ${data.periods.length} period${
+    data.periods.length === 1 ? "" : "s"
+  }: ${months}.`;
+});
+
+document.getElementById("prepaid-amortize-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("prepaid-amortize-status");
+  const period = pePeriod();
+
+  const confirmed = await confirmDialog(
+    `Amortize prepaid expenses through ${period}?`,
+    "This posts a journal entry for each period, dated to the end of the month it recognizes. Any earlier month that was never run is caught up too.",
+    { confirmLabel: "Amortize" }
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch("/api/prepaid-expenses-amortize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ period_month: period }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = "";
+    await alertDialog("Couldn't amortize that period", parsed.detail || "Something went wrong.");
+    return;
+  }
+  statusEl.textContent = parsed.periods.length
+    ? `Amortized ${fmtMoney(parsed.amortized)} across ${parsed.periods.length} period${
+        parsed.periods.length === 1 ? "" : "s"
+      }.`
+    : `Nothing was pending through ${period}.`;
+  loadPrepaidExpenses();
+  loadPrepaidWaterfall();
 });
 
 // ---- Stockholders' equity ----
