@@ -7,6 +7,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
+import { settings } from "../config.js";
+import { rateLimitMiddleware } from "../rateLimit.js";
 import { LedgerError, centsToDollars, dollarsToCents } from "../ledger.js";
 import {
   PAYABLE_INVOICE_STATUS,
@@ -17,7 +19,11 @@ import {
   recordBillPayment,
   voidBillPaymentEntry,
 } from "../accountsPayable.js";
-import { Account, AuditLog, BillPayment, Invoice } from "../models/index.js";
+import { dueDates, previewRecurringBills, runRecurringBills } from "../recurringBills.js";
+import { RECURRING_BILL_FREQUENCIES } from "../models/RecurringBill.js";
+import { Account, AuditLog, BillPayment, Invoice, RecurringBill } from "../models/index.js";
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const router = Router();
 
@@ -236,6 +242,191 @@ router.get("/api/reports/ap-aging", requireAuth, requireActivePlan, async (req, 
     const asOf = /^\d{4}-\d{2}-\d{2}$/.test(req.query.as_of || "") ? req.query.as_of : null;
     res.json(await computeApAging(req.currentUser.orgId, { asOf }));
   } catch (err) {
+    next(err);
+  }
+});
+
+// ---- Recurring bills ----
+
+// .../run mutates real billing state on every call -- it can create a real
+// Invoice and, if the template is flagged autoApprove, post it to the
+// ledger, all in a single request -- so this group gets the same tighter
+// rate limit routes/receivables.js applies to .../recurring-invoices/run,
+// on top of the blanket one every route already has.
+const recurringBillRateLimit = rateLimitMiddleware({
+  windowMs: 15 * 60 * 1000,
+  max: settings.rateLimitExpensiveMax,
+  message: "Too many requests. Please slow down and try again shortly.",
+});
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function serializeRecurringBill(t) {
+  return {
+    id: t.id,
+    vendor_name: t.vendorName,
+    expense_account_id: t.expenseAccountId,
+    expense_account_name: t.expenseAccount?.name,
+    name: t.name,
+    memo: t.memo,
+    amount: centsToDollars(t.amountCents),
+    frequency: t.frequency,
+    start_date: t.startDate,
+    end_date: t.endDate,
+    last_issued_date: t.lastIssuedDate,
+    active: t.active,
+    auto_approve: t.autoApprove,
+    next_due: dueDates({ frequency: t.frequency, startDate: t.startDate, endDate: t.endDate, lastPostedDate: t.lastIssuedDate }, todayIso())[0] || null,
+  };
+}
+
+router.get("/api/recurring-bills", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const templates = await RecurringBill.findAll({
+      where: { orgId: req.currentUser.orgId },
+      include: [{ model: Account, as: "expenseAccount", attributes: ["id", "name"] }],
+      order: [["name", "ASC"]],
+    });
+    res.json({ items: templates.map(serializeRecurringBill) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const recurringBillSchema = z.object({
+  vendor_name: z.string().min(1).max(512),
+  expense_account_id: z.string().min(1),
+  name: z.string().min(1).max(256),
+  memo: z.string().max(512).optional(),
+  amount: z.number().positive(),
+  frequency: z.enum(RECURRING_BILL_FREQUENCIES),
+  start_date: z.string().regex(ISO_DATE),
+  end_date: z.string().regex(ISO_DATE).optional(),
+  auto_approve: z.boolean().optional(),
+});
+
+router.post("/api/recurring-bills", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const parsed = recurringBillSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+    const data = parsed.data;
+
+    if (data.end_date && data.end_date < data.start_date) {
+      return res.status(422).json({ detail: "A recurring bill can't end before it starts." });
+    }
+    const expenseAccount = await Account.findOne({ where: { id: data.expense_account_id, orgId, type: "expense" } });
+    if (!expenseAccount) {
+      return res.status(422).json({ detail: "This bill must post to an expense account in your chart of accounts." });
+    }
+
+    const template = await RecurringBill.create({
+      orgId,
+      vendorName: data.vendor_name,
+      expenseAccountId: expenseAccount.id,
+      name: data.name,
+      memo: data.memo || "",
+      amountCents: dollarsToCents(data.amount),
+      frequency: data.frequency,
+      startDate: data.start_date,
+      endDate: data.end_date || null,
+      autoApprove: data.auto_approve || false,
+    });
+    template.expenseAccount = expenseAccount;
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "recurring_bill_created",
+      actor: req.currentUser.email,
+      details: { name: template.name, vendor: template.vendorName, frequency: template.frequency },
+    });
+
+    res.status(201).json(serializeRecurringBill(template));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/api/recurring-bills/:id", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({
+        name: z.string().min(1).max(256).optional(),
+        active: z.boolean().optional(),
+        end_date: z.string().regex(ISO_DATE).nullable().optional(),
+        auto_approve: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+
+    const template = await RecurringBill.findOne({
+      where: { id: req.params.id, orgId: req.currentUser.orgId },
+      include: [{ model: Account, as: "expenseAccount", attributes: ["id", "name"] }],
+    });
+    if (!template) return res.status(404).json({ detail: "Recurring bill not found" });
+
+    if (parsed.data.name !== undefined) template.name = parsed.data.name;
+    if (parsed.data.active !== undefined) template.active = parsed.data.active;
+    if (parsed.data.end_date !== undefined) template.endDate = parsed.data.end_date;
+    if (parsed.data.auto_approve !== undefined) template.autoApprove = parsed.data.auto_approve;
+    await template.save();
+
+    res.json(serializeRecurringBill(template));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Deleting stops future issuance. Bills already created are real Invoice
+// rows and stay -- this only stops the next one.
+router.delete("/api/recurring-bills/:id", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const template = await RecurringBill.findOne({ where: { id: req.params.id, orgId: req.currentUser.orgId } });
+    if (!template) return res.status(404).json({ detail: "Recurring bill not found" });
+    await template.destroy();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/recurring-bills/pending", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const asOf = ISO_DATE.test(req.query.as_of || "") ? req.query.as_of : todayIso();
+    res.json(await previewRecurringBills(req.currentUser.orgId, asOf));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/recurring-bills/run", requireAuth, requireActivePlan, recurringBillRateLimit, async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({ as_of: z.string().regex(ISO_DATE).optional(), template_id: z.string().optional() })
+      .safeParse(req.body || {});
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const asOf = parsed.data.as_of || todayIso();
+
+    const result = await runRecurringBills(req.currentUser.orgId, asOf, {
+      postedByUserId: req.currentUser.id,
+      templateId: parsed.data.template_id || null,
+    });
+
+    if (result.issued.length) {
+      await AuditLog.create({
+        orgId: req.currentUser.orgId,
+        userId: req.currentUser.id,
+        action: "recurring_bills_run",
+        actor: req.currentUser.email,
+        details: { as_of: asOf, issued: result.issued.length, amount: result.total },
+      });
+    }
+    res.json({ as_of: asOf, ...result });
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
     next(err);
   }
 });

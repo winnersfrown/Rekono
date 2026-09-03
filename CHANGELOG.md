@@ -4,6 +4,64 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.77
+
+Added customer credit memos -- a return, a billing error, or a goodwill
+adjustment that reduces what a customer owes. Until now the only way to
+correct a sent invoice was voiding it outright, which refuses once any
+payment exists, or leaving the AR balance simply wrong.
+
+A credit memo is its own document (`CustomerCreditMemo` + line items, its
+own `CM-0001` numbering) rather than a reversal of specific invoice lines,
+and posts immediately -- Debit each line's revenue account (+ the taxable
+share of Sales Tax Payable) / Credit Accounts Receivable -- with no draft
+stage: by the time someone cuts a credit, there's no future commitment to
+stage the way an invoice has. It doesn't unwind a deferred-revenue
+schedule even when crediting a line that was originally billed on a
+service period; working out how much of that line was already recognized
+is a judgment call this app punts to a manual journal entry rather than
+guess at silently.
+
+Applying a credit to a specific invoice (`CustomerCreditMemoApplication`)
+posts no journal entry of its own -- the money already moved when the
+memo posted, so this is bookkeeping for the AR sub-ledger only, same
+relationship a payment has to the invoice it's recorded against.
+`amountCreditedCents` is added alongside `amountPaidCents` everywhere an
+invoice's outstanding balance is computed (status, aging, the invoice
+API's `amount_outstanding`), so a customer settled by credit instead of
+cash behaves identically everywhere: the invoice flips to paid, and it
+drops off AR aging the same way a cash payment would.
+
+A credit memo can only be voided before it's been applied to anything
+(mirrors the existing rule for a paid invoice), and an application is
+bounded on both sides -- it can't exceed what the memo has left unapplied,
+and it can't exceed what the invoice still owes.
+
+## v1.76
+
+Added recurring vendor bills -- the AP mirror of v1.69's recurring customer
+invoices, for rent, subscriptions, and retainers you pay every period
+instead of billing to someone else. Save a template once (vendor, expense
+account, amount, frequency) and each period creates a real bill in the
+Review Queue for a human to approve, or check "Auto-approve" to have it
+post to Accounts Payable on its own.
+
+An occurrence is a real `Invoice` row (the AP bill model), not a separate
+table -- it goes through the same Review Queue, the same
+`postInvoiceApproval`, and the same AP aging every manually-entered bill
+does, so a recurring bill can't drift from what one looks like. There's no
+line-item sub-table the way `RecurringInvoice` has one: `postInvoiceApproval`
+has never split an approved bill's total across more than one expense
+account, so a template mirrors that shape with one flat amount and one
+account rather than modeling a breakdown the ledger would ignore anyway.
+
+One thing worth knowing if you go looking for the posted entry: unlike the
+AR side's `postCustomerInvoice` (dated to the invoice's own `issueDate`),
+`postInvoiceApproval` has never taken an `entryDate` -- every bill approval,
+recurring or manual, posts dated to whenever the approval actually ran. An
+auto-approved occurrence for a back-dated period still shows up on the
+books today, not on the period it's for.
+
 ## v1.75
 
 Fixed "Ask Rekono" showing new messages at the top of the thread instead

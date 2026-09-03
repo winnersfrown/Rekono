@@ -62,6 +62,7 @@ const DIRECT_ORG_TABLES = [
   "vendor_aliases",
   "recurring_entries",
   "recurring_invoices",
+  "recurring_bills",
   "fixed_assets",
   "written_checks",
   "revenue_schedule_entries",
@@ -78,6 +79,8 @@ const DIRECT_ORG_TABLES = [
   "bank_reconciliations",
   "reconciled_journal_lines",
   "budgets",
+  "customer_credit_memos",
+  "customer_credit_memo_applications",
 ];
 
 // Tables with no orgId of their own, reached through a parent that has one.
@@ -89,6 +92,7 @@ const DERIVED_TABLES = {
   recurring_invoice_lines: `EXISTS (SELECT 1 FROM recurring_invoices p WHERE p.id = recurring_invoice_lines."recurringInvoiceId")`,
   journal_lines: `EXISTS (SELECT 1 FROM journal_entries p WHERE p.id = journal_lines."journalEntryId")`,
   budget_lines: `EXISTS (SELECT 1 FROM budgets p WHERE p.id = budget_lines."budgetId")`,
+  customer_credit_memo_lines: `EXISTS (SELECT 1 FROM customer_credit_memos p WHERE p.id = customer_credit_memo_lines."customerCreditMemoId")`,
   line_items: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = line_items."invoiceId")`,
   match_results: `EXISTS (SELECT 1 FROM invoices p WHERE p.id = match_results."invoiceId")`,
   match_entries: `EXISTS (SELECT 1 FROM match_sources p WHERE p.id = match_entries."sourceId")`,

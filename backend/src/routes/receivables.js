@@ -11,12 +11,19 @@ import { rateLimitMiddleware } from "../rateLimit.js";
 import { LedgerError, centsToDollars, dollarsToCents } from "../ledger.js";
 import {
   addDays,
+  amountAppliedFromCreditMemoCents,
+  amountCreditedCents,
   amountPaidCents,
+  applyCreditMemoToInvoice,
   computeArAging,
+  nextCreditMemoNumber,
   nextInvoiceNumber,
+  postCustomerCreditMemo,
   postCustomerPayment,
   refreshInvoiceStatus,
   sendCustomerInvoice,
+  unappliedCreditMemoCents,
+  voidCustomerCreditMemoEntry,
   voidCustomerInvoiceEntry,
 } from "../accountsReceivable.js";
 import { dropUnrecognizedSchedule } from "../revenueRecognition.js";
@@ -33,6 +40,8 @@ import {
   Account,
   AuditLog,
   Customer,
+  CustomerCreditMemo,
+  CustomerCreditMemoLine,
   CustomerInvoice,
   CustomerInvoiceLine,
   CustomerPayment,
@@ -74,8 +83,9 @@ function serializeLine(line) {
   };
 }
 
-function serializeInvoice(invoice, { lines, paidCents } = {}) {
+function serializeInvoice(invoice, { lines, paidCents, creditedCents } = {}) {
   const paid = paidCents ?? 0;
+  const credited = creditedCents ?? 0;
   return {
     id: invoice.id,
     customer_id: invoice.customerId,
@@ -89,7 +99,8 @@ function serializeInvoice(invoice, { lines, paidCents } = {}) {
     tax: centsToDollars(invoice.taxCents),
     total: centsToDollars(invoice.totalCents),
     amount_paid: centsToDollars(paid),
-    amount_outstanding: centsToDollars(invoice.totalCents - paid),
+    amount_credited: centsToDollars(credited),
+    amount_outstanding: centsToDollars(invoice.totalCents - paid - credited),
     sent_at: invoice.sentAt,
     ...(lines ? { lines: lines.map(serializeLine) } : {}),
   };
@@ -429,7 +440,12 @@ router.get("/api/customer-invoices", requireAuth, requireActivePlan, async (req,
     });
 
     const items = await Promise.all(
-      rows.map(async (inv) => serializeInvoice(inv, { paidCents: await amountPaidCents(inv.id) }))
+      rows.map(async (inv) =>
+        serializeInvoice(inv, {
+          paidCents: await amountPaidCents(inv.id),
+          creditedCents: await amountCreditedCents(inv.id),
+        })
+      )
     );
     res.json({ items, total: count, page, page_size: pageSize });
   } catch (err) {
@@ -543,7 +559,11 @@ router.get("/api/customer-invoices/:id", requireAuth, requireActivePlan, async (
     const invoice = await getOwnedInvoice(req.params.id, req.currentUser.orgId);
     if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
     res.json(
-      serializeInvoice(invoice, { lines: await loadLines(invoice.id), paidCents: await amountPaidCents(invoice.id) })
+      serializeInvoice(invoice, {
+        lines: await loadLines(invoice.id),
+        paidCents: await amountPaidCents(invoice.id),
+        creditedCents: await amountCreditedCents(invoice.id),
+      })
     );
   } catch (err) {
     next(err);
@@ -690,7 +710,259 @@ router.post("/api/customer-invoices/:id/payments", requireAuth, requireActivePla
     });
 
     res.status(201).json(
-      serializeInvoice(invoice, { lines: await loadLines(invoice.id), paidCents: await amountPaidCents(invoice.id) })
+      serializeInvoice(invoice, {
+        lines: await loadLines(invoice.id),
+        paidCents: await amountPaidCents(invoice.id),
+        creditedCents: await amountCreditedCents(invoice.id),
+      })
+    );
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+// ---- Credit memos ----
+
+function serializeCreditMemoLine(line) {
+  return {
+    id: line.id,
+    revenue_account_id: line.revenueAccountId,
+    revenue_account_name: line.revenueAccount?.name,
+    description: line.description,
+    amount: centsToDollars(line.amountCents),
+    taxable: line.taxable,
+  };
+}
+
+function serializeCreditMemo(memo, { lines, unappliedCents } = {}) {
+  return {
+    id: memo.id,
+    customer_id: memo.customerId,
+    customer_name: memo.customer?.name,
+    credit_number: memo.creditNumber,
+    issue_date: memo.issueDate,
+    status: memo.status,
+    memo: memo.memo,
+    subtotal: centsToDollars(memo.totalCents - memo.taxCents),
+    tax: centsToDollars(memo.taxCents),
+    total: centsToDollars(memo.totalCents),
+    ...(unappliedCents !== undefined ? { unapplied: centsToDollars(unappliedCents) } : {}),
+    ...(lines ? { lines: lines.map(serializeCreditMemoLine) } : {}),
+  };
+}
+
+async function getOwnedCreditMemo(id, orgId) {
+  return CustomerCreditMemo.findOne({
+    where: { id, orgId },
+    include: [{ model: Customer, as: "customer", attributes: ["id", "name"] }],
+  });
+}
+
+function loadCreditMemoLines(customerCreditMemoId) {
+  return CustomerCreditMemoLine.findAll({
+    where: { customerCreditMemoId },
+    include: [{ model: Account, as: "revenueAccount", attributes: ["name"] }],
+    order: [["position", "ASC"]],
+  });
+}
+
+router.get("/api/customer-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const where = { orgId: req.currentUser.orgId };
+    if (req.query.status) where.status = req.query.status;
+    if (req.query.customer_id) where.customerId = req.query.customer_id;
+
+    const memos = await CustomerCreditMemo.findAll({
+      where,
+      include: [{ model: Customer, as: "customer", attributes: ["id", "name"] }],
+      order: [["issueDate", "DESC"], ["createdAt", "DESC"]],
+    });
+
+    const items = await Promise.all(
+      memos.map(async (m) => serializeCreditMemo(m, { unappliedCents: await unappliedCreditMemoCents(m) }))
+    );
+    res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const creditMemoLineSchema = z.object({
+  revenue_account_id: z.string().min(1),
+  description: z.string().max(512).optional(),
+  amount: z.number().positive(),
+  taxable: z.boolean().optional(),
+});
+
+const creditMemoSchema = z.object({
+  customer_id: z.string().min(1),
+  issue_date: z.string().min(1),
+  memo: z.string().max(512).optional(),
+  lines: z.array(creditMemoLineSchema).min(1),
+});
+
+// Posted immediately -- see CustomerCreditMemo.js for why this skips the
+// draft stage every other write path here goes through.
+router.post("/api/customer-credit-memos", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = creditMemoSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+
+    const customer = await Customer.findOne({ where: { id: parsed.data.customer_id, orgId } });
+    if (!customer) return res.status(404).json({ detail: "Customer not found" });
+
+    const lines = parsed.data.lines.map((l, i) => ({
+      revenueAccountId: l.revenue_account_id,
+      description: l.description || "",
+      amountCents: dollarsToCents(l.amount),
+      taxable: l.taxable !== false,
+      position: i,
+    }));
+    const accountIds = [...new Set(lines.map((l) => l.revenueAccountId))];
+    const accounts = await Account.findAll({ where: { id: accountIds, orgId, type: "revenue" } });
+    if (accounts.length !== accountIds.length) {
+      return res.status(422).json({ detail: "Every line must credit a revenue account in your chart of accounts." });
+    }
+
+    const taxCents = customer.taxExempt ? 0 : computeInvoiceTaxCents(req.currentUser.organization.salesTaxRatePercent, lines);
+    const linesTotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);
+
+    const creditMemo = await CustomerCreditMemo.create({
+      orgId,
+      customerId: customer.id,
+      creditNumber: await nextCreditMemoNumber(orgId),
+      issueDate: parsed.data.issue_date,
+      memo: parsed.data.memo || "",
+      totalCents: linesTotalCents + taxCents,
+      taxCents,
+    });
+    await CustomerCreditMemoLine.bulkCreate(lines.map((l) => ({ ...l, customerCreditMemoId: creditMemo.id })));
+
+    try {
+      await postCustomerCreditMemo({ ...creditMemo.get(), customerName: customer.name }, lines, {
+        postedByUserId: req.currentUser.id,
+      });
+    } catch (err) {
+      await creditMemo.destroy();
+      throw err;
+    }
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "customer_credit_memo_issued",
+      actor: req.currentUser.email,
+      details: { credit_number: creditMemo.creditNumber, total: centsToDollars(creditMemo.totalCents) },
+    });
+
+    creditMemo.customer = customer;
+    res.status(201).json(
+      serializeCreditMemo(creditMemo, { lines: await loadCreditMemoLines(creditMemo.id), unappliedCents: creditMemo.totalCents })
+    );
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+router.get("/api/customer-credit-memos/:id", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const creditMemo = await getOwnedCreditMemo(req.params.id, req.currentUser.orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+    res.json(
+      serializeCreditMemo(creditMemo, {
+        lines: await loadCreditMemoLines(creditMemo.id),
+        unappliedCents: await unappliedCreditMemoCents(creditMemo),
+      })
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/customer-credit-memos/:id/void", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const creditMemo = await getOwnedCreditMemo(req.params.id, req.currentUser.orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+    if (creditMemo.status === "void") return res.status(409).json({ detail: "This credit memo is already void." });
+
+    // Mirrors voiding an invoice with payments recorded: unwinding a
+    // credit that's already been used to settle an invoice is a
+    // conversation with that invoice, not something to silently reverse
+    // out from under it.
+    if ((await amountAppliedFromCreditMemoCents(creditMemo.id)) > 0) {
+      return res.status(409).json({
+        detail: "This credit memo has been applied to an invoice. That application can't be undone from here.",
+      });
+    }
+
+    await voidCustomerCreditMemoEntry(req.currentUser.orgId, creditMemo.id, { postedByUserId: req.currentUser.id });
+    creditMemo.status = "void";
+    await creditMemo.save();
+
+    await AuditLog.create({
+      orgId: req.currentUser.orgId,
+      userId: req.currentUser.id,
+      action: "customer_credit_memo_voided",
+      actor: req.currentUser.email,
+      details: { credit_number: creditMemo.creditNumber },
+    });
+
+    res.json(serializeCreditMemo(creditMemo, { lines: await loadCreditMemoLines(creditMemo.id), unappliedCents: 0 }));
+  } catch (err) {
+    if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
+    next(err);
+  }
+});
+
+const applyCreditSchema = z.object({
+  invoice_id: z.string().min(1),
+  amount: z.number().positive(),
+  applied_date: z.string().min(1).optional(),
+});
+
+router.post("/api/customer-credit-memos/:id/apply", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const parsed = applyCreditSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(422).json({ detail: parsed.error.issues });
+    const orgId = req.currentUser.orgId;
+
+    const creditMemo = await getOwnedCreditMemo(req.params.id, orgId);
+    if (!creditMemo) return res.status(404).json({ detail: "Credit memo not found" });
+
+    const invoice = await getOwnedInvoice(parsed.data.invoice_id, orgId);
+    if (!invoice) return res.status(404).json({ detail: "Invoice not found" });
+    if (!["sent", "paid"].includes(invoice.status)) {
+      return res.status(409).json({ detail: `Can't apply a credit to a ${invoice.status} invoice.` });
+    }
+
+    await applyCreditMemoToInvoice(
+      creditMemo,
+      invoice,
+      dollarsToCents(parsed.data.amount),
+      parsed.data.applied_date || todayIso()
+    );
+
+    await AuditLog.create({
+      orgId,
+      userId: req.currentUser.id,
+      action: "customer_credit_memo_applied",
+      actor: req.currentUser.email,
+      details: {
+        credit_number: creditMemo.creditNumber,
+        invoice_number: invoice.invoiceNumber,
+        amount: parsed.data.amount,
+      },
+    });
+
+    res.status(201).json(
+      serializeInvoice(invoice, {
+        lines: await loadLines(invoice.id),
+        paidCents: await amountPaidCents(invoice.id),
+        creditedCents: await amountCreditedCents(invoice.id),
+      })
     );
   } catch (err) {
     if (err instanceof LedgerError) return res.status(err.status).json({ detail: err.message });
