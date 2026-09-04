@@ -26,6 +26,12 @@ process.env.STORAGE_DIR = path.join(dir, "storage");
 fs.mkdirSync(process.env.STORAGE_DIR, { recursive: true });
 
 process.env.GEMINI_API_KEY = "";
+// A developer's local .env commonly carries a real OpenRouter key for
+// manual testing -- without clearing these too, the suite would silently
+// start making real network calls instead of exercising the deterministic
+// heuristic path every other LLM-backed test assumes.
+process.env.OPENROUTER_API_KEY = "";
+process.env.OPENROUTER_MODEL = "";
 process.env.SECRET_KEY = "test-secret-key-not-for-production";
 
 // The API-wide rate limits are keyed by client IP, and every request in the

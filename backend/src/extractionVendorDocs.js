@@ -66,9 +66,10 @@ export async function extract(ocrText) {
   if (llmConfigured()) {
     try {
       return await extractWithLlm(ocrText);
-    } catch {
+    } catch (err) {
       // Fall back rather than fail the whole pipeline on a transient API
       // error; the low heuristic confidence will route it to review.
+      console.error("Vendor document extraction LLM call failed, falling back to heuristic:", err.message);
       return extractHeuristic(ocrText);
     }
   }

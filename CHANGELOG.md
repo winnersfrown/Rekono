@@ -4,6 +4,26 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.83
+
+Fixed a silent-failure gap across every extraction module (invoices,
+receipts, tax documents, vendor documents, checks, leases): when the LLM
+call failed, the fallback to the heuristic extractor swallowed the error
+completely, with nothing printed anywhere -- so a misconfigured or failing
+LLM provider looked identical in the logs to one that was never
+configured at all. `transactionCategorization.js` already logged its own
+LLM failures for exactly this reason; the six extraction modules were the
+outliers. All six now log the real error before falling back, so a bad
+API key, an unsupported model, or a rate limit shows up in the logs
+instead of just quietly degrading every extraction to heuristic mode.
+
+Also closed a related gap in the test suite itself: `jest.setup.js`
+cleared `GEMINI_API_KEY` to keep the suite deterministic, but never
+cleared `OPENROUTER_API_KEY`/`OPENROUTER_MODEL` -- so a developer with a
+real OpenRouter key in their local `.env` would have the suite silently
+attempt real network calls instead of exercising the heuristic path every
+LLM-backed test assumes. Now cleared alongside the Gemini key.
+
 ## v1.82
 
 Added bad debt write-offs for customer invoices -- recognizing a customer
