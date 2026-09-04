@@ -832,12 +832,12 @@
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
-                <button class="expense-filter-btn active" data-status="">All</button>
-                <button class="expense-filter-btn" data-status="needs_review">Needs Review</button>
-                <button class="expense-filter-btn" data-status="extracted">Extracted</button>
-                <button class="expense-filter-btn" data-status="approved">Approved</button>
-                <button class="expense-filter-btn" data-status="queued">Queued</button>
-                <button class="expense-filter-btn" data-status="failed">Failed</button>
+                <button class="filter-btn expense-filter-btn active" data-status="">All</button>
+                <button class="filter-btn expense-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn expense-filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn expense-filter-btn" data-status="approved">Approved</button>
+                <button class="filter-btn expense-filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn expense-filter-btn" data-status="failed">Failed</button>
               </div>
               <input type="search" id="expense-search" class="queue-search" placeholder="Search merchant…" aria-label="Search expenses" />
               <table id="expense-table">
@@ -880,13 +880,13 @@
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
-                <button class="vendordoc-filter-btn active" data-status="">All</button>
-                <button class="vendordoc-filter-btn" data-status="needs_review">Needs Review</button>
-                <button class="vendordoc-filter-btn" data-status="extracted">Extracted</button>
-                <button class="vendordoc-filter-btn" data-status="approved">Approved</button>
-                <button class="vendordoc-filter-btn" data-status="queued">Queued</button>
-                <button class="vendordoc-filter-btn" data-status="failed">Failed</button>
-                <button class="vendordoc-filter-btn" data-status="expiring_soon">Expiring within 30 days</button>
+                <button class="filter-btn vendordoc-filter-btn active" data-status="">All</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="approved">Approved</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="failed">Failed</button>
+                <button class="filter-btn vendordoc-filter-btn" data-status="expiring_soon">Expiring within 30 days</button>
               </div>
               <input type="search" id="vendordoc-search" class="queue-search" placeholder="Search vendor…" aria-label="Search vendor documents" />
               <table id="vendordoc-table">
@@ -930,13 +930,13 @@
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
-                <button class="lease-filter-btn active" data-status="">All</button>
-                <button class="lease-filter-btn" data-status="needs_review">Needs Review</button>
-                <button class="lease-filter-btn" data-status="extracted">Extracted</button>
-                <button class="lease-filter-btn" data-status="approved">Approved</button>
-                <button class="lease-filter-btn" data-status="queued">Queued</button>
-                <button class="lease-filter-btn" data-status="failed">Failed</button>
-                <button class="lease-filter-btn" data-status="expiring_soon">Expiring or renewal notice due within 90 days</button>
+                <button class="filter-btn lease-filter-btn active" data-status="">All</button>
+                <button class="filter-btn lease-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn lease-filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn lease-filter-btn" data-status="approved">Approved</button>
+                <button class="filter-btn lease-filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn lease-filter-btn" data-status="failed">Failed</button>
+                <button class="filter-btn lease-filter-btn" data-status="expiring_soon">Expiring or renewal notice due within 90 days</button>
               </div>
               <input type="search" id="lease-search" class="queue-search" placeholder="Search landlord…" aria-label="Search leases" />
               <table id="lease-table">
@@ -980,13 +980,13 @@
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
-                <button class="taxdoc-filter-btn active" data-status="">All</button>
-                <button class="taxdoc-filter-btn" data-status="needs_review">Needs Review</button>
-                <button class="taxdoc-filter-btn" data-status="extracted">Extracted</button>
-                <button class="taxdoc-filter-btn" data-status="approved">Approved</button>
-                <button class="taxdoc-filter-btn" data-status="queued">Queued</button>
-                <button class="taxdoc-filter-btn" data-status="failed">Failed</button>
-                <button class="taxdoc-filter-btn" data-status="missing_tin">Missing recipient TIN</button>
+                <button class="filter-btn taxdoc-filter-btn active" data-status="">All</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="approved">Approved</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="failed">Failed</button>
+                <button class="filter-btn taxdoc-filter-btn" data-status="missing_tin">Missing recipient TIN</button>
               </div>
               <div class="queue-filters">
                 <label class="hint" for="taxdoc-year-filter">Tax year</label>
@@ -1042,13 +1042,13 @@
           <div class="queue-layout">
             <div class="queue-list">
               <div class="queue-filters">
-                <button class="check-filter-btn active" data-status="">All</button>
-                <button class="check-filter-btn" data-status="unlinked">Not yet applied</button>
-                <button class="check-filter-btn" data-status="needs_review">Needs Review</button>
-                <button class="check-filter-btn" data-status="extracted">Extracted</button>
-                <button class="check-filter-btn" data-status="approved">Linked</button>
-                <button class="check-filter-btn" data-status="queued">Queued</button>
-                <button class="check-filter-btn" data-status="failed">Failed</button>
+                <button class="filter-btn check-filter-btn active" data-status="">All</button>
+                <button class="filter-btn check-filter-btn" data-status="unlinked">Not yet applied</button>
+                <button class="filter-btn check-filter-btn" data-status="needs_review">Needs Review</button>
+                <button class="filter-btn check-filter-btn" data-status="extracted">Extracted</button>
+                <button class="filter-btn check-filter-btn" data-status="approved">Linked</button>
+                <button class="filter-btn check-filter-btn" data-status="queued">Queued</button>
+                <button class="filter-btn check-filter-btn" data-status="failed">Failed</button>
               </div>
               <div id="check-totals" class="hint"></div>
               <input type="search" id="check-search" class="queue-search" placeholder="Search payee…" aria-label="Search checks" />

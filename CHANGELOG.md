@@ -4,6 +4,43 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.84
+
+Fixed five UI defects found by actually running the marketing site and
+dashboard rather than trusting a green test suite -- this repo's backend
+tests can't see the frontend at all, so several of these had shipped
+invisibly:
+
+- The line-item editor's table fought its own panel for width. The panel
+  around it was widened for exactly this form, but `.line-item-table` was
+  a flex child with no `min-width: 0`, so it grew to fit its own content
+  and blew out the panel (and every ancestor up to the page) instead of
+  scrolling in its own box. Added `width: 100%; min-width: 0` alongside
+  the existing `overflow-x: auto`.
+- Most tables in the app (32 of 34) were bare `<table>` elements with no
+  scroll wrapper. Financial tables routinely run 6-8 columns, more than a
+  phone screen fits, so on mobile they blew out the page the same way the
+  line-item table did. `.tab-panel > table, .panel > table` now render
+  `display: block; overflow-x: auto` so the table's own box scrolls
+  instead of the page -- tables already wrapped in `.table-scroll` or
+  `.line-item-table` are excluded by the child-combinator scoping.
+- Number inputs' default rendered width was narrower than several of this
+  app's own placeholders ("Optional", "No limit", "e.g. 50 for
+  double-declining"), clipping them mid-word on the vendor, equity, and
+  fixed-asset forms. Gave `input[type="number"]` the same minimum width
+  the line-item table already uses for its own number columns.
+- Five groups of document-type filter buttons (expenses, vendor docs,
+  leases, tax docs, checks) were missing the shared `.filter-btn` class
+  their styling depends on, so they rendered as unstyled buttons instead
+  of filter chips.
+- The demo org's chart of accounts had two different accounts on account
+  code `5080` -- "Rent" and `accountsPayable.js`'s reserved "Purchases
+  Discounts Taken" (created on demand the first time an early-payment
+  discount is taken, which the demo's vendor terms do exercise). Nothing
+  in the ledger was actually wrong -- `Account.code` isn't a uniqueness
+  constraint -- but it read as a bug on the trial balance and chart of
+  accounts. Moved the demo's Rent account to `5085`.
+
 ## v1.83
 
 Fixed a silent-failure gap across every extraction module (invoices,

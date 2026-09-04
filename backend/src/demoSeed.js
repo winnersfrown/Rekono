@@ -493,7 +493,15 @@ async function seedLedger(org, owner) {
   // any org before it adds employees) starts as an all-contractor company.
   await Account.bulkCreate([
     { orgId: org.id, code: "1500", name: "Equipment", type: "asset" },
-    { orgId: org.id, code: "5080", name: "Rent", type: "expense" },
+    // 5085, not 5080 -- accountsPayable.js's ensurePurchasesDiscountAccount
+    // reserves 5080 for "Purchases Discounts Taken" org-wide, created on
+    // demand the first time an early-payment discount is taken (which this
+    // demo's vendor terms do exercise). Colliding with it doesn't corrupt
+    // anything -- Account.code isn't a uniqueness constraint -- but it did
+    // put two differently-named accounts on the same line of the trial
+    // balance and chart of accounts, which reads as a bug even though the
+    // ledger itself was never wrong.
+    { orgId: org.id, code: "5085", name: "Rent", type: "expense" },
     { orgId: org.id, code: "5090", name: "Wages Expense", type: "expense" },
     { orgId: org.id, code: "5095", name: "Payroll Tax Expense", type: "expense" },
     { orgId: org.id, code: "2050", name: "Payroll Liabilities", type: "liability" },
@@ -565,7 +573,7 @@ async function seedLedger(org, owner) {
     ]);
 
     for (const [code, cents, memo] of [
-      ["5080", 9_400_00, "Office rent"],
+      ["5085", 9_400_00, "Office rent"],
       ["5040", 1_850_00, "Software subscriptions"],
       ["5050", 640_00, "Utilities"],
       ["5030", 415_00, "Office supplies"],
@@ -576,7 +584,7 @@ async function seedLedger(org, owner) {
       // most of the window and not in this one -- so the Close tab shows a
       // genuine "this month is missing something" suggestion rather than a
       // clean bill of health nobody learns anything from.
-      if (code === "5080" && i === monthly.length - 1) continue;
+      if (code === "5085" && i === monthly.length - 1) continue;
       await post(isoDay(month, 5), memo, [
         { accountId: byCode[code], debitCents: cents },
         { accountId: cash, creditCents: cents },
