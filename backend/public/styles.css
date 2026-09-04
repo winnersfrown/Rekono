@@ -378,6 +378,13 @@ input[type="file"], input[type="text"], input[type="email"], input[type="passwor
   font-size: 0.88rem;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
+/* A bare number input's default rendered width (~75-90px here) is narrower
+   than most of this app's number-field placeholders -- "Optional", "No
+   limit", "e.g. 50 for double-declining" -- so the placeholder itself
+   clipped mid-word on the vendor, equity, and fixed-asset forms. Matches
+   the width .line-item-table already gives its own number inputs. */
+input[type="number"] { min-width: 7rem; }
 input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
@@ -756,8 +763,13 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
 /* `.panel`'s 720px cap suits the simple two-or-three-field forms it was
    written for, but a line editor is a document -- it wants the same width
-   as the table of saved documents below it. */
+   as the table of saved documents below it. Both rules are needed: the
+   first widens the panel itself, but `.panel form` (above) still caps
+   *any* form inside a panel at --measure-form, .line-item-form included,
+   so without the second override the line-item table was still fighting
+   a 760px box for room it now visually has. */
 .panel:has(.line-item-form) { max-width: none; }
+.panel form.line-item-form { max-width: none; }
 
 /* Header fields (date, customer, memo) share one wrapping row above the
    table rather than each taking a full line of their own. */
@@ -784,13 +796,35 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    page. */
 .table-scroll { overflow-x: auto; }
 
+/* Most tables in this app never got a .table-scroll wrapper -- a plain
+   <table> sitting directly in a tab or panel, which is most of them (32 of
+   34 at last count). Financial tables routinely run 6-8 columns, more than
+   a phone screen fits, so on mobile they blew out the whole page exactly
+   like the line-item table did before it got the same treatment.
+   display:block lets the table's own box be the scroll container instead
+   of the page; overflow-x:auto (not the shorthand) leaves overflow-y as
+   the base `table` rule's `hidden`, which is what keeps this table's own
+   rounded corners clipping correctly. Tables already scoped by
+   .table-scroll or .line-item-table are one level further nested, so the
+   child combinator here never doubles up on them. */
+.tab-panel > table, .panel > table {
+  display: block;
+  overflow-x: auto;
+}
+
 .je-expand-btn { font-size: 0.85rem; text-decoration: none; }
 .je-detail-row td { background: var(--paper-sunk); padding: var(--sp-sm) var(--sp-md); }
 .je-lines-detail { width: 100%; margin: 0; }
 .je-lines-detail th, .je-lines-detail td { padding: var(--sp-2xs) var(--sp-sm); font-size: 0.86rem; }
 .je-lines-detail td:nth-child(3), .je-lines-detail td:nth-child(4) { text-align: right; white-space: nowrap; }
 
-.line-item-table { overflow-x: auto; }
+/* width: 100% + min-width: 0 override the flex item defaults (auto-sized,
+   min-width: auto) that let a flex child grow past its container to fit
+   its own content instead of clamping to it -- without both, this table
+   blew out .line-item-form (a column flex container) and every ancestor
+   up to the page instead of scrolling in its own box, the opposite of
+   what overflow-x: auto below is trying to do. */
+.line-item-table { overflow-x: auto; width: 100%; min-width: 0; }
 .line-item-table table { margin: 0; min-width: 560px; }
 /* A bare `input[type=date]` sizes itself well wider than "mm/dd/yyyy" needs.
    With two of them on the invoice line editor that was enough to push the
