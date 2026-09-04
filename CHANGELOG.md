@@ -4,6 +4,28 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.85
+
+Added a stored trial-balance snapshot at close, from the roadmap: closing a
+period has always been a human attestation with nothing behind it but the
+attestation itself. Close automation (`closeAutomation.js`) can say what a
+month's books are missing, but there was no record of what the books
+actually said the moment someone signed off on them -- so reopening a
+period to catch a late entry and closing it again just overwrote the only
+frozen picture that ever existed, leaving nothing to compare against.
+
+Every close (and every re-close) now creates a `ClosePeriodSnapshot`: the
+trial balance as of the last day of the period, frozen at that moment.
+History, not a single field -- a period reopened and re-closed multiple
+times (the routine reason is a late adjusting entry) keeps every one of its
+attestations. Three new endpoints under `/api/close/periods/:id`:
+`snapshots` lists every close taken for a period, `snapshots/:snapshotId`
+returns one frozen trial balance in full, and `snapshots/diff` compares the
+two most recent snapshots account-by-account so a controller can see
+exactly what a re-close changed instead of just a new number with nothing
+to check it against. The close tab's UI grew a "Close history" panel
+showing the same thing.
+
 ## v1.84
 
 Fixed five UI defects found by actually running the marketing site and

@@ -3101,6 +3101,34 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 #close-add-task-form { display: flex; gap: 0.5rem; margin: 0; }
 #close-add-task-form input { flex: 1; }
 
+.close-snapshot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.close-snapshot {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+.close-snapshot.is-latest { background: var(--paper-sunk); }
+.close-snapshot-date { font-family: var(--font-mono); font-size: 0.78rem; }
+.close-snapshot-by { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.close-snapshot-balance { flex: none; font-size: 0.72rem; font-weight: 600; }
+.close-snapshot-balance.is-ok { color: var(--pos); }
+.close-snapshot-balance.is-blocking { color: var(--warn); }
+
+#close-snapshot-diff h4 { margin: 1rem 0 0.5rem; font-size: 0.85rem; }
+/* display: block + overflow-x: auto, same as .tab-panel > table / .panel >
+   table -- this table is nested a level deeper (inside #close-snapshot-diff)
+   so that child-combinator rule doesn't reach it, and it needs the same
+   treatment on a narrow screen. */
+.close-snapshot-diff-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; display: block; overflow-x: auto; }
+.close-snapshot-diff-table th, .close-snapshot-diff-table td { text-align: left; padding: 0.35rem 0.6rem; }
+.close-snapshot-diff-table th:not(:first-child), .close-snapshot-diff-table td:not(:first-child) { text-align: right; font-family: var(--font-mono); }
+.close-snapshot-diff-table tbody tr { border-top: 1px solid var(--rule); }
+.close-delta-up { color: var(--pos); }
+.close-delta-down { color: var(--neg); }
+
 @media (max-width: 760px) {
   .close-head { flex-direction: column; }
   .close-head-actions { width: 100%; }
