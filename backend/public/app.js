@@ -3352,7 +3352,81 @@ async function loadClose() {
   // Fetched after the checklist renders rather than alongside it: the
   // suggestions scan five months of journal lines, and the checklist
   // shouldn't wait on that to appear.
-  if (data.period) loadCloseSuggestions(data.period.period_month);
+  if (data.period) {
+    loadCloseSuggestions(data.period.period_month);
+    loadCloseSnapshots(data.period.id);
+  }
+}
+
+async function loadCloseSnapshots(periodId) {
+  const el = document.getElementById("close-snapshots");
+  if (!el) return;
+
+  const res = await apiFetch(`/api/close/periods/${periodId}/snapshots`);
+  if (!res.ok) {
+    el.textContent = "Couldn't load this period's close history.";
+    return;
+  }
+  const { items } = await res.json();
+
+  if (!items.length) {
+    el.innerHTML = `<p class="hint">No snapshot yet — one is taken the moment this period closes.</p>`;
+    return;
+  }
+
+  const rows = items
+    .map(
+      (s, i) => `
+      <li class="close-snapshot${i === items.length - 1 ? " is-latest" : ""}">
+        <span class="close-snapshot-date">${new Date(s.closed_at).toLocaleString()}</span>
+        <span class="close-snapshot-by">${escapeHtml(s.closed_by || "—")}</span>
+        <span class="close-snapshot-balance ${s.balanced ? "is-ok" : "is-blocking"}">${
+          s.balanced ? "Balanced" : "Out of balance"
+        }</span>
+      </li>`
+    )
+    .join("");
+
+  el.innerHTML = `<ul class="close-snapshot-list">${rows}</ul><div id="close-snapshot-diff"></div>`;
+
+  // Only meaningful once a period has been closed more than once -- the
+  // diff endpoint itself reports { available: false } for a single close,
+  // so a fresh period doesn't fire this request for nothing.
+  if (items.length > 1) loadCloseSnapshotDiff(periodId);
+}
+
+async function loadCloseSnapshotDiff(periodId) {
+  const el = document.getElementById("close-snapshot-diff");
+  if (!el) return;
+
+  const res = await apiFetch(`/api/close/periods/${periodId}/snapshots/diff`);
+  if (!res.ok) return;
+  const diff = await res.json();
+  if (!diff.available) return;
+
+  if (!diff.changes.length) {
+    el.innerHTML = `<p class="hint">Nothing moved between the last two closes.</p>`;
+    return;
+  }
+
+  const rows = diff.changes
+    .map(
+      (c) => `
+      <tr>
+        <td>${escapeHtml(c.code)} ${escapeHtml(c.name)}</td>
+        <td>$${Number(c.previous_balance).toFixed(2)}</td>
+        <td>$${Number(c.current_balance).toFixed(2)}</td>
+        <td class="${c.delta >= 0 ? "close-delta-up" : "close-delta-down"}">$${Number(c.delta).toFixed(2)}</td>
+      </tr>`
+    )
+    .join("");
+
+  el.innerHTML = `
+    <h4>What changed since the previous close</h4>
+    <table class="close-snapshot-diff-table">
+      <thead><tr><th>Account</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 function renderClose(data, periods) {
@@ -3454,6 +3528,12 @@ function renderClose(data, periods) {
       <h3>Suggestions</h3>
       <p class="hint">Derived from the ledger, not from the document queue: an expense that posts every month and didn't, or an asset with nothing depreciating it. Suggestions only -- nothing here posts anything or blocks a close.</p>
       <div id="close-suggestions">Looking…</div>
+    </div>
+
+    <div class="panel" id="close-history-panel">
+      <h3>Close history</h3>
+      <p class="hint">A trial balance is frozen the moment this period closes, and again at every re-close -- so reopening it to catch a late entry leaves a record of exactly what that changed, not just a new number with nothing to compare it to.</p>
+      <div id="close-snapshots">Looking…</div>
     </div>`;
 
   body.querySelectorAll(".close-check[data-tab]:not([disabled])").forEach((b) =>

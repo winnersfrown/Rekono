@@ -19,6 +19,7 @@ import { TaxDocument } from "./TaxDocument.js";
 import { Check } from "./Check.js";
 import { ClosePeriod } from "./ClosePeriod.js";
 import { CloseTask } from "./CloseTask.js";
+import { ClosePeriodSnapshot } from "./ClosePeriodSnapshot.js";
 import { Transaction } from "./Transaction.js";
 import { MerchantCategory } from "./MerchantCategory.js";
 import { NetWorthAccount } from "./NetWorthAccount.js";
@@ -97,6 +98,8 @@ Check.belongsTo(Invoice, { foreignKey: "invoiceId", constraints: false });
 // meaning outside the month it belongs to.
 ClosePeriod.hasMany(CloseTask, { foreignKey: "closePeriodId", as: "tasks", onDelete: "CASCADE", hooks: true });
 CloseTask.belongsTo(ClosePeriod, { foreignKey: "closePeriodId" });
+ClosePeriod.hasMany(ClosePeriodSnapshot, { foreignKey: "closePeriodId", as: "snapshots", onDelete: "CASCADE", hooks: true });
+ClosePeriodSnapshot.belongsTo(ClosePeriod, { foreignKey: "closePeriodId" });
 
 Invoice.hasMany(MatchResult, {
   foreignKey: "invoiceId",
@@ -415,6 +418,7 @@ export {
   Check,
   ClosePeriod,
   CloseTask,
+  ClosePeriodSnapshot,
   Transaction,
   MerchantCategory,
   NetWorthAccount,

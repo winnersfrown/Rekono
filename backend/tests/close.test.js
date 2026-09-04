@@ -1,6 +1,17 @@
 import request from "supertest";
 import { app } from "../src/app.js";
-import { AuditLog, ClosePeriod, CloseTask, ExpenseReceipt, Invoice, MatchEntry, MatchResult, MatchSource } from "../src/models/index.js";
+import {
+  Account,
+  AuditLog,
+  ClosePeriod,
+  ClosePeriodSnapshot,
+  CloseTask,
+  ExpenseReceipt,
+  Invoice,
+  MatchEntry,
+  MatchResult,
+  MatchSource,
+} from "../src/models/index.js";
 import { authHeader, resetDb, signup } from "./testUtils.js";
 
 beforeEach(resetDb);
@@ -331,11 +342,125 @@ describe("org isolation", () => {
 });
 
 describe("deleting a period", () => {
-  test("takes its tasks with it", async () => {
+  test("takes its tasks and snapshots with it", async () => {
     const token = await signup(app, request);
     const opened = await openPeriod(token);
+    await request(app).post(`/api/close/periods/${opened.body.period.id}/close`).set(authHeader(token));
     expect(await CloseTask.count()).toBeGreaterThan(0);
+    expect(await ClosePeriodSnapshot.count()).toBeGreaterThan(0);
     await ClosePeriod.destroy({ where: { id: opened.body.period.id }, individualHooks: true });
     expect(await CloseTask.count()).toBe(0);
+    expect(await ClosePeriodSnapshot.count()).toBe(0);
+  });
+});
+
+describe("trial-balance snapshots", () => {
+  async function twoAccounts(org) {
+    const cash = await Account.create({ orgId: org, code: "1000", name: "Cash", type: "asset" });
+    const revenue = await Account.create({ orgId: org, code: "4000", name: "Consulting Revenue", type: "revenue" });
+    return { cash, revenue };
+  }
+
+  function postEntry(token, entryDate, cashId, revenueId, dollars) {
+    return request(app)
+      .post("/api/journal-entries")
+      .set(authHeader(token))
+      .send({
+        entry_date: entryDate,
+        memo: "test entry",
+        lines: [
+          { account_id: cashId, debit: dollars },
+          { account_id: revenueId, credit: dollars },
+        ],
+      });
+  }
+
+  test("closing a period freezes a trial balance snapshot", async () => {
+    const token = await signup(app, request);
+    const org = await orgId(token);
+    const { cash, revenue } = await twoAccounts(org);
+    await postEntry(token, "2026-06-10", cash.id, revenue.id, 500);
+
+    const opened = await openPeriod(token);
+    const closed = await request(app)
+      .post(`/api/close/periods/${opened.body.period.id}/close`)
+      .set(authHeader(token));
+    expect(closed.body.period.snapshot_count).toBe(1);
+
+    const list = await request(app)
+      .get(`/api/close/periods/${opened.body.period.id}/snapshots`)
+      .set(authHeader(token));
+    expect(list.body.items).toHaveLength(1);
+    expect(list.body.items[0]).toMatchObject({ balanced: true, total_debit: 500, total_credit: 500 });
+
+    const detail = await request(app)
+      .get(`/api/close/periods/${opened.body.period.id}/snapshots/${list.body.items[0].id}`)
+      .set(authHeader(token));
+    expect(detail.body.accounts.find((a) => a.account_id === cash.id)).toMatchObject({ debit: 500, credit: 0 });
+    expect(detail.body.accounts.find((a) => a.account_id === revenue.id)).toMatchObject({ debit: 0, credit: 500 });
+  });
+
+  test("a single close has nothing to diff against", async () => {
+    const token = await signup(app, request);
+    const opened = await openPeriod(token);
+    await request(app).post(`/api/close/periods/${opened.body.period.id}/close`).set(authHeader(token));
+
+    const diff = await request(app)
+      .get(`/api/close/periods/${opened.body.period.id}/snapshots/diff`)
+      .set(authHeader(token));
+    expect(diff.body).toEqual({ available: false, snapshot_count: 1 });
+  });
+
+  // The scenario the roadmap gap was actually about: a late adjusting entry
+  // lands after a period closed, the controller reopens and re-closes to
+  // pick it up, and now there are two attestations to compare.
+  test("re-closing after a late entry shows exactly what changed", async () => {
+    const token = await signup(app, request);
+    const org = await orgId(token);
+    const { cash, revenue } = await twoAccounts(org);
+    await postEntry(token, "2026-06-10", cash.id, revenue.id, 500);
+
+    const opened = await openPeriod(token);
+    const periodId = opened.body.period.id;
+    await request(app).post(`/api/close/periods/${periodId}/close`).set(authHeader(token));
+
+    await request(app).post(`/api/close/periods/${periodId}/reopen`).set(authHeader(token));
+    await postEntry(token, "2026-06-20", cash.id, revenue.id, 200);
+    const reclosed = await request(app).post(`/api/close/periods/${periodId}/close`).set(authHeader(token));
+    expect(reclosed.body.period.snapshot_count).toBe(2);
+
+    const diff = await request(app)
+      .get(`/api/close/periods/${periodId}/snapshots/diff`)
+      .set(authHeader(token));
+    expect(diff.body.available).toBe(true);
+    expect(diff.body.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ account_id: cash.id, previous_balance: 500, current_balance: 700, delta: 200 }),
+        expect.objectContaining({ account_id: revenue.id, previous_balance: -500, current_balance: -700, delta: -200 }),
+      ])
+    );
+    // Only the two accounts that actually moved show up as changes -- the
+    // rest of the org's default chart of accounts (present, but untouched)
+    // is exactly what unchanged_count is counting.
+    expect(diff.body.changes).toHaveLength(2);
+  });
+
+  test("snapshots and their diff are org-isolated", async () => {
+    const mine = await signup(app, request, { email: "snap-mine@example.co" });
+    const theirs = await signup(app, request, { email: "snap-theirs@example.co", orgName: "Other Co" });
+    const theirPeriod = await openPeriod(theirs, "2026-07");
+    await request(app).post(`/api/close/periods/${theirPeriod.body.period.id}/close`).set(authHeader(theirs));
+
+    expect(
+      (await request(app).get(`/api/close/periods/${theirPeriod.body.period.id}/snapshots`).set(authHeader(mine)))
+        .status
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .get(`/api/close/periods/${theirPeriod.body.period.id}/snapshots/diff`)
+          .set(authHeader(mine))
+      ).status
+    ).toBe(404);
   });
 });

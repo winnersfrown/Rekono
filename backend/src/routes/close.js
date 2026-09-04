@@ -13,9 +13,15 @@
 //     derived, not ticked.
 //   * manual tasks (CloseTask): the judgment work a human does and then
 //     attests to. Seeded from a template, fully editable.
+//
+// A third thing happens at the moment of closing, not on every read: a
+// ClosePeriodSnapshot freezes the trial balance as of period end. See
+// ClosePeriodSnapshot.js for why that has to be a new row per close rather
+// than a field on ClosePeriod itself.
 
 import { Router } from "express";
 import { suggestionsFor } from "../closeAutomation.js";
+import { computeTrialBalance, centsToDollars, dollarsToCents } from "../ledger.js";
 import { Op } from "sequelize";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
@@ -23,6 +29,7 @@ import { requireActivePlan } from "../plan.js";
 import {
   AuditLog,
   ClosePeriod,
+  ClosePeriodSnapshot,
   CloseTask,
   ExpenseReceipt,
   Invoice,
@@ -69,6 +76,54 @@ function currentPeriodMonth() {
 function endOfPeriod(periodMonth) {
   const [year, month] = periodMonth.split("-").map(Number);
   return new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1));
+}
+
+// The last calendar day of the period, as a "YYYY-MM-DD" string -- what the
+// trial balance snapshot is taken as-of, independent of which day the close
+// button actually got clicked.
+function lastDayOfPeriod(periodMonth) {
+  return new Date(endOfPeriod(periodMonth).getTime() - 86400000).toISOString().slice(0, 10);
+}
+
+// Freezes the trial balance as of period end and stores it as a new
+// snapshot row. Called once per close (including every re-close), never
+// updated afterwards -- see ClosePeriodSnapshot.js for why history, not a
+// single overwritten field, is the point.
+//
+// computeTrialBalance returns dollars (it's meant for direct API display);
+// converted back to cents here for storage, per this repo's ledger
+// convention. The round trip is lossless -- the dollars it returns were
+// themselves centsToDollars(cents) on an integer, so dollarsToCents undoes
+// exactly that division.
+async function snapshotTrialBalance(period, closedBy) {
+  const asOfDate = lastDayOfPeriod(period.periodMonth);
+  const tb = await computeTrialBalance(period.orgId, asOfDate);
+  return ClosePeriodSnapshot.create({
+    orgId: period.orgId,
+    closePeriodId: period.id,
+    asOfDate,
+    closedAt: period.closedAt,
+    closedBy,
+    accounts: tb.accounts.map((a) => ({
+      account_id: a.account_id,
+      code: a.code,
+      name: a.name,
+      type: a.type,
+      debit_cents: dollarsToCents(a.debit),
+      credit_cents: dollarsToCents(a.credit),
+    })),
+    totalDebitCents: dollarsToCents(tb.total_debit),
+    totalCreditCents: dollarsToCents(tb.total_credit),
+    balanced: tb.balanced,
+  });
+}
+
+// Net cents for one snapshot account row -- debit-normal accounts show
+// positive here, credit-normal show negative, which is exactly the
+// direction that makes a delta of 0 mean "genuinely unchanged" regardless
+// of which side of the ledger the account lives on.
+function netCents(row) {
+  return row.debit_cents - row.credit_cents;
 }
 
 // The automatic half of the checklist. Every check counts things that must
@@ -138,9 +193,10 @@ function serializeTask(t) {
 }
 
 async function buildPeriodResponse(period) {
-  const [tasks, checks] = await Promise.all([
+  const [tasks, checks, snapshotCount] = await Promise.all([
     CloseTask.findAll({ where: { closePeriodId: period.id }, order: [["position", "ASC"]] }),
     readinessChecks(period.orgId, period.periodMonth),
+    ClosePeriodSnapshot.count({ where: { closePeriodId: period.id } }),
   ]);
   return {
     id: period.id,
@@ -154,6 +210,10 @@ async function buildPeriodResponse(period) {
     // "ready" means rather than each re-deriving it.
     tasks_remaining: tasks.filter((t) => !t.done).length,
     blocking_count: checks.filter((c) => !c.ok).length,
+    // How many times this period has been closed (1, or more after a
+    // reopen/re-close cycle) -- the frontend uses this to decide whether a
+    // "what changed since last close" diff is even possible to show.
+    snapshot_count: snapshotCount,
   };
 }
 
@@ -279,6 +339,8 @@ router.post("/api/close/periods/:id/close", requireAuth, requireActivePlan, asyn
     period.closedBy = req.currentUser.email;
     await period.save();
 
+    const snapshot = await snapshotTrialBalance(period, req.currentUser.email);
+
     await AuditLog.create({
       orgId: period.orgId,
       userId: req.currentUser.id,
@@ -288,6 +350,7 @@ router.post("/api/close/periods/:id/close", requireAuth, requireActivePlan, asyn
         period_month: period.periodMonth,
         tasks_remaining: tasksRemaining,
         outstanding: blocking.map((c) => ({ check: c.key, count: c.count })),
+        snapshot_id: snapshot.id,
       },
     });
 
@@ -319,6 +382,128 @@ router.post("/api/close/periods/:id/reopen", requireAuth, requireActivePlan, asy
     });
 
     res.json({ period: await buildPeriodResponse(period) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The diff between the two most recent snapshots -- what a re-close
+// actually changed. Registered before the /:snapshotId route below so
+// "diff" is never swallowed as a snapshot id.
+router.get("/api/close/periods/:id/snapshots/diff", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const period = await findOwnedPeriod(req.params.id, req.currentUser.orgId);
+    if (!period) return res.status(404).json({ detail: "Close period not found" });
+
+    const snapshots = await ClosePeriodSnapshot.findAll({
+      where: { closePeriodId: period.id },
+      order: [["createdAt", "ASC"]],
+    });
+    if (snapshots.length < 2) {
+      return res.json({ available: false, snapshot_count: snapshots.length });
+    }
+
+    const previous = snapshots[snapshots.length - 2];
+    const current = snapshots[snapshots.length - 1];
+
+    // Keyed by account_id rather than assuming both snapshots list the same
+    // accounts in the same order -- an account created (or its first
+    // activity posted) between the two closes only appears in the later one.
+    const byAccount = new Map();
+    for (const row of previous.accounts) {
+      byAccount.set(row.account_id, { account: row, previousCents: netCents(row), currentCents: 0 });
+    }
+    for (const row of current.accounts) {
+      const existing = byAccount.get(row.account_id);
+      if (existing) {
+        existing.account = row;
+        existing.currentCents = netCents(row);
+      } else {
+        byAccount.set(row.account_id, { account: row, previousCents: 0, currentCents: netCents(row) });
+      }
+    }
+
+    const changes = [...byAccount.values()]
+      .map(({ account, previousCents, currentCents }) => ({
+        account_id: account.account_id,
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        previous_balance: centsToDollars(previousCents),
+        current_balance: centsToDollars(currentCents),
+        delta: centsToDollars(currentCents - previousCents),
+      }))
+      .filter((r) => r.delta !== 0)
+      .sort((a, b) => a.code.localeCompare(b.code));
+
+    res.json({
+      available: true,
+      previous: { closed_at: previous.closedAt, closed_by: previous.closedBy },
+      current: { closed_at: current.closedAt, closed_by: current.closedBy },
+      changes,
+      unchanged_count: byAccount.size - changes.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Every snapshot taken for this period, oldest first -- the close history a
+// re-closed period otherwise has no record of at all.
+router.get("/api/close/periods/:id/snapshots", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const period = await findOwnedPeriod(req.params.id, req.currentUser.orgId);
+    if (!period) return res.status(404).json({ detail: "Close period not found" });
+
+    const snapshots = await ClosePeriodSnapshot.findAll({
+      where: { closePeriodId: period.id },
+      order: [["createdAt", "ASC"]],
+    });
+    res.json({
+      items: snapshots.map((s) => ({
+        id: s.id,
+        as_of: s.asOfDate,
+        closed_at: s.closedAt,
+        closed_by: s.closedBy,
+        total_debit: centsToDollars(s.totalDebitCents),
+        total_credit: centsToDollars(s.totalCreditCents),
+        balanced: s.balanced,
+        account_count: s.accounts.length,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// The full frozen trial balance for one specific close.
+router.get("/api/close/periods/:id/snapshots/:snapshotId", requireAuth, requireActivePlan, async (req, res, next) => {
+  try {
+    const period = await findOwnedPeriod(req.params.id, req.currentUser.orgId);
+    if (!period) return res.status(404).json({ detail: "Close period not found" });
+
+    const snapshot = await ClosePeriodSnapshot.findOne({
+      where: { id: req.params.snapshotId, closePeriodId: period.id },
+    });
+    if (!snapshot) return res.status(404).json({ detail: "Snapshot not found" });
+
+    res.json({
+      id: snapshot.id,
+      as_of: snapshot.asOfDate,
+      closed_at: snapshot.closedAt,
+      closed_by: snapshot.closedBy,
+      total_debit: centsToDollars(snapshot.totalDebitCents),
+      total_credit: centsToDollars(snapshot.totalCreditCents),
+      balanced: snapshot.balanced,
+      accounts: snapshot.accounts.map((a) => ({
+        account_id: a.account_id,
+        code: a.code,
+        name: a.name,
+        type: a.type,
+        debit: centsToDollars(a.debit_cents),
+        credit: centsToDollars(a.credit_cents),
+      })),
+    });
   } catch (err) {
     next(err);
   }

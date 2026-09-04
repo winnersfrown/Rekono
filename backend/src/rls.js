@@ -43,6 +43,7 @@ const DIRECT_ORG_TABLES = [
   "checks",
   "close_periods",
   "close_tasks",
+  "close_period_snapshots",
   "customer_invoices",
   "customer_payments",
   "customers",
