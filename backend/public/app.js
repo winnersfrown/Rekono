@@ -6338,6 +6338,12 @@ function renderBoardReport(data) {
       value: fmtCompactMoney(data.profit_and_loss.net_income),
       sub: `${data.burn_window.from} to ${data.burn_window.to}`,
     }),
+    kpiCard({
+      label: "MRR",
+      value: fmtCompactMoney(data.saas.mrr),
+      sub: `${data.saas.active_subscriptions} active subscription${data.saas.active_subscriptions === 1 ? "" : "s"}`,
+    }),
+    kpiCard({ label: "ARR", value: fmtCompactMoney(data.saas.arr), sub: "MRR x 12" }),
   ].join("");
 
   const periodLabel = (from, to) => ` <span class="hint">${from} to ${to}</span>`;
@@ -6395,6 +6401,14 @@ function renderBoardReport(data) {
     (ct.unallocated_pool_shares
       ? `<tr><td><em>Unallocated option pool</em></td><td>${ct.unallocated_pool_shares.toLocaleString()}</td><td>${ct.unallocated_pool_percent.toFixed(2)}%</td></tr>`
       : "");
+
+  const saas = data.saas;
+  document.getElementById("boardreport-saas-period").innerHTML = ` <span class="hint">As of ${saas.as_of}</span>`;
+  document.getElementById("boardreport-saas-body").innerHTML = saas.customers.length
+    ? saas.customers
+        .map((c) => `<tr><td>${escapeHtml(c.customer_name)}</td><td>${c.subscriptions}</td><td>${fmtMoney(c.mrr)}</td></tr>`)
+        .join("")
+    : `<tr><td colspan="3" class="table-empty-row">No active recurring invoices yet.</td></tr>`;
 }
 
 document.getElementById("boardreport-as-of").addEventListener("change", loadBoardReport);
