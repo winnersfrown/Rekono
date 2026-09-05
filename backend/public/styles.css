@@ -627,6 +627,38 @@ table.report tfoot th {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
+/* The board report's condensed tables: a label and one money column, or a
+   holder name and two money-ish columns. .report's own width rules (above)
+   assume a three-column code/name/amount statement row, which cramps a
+   two-column label into a 12%-wide first cell -- these get their own,
+   simpler rule instead of fighting that. */
+.board-summary-table { width: 100%; border-collapse: collapse; }
+.board-summary-table td { padding: 0.4rem 0; }
+.board-summary-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; width: 30%; }
+.board-summary-table .report-total-row td { font-weight: 600; border-top: 1px solid var(--rule); padding-top: 0.6rem; }
+
+.board-captable-table { width: 100%; border-collapse: collapse; }
+.board-captable-table th:not(:first-child), .board-captable-table td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  width: 22%;
+}
+
+.board-report-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-lg); flex-wrap: wrap; }
+.board-report-actions { display: flex; align-items: flex-end; gap: 0.7rem; flex: none; }
+.board-report-period { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); margin-left: 0.5rem; }
+
+/* Printing the report is the whole point of the tab -- everything else
+   (nav, the as-of picker, every other tab) is hidden rather than styled
+   down, since a board deck needs the numbers, not the app chrome around
+   them. */
+@media print {
+  body * { visibility: hidden; }
+  #tab-boardreport, #tab-boardreport * { visibility: visible; }
+  #tab-boardreport { position: absolute; inset: 0; padding: 0; }
+  .board-report-noprint { display: none !important; }
+}
+
 th {
   color: var(--muted);
   font-family: var(--font-mono);

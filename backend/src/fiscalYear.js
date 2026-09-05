@@ -7,7 +7,7 @@
 // postJournalEntry uses the closed-period lookup to refuse writes into a
 // month that's already been closed.
 
-import { ClosePeriod } from "./models/index.js";
+import { ClosePeriod, Organization } from "./models/index.js";
 
 // Calendar year, the default for most SMBs -- an org that never touches
 // the setting behaves exactly as it did before fiscal years existed.
@@ -61,6 +61,19 @@ export function dayBefore(isoDate) {
 // "YYYY-MM" for a date, matching ClosePeriod.periodMonth's own format.
 export function periodMonthFor(isoDate) {
   return String(isoDate).slice(0, 7);
+}
+
+// The fiscal year end year containing today, for the org -- what "the
+// current budget" or "the current board report" means with nothing more
+// specific requested. Was previously a route-local copy inside
+// routes/budget.js; pulled here once a second caller (boardReport.js)
+// needed the identical five lines, since a fiscal-year-end lookup is
+// exactly the kind of thing this module exists to own.
+export async function currentFiscalYearEndYear(orgId) {
+  const org = await Organization.findByPk(orgId, { attributes: ["fiscalYearEndMonth"], raw: true });
+  const endMonth = org?.fiscalYearEndMonth ?? DEFAULT_FISCAL_YEAR_END_MONTH;
+  const today = new Date().toISOString().slice(0, 10);
+  return Number(fiscalYearFor(today, endMonth).end.slice(0, 4));
 }
 
 // Whether the month containing `entryDate` has been closed. Closing a

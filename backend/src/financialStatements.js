@@ -280,6 +280,30 @@ function isCashAccount(account) {
   return account.type === "asset" && CASH_SUBTYPES.has(account.subtype);
 }
 
+// Cash on hand as of a date -- its own function rather than filtering the
+// balance sheet's asset rows, because "bank"/"cash" is a subtype filter
+// the balance sheet's rows don't carry, and a caller that only wants this
+// one number (a board report's headline metric, chiefly) shouldn't have
+// to fetch and re-scan the whole balance sheet to get it.
+export async function computeCashPosition(orgId, { asOf = null } = {}) {
+  const asOfDate = asOf || new Date().toISOString().slice(0, 10);
+  const { accounts, lines } = await loadLines(orgId, { to: asOfDate });
+  const totals = totalsByAccount(lines);
+
+  const rows = [];
+  let totalCents = 0;
+  for (const account of accounts) {
+    if (!isCashAccount(account)) continue;
+    const t = totals.get(account.id);
+    if (!t) continue;
+    const amountCents = normalBalanceCents(account.type, t.debit, t.credit);
+    rows.push({ account_id: account.id, code: account.code, name: account.name, amount: centsToDollars(amountCents) });
+    totalCents += amountCents;
+  }
+
+  return { as_of: asOfDate, accounts: rows, total: centsToDollars(totalCents) };
+}
+
 // Cash flow for a period, direct method: every entry that moved cash,
 // classified by what the cash moved against.
 //

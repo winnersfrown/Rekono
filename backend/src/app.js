@@ -48,6 +48,7 @@ import incomeTaxRoutes from "./routes/incomeTax.js";
 import payrollRoutes from "./routes/payroll.js";
 import bankReconciliationRoutes from "./routes/bankReconciliation.js";
 import budgetRoutes from "./routes/budget.js";
+import boardReportRoutes from "./routes/boardReport.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -265,6 +266,7 @@ app.use(incomeTaxRoutes);
 app.use(payrollRoutes);
 app.use(bankReconciliationRoutes);
 app.use(budgetRoutes);
+app.use(boardReportRoutes);
 
 const publicDir = path.join(__dirname, "..", "public");
 app.use(express.static(publicDir));
