@@ -4,6 +4,43 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.92
+
+Scoped multi-entity consolidation -- the one gap the Rillet research (v1.91)
+identified as real but deliberately didn't build -- through `/office-hours`
+and `/plan-eng-review` instead of jumping straight to an implementation
+plan. The premise needed testing before the architecture did: three
+consecutive unverified answers (no prospect conversation, no confirmed
+status quo, no named persona beyond "large scale companies") on a
+pre-launch product are the textbook shape of building because a competitor
+has something, not because anyone asked for it.
+
+The premise was revised rather than dropped. An independent cross-model
+review caught that "scope it as a reference doc, pending validation" has no
+owner, deadline, or trigger -- exactly how unvalidated features get built
+anyway the next time competitive anxiety spikes. The revision makes
+validation a dated, concrete action: a fake-door pricing-page test (one
+line, a "Talk to us" button, a 3-question follow-up), counted by completed
+form submissions, not clicks -- a click doesn't distinguish a real buyer
+from curiosity.
+
+The architecture itself is scoped and adversarially reviewed twice over,
+against the real codebase rather than assumed: RLS covers 65 tables, not
+the ~40 first estimated from a truncated grep, and a cross-org report can't
+be one query -- Postgres RLS here enforces exactly one `orgId` per
+transaction, so it has to loop `runWithOrgContext` once per member org and
+combine results in application code. Two approaches are documented (a
+narrow cross-org report reusing every existing ledger function untouched,
+vs. a full entity-dimension model touching most of the ledger), with the
+narrow one recommended as the cheaper bet to be wrong about -- not because
+it leads into the larger one, since their data models share almost
+nothing.
+
+No product code changed. The two artifacts are `docs/designs/multi-entity-
+consolidation.md` (the full scoping doc, APPROVED) and this repo's first
+`TODOS.md` (tracking the fake-door test so it has a place to live besides a
+design doc nobody re-reads).
+
 ## v1.91
 
 Researched Rillet -- the accrual-accounting competitor named in DESIGN.md --
