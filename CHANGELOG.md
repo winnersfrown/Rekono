@@ -4,6 +4,27 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.89
+
+Added MRR and ARR to the board report -- the two numbers every startup
+board update leads with, and something QuickBooks has no framework for
+computing at all. Reads them straight off active recurring invoice
+templates (recurringInvoices.js), normalized to a monthly figure by
+dividing a quarterly or annual template's stated amount, never derived
+from anything in the ledger: a recurring template already says exactly
+what a month of a customer's billing is, the same way a deferred-revenue
+schedule already says how much of an invoice has been earned.
+
+Deliberately doesn't offer a historical MRR trend. `RecurringInvoice.active`
+is a current-state switch, not a dated event, so replaying "MRR three
+months ago" against today's active flags would be quietly wrong for any
+template someone paused without setting an end date -- the same reasoning
+that keeps `vestedShares` computed rather than stored, applied to a case
+where computing it retroactively would actually mislead rather than help.
+
+New `saasMetrics.js`, two more KPI cards on the Board Report tab, and an
+"MRR by customer" breakdown table.
+
 ## v1.88
 
 Added SAFE and convertible note tracking -- the instrument almost every

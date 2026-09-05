@@ -9,6 +9,7 @@ import { computeBalanceSheet, computeCashFlow, computeCashPosition, computeProfi
 import { computeFullyDiluted } from "./equityAwards.js";
 import { computeBudgetVsActual } from "./budget.js";
 import { currentFiscalYearEndYear, periodMonthFor } from "./fiscalYear.js";
+import { computeMrr } from "./saasMetrics.js";
 import { centsToDollars, dollarsToCents } from "./ledger.js";
 
 // Trailing months averaged into the burn figure. A single month swings on
@@ -27,13 +28,14 @@ export async function computeBoardReport(orgId, { asOf = null } = {}) {
   const asOfDate = asOf || new Date().toISOString().slice(0, 10);
   const burnFrom = monthsBefore(asOfDate, BURN_WINDOW_MONTHS);
 
-  const [cash, cashFlowWindow, profitAndLoss, balanceSheet, capTable, fiscalYearEndYear] = await Promise.all([
+  const [cash, cashFlowWindow, profitAndLoss, balanceSheet, capTable, fiscalYearEndYear, saas] = await Promise.all([
     computeCashPosition(orgId, { asOf: asOfDate }),
     computeCashFlow(orgId, { from: burnFrom, to: asOfDate }),
     computeProfitAndLoss(orgId, { from: burnFrom, to: asOfDate }),
     computeBalanceSheet(orgId, { asOf: asOfDate }),
     computeFullyDiluted(orgId, { asOf: asOfDate }),
     currentFiscalYearEndYear(orgId),
+    computeMrr(orgId, { asOf: asOfDate }),
   ]);
 
   const budgetVsActual = await computeBudgetVsActual(orgId, fiscalYearEndYear, {
@@ -62,5 +64,6 @@ export async function computeBoardReport(orgId, { asOf = null } = {}) {
     balance_sheet: balanceSheet,
     budget_vs_actual: budgetVsActual,
     cap_table: capTable,
+    saas,
   };
 }
