@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.90
+
+Remodeled the Home tab toward the minimal end of the design system it
+already had rather than inventing a new one. The tab had drifted into a
+grid of boxed widgets -- six white KPI tiles, ten more bordered panels
+below them -- despite DESIGN.md's own aesthetic direction calling for
+type and hairline rules to do the work, not card chrome. Every one of
+those boxes was already restrained on its own (no shadow, no blur, one
+hairline border -- the glass tokens were flattened back in the original
+editorial pass), but fourteen of them stacked is still a dashboard of
+tiles, not a workpaper.
+
+The KPI row is now a single ruled summary line -- transparent background,
+a hairline rule under each figure, the health-status color as a thin rule
+instead of a card-top bar -- and the panels below lost their box
+entirely, separated by whitespace at DESIGN.md's own 48px floor for space
+between sections and identified by the rule already under each panel's
+own heading. Scoped to the Home tab specifically (`#dash-kpis`, not
+`.kpi-card`; `.dash-panel`, which nothing else uses): Board Report and
+the staff usage dashboard render the exact same boxed KPI cards they did
+before, unchanged.
+
+No functionality removed -- every KPI, panel, and quick action is still
+there, just quieter. Also fixed the KPI row's loading skeleton showing
+four placeholder tiles for what has always been six real cards.
+
 ## v1.89
 
 Added MRR and ARR to the board report -- the two numbers every startup
