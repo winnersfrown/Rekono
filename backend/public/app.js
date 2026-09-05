@@ -956,6 +956,11 @@ function renderDetail(inv) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="invoice-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="invoice-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   document.getElementById("btn-save").addEventListener("click", () => saveCorrections(inv.id));
@@ -970,6 +975,7 @@ function renderDetail(inv) {
   });
   if (state.quickbooksConnected) loadExpenseAccountSuggestion(inv);
 
+  wireAuditTrail("invoices", inv.id, "invoice-audit-trail-details", "invoice-audit-trail-body");
   loadDocPreview(inv);
 }
 
@@ -1060,6 +1066,125 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// ---- Audit trail ----
+// Every document type (invoices, expenses, vendor docs, leases, tax docs,
+// checks) has had a working GET /api/<type>/:id/audit-log endpoint since
+// this app's early history -- the AI-vs-human story ("what did extraction
+// get wrong, and who corrected it, and when") has been real and provable
+// the whole time. It was just never rendered anywhere. This is that
+// rendering, shared across all six detail panes rather than six copies.
+
+const AUDIT_ACTION_LABELS = {
+  uploaded: "Uploaded",
+  extraction_completed: "AI extraction completed",
+  extraction_failed: "AI extraction failed",
+  approved: "Approved",
+  auto_approved: "Auto-approved",
+  qa_sampled: "Selected for spot-check",
+  rejected: "Rejected",
+  deleted: "Deleted",
+  retry_requested: "Retry requested",
+  human_correction: "Corrected by hand",
+  quick_review_field: "Corrected from quick review",
+  qa_reviewed: "Spot-check reviewed",
+  check_linked: "Linked to a check",
+  check_unlinked: "Unlinked from a check",
+  bill_payment_recorded: "Payment recorded",
+  bill_payment_removed: "Payment removed",
+};
+
+function auditActionLabel(action) {
+  return AUDIT_ACTION_LABELS[action] || String(action).replace(/_/g, " ");
+}
+
+// The handful of actions worth a dedicated sentence rather than the generic
+// field-by-field dump below -- these are the ones that actually carry the
+// "AI did this, here's how confident it was" story, which is the whole
+// point of surfacing this trail at all.
+function auditSystemDetailLine(action, details) {
+  if (action === "uploaded") {
+    return details.filename ? escapeHtml(details.filename) : null;
+  }
+  if (action === "extraction_completed") {
+    const pct = Math.round((details.overall_confidence ?? 0) * 100);
+    const cross = details.cross_check_passed ? "passed" : "failed";
+    return `via ${escapeHtml(details.method || "unknown method")}, ${pct}% confidence, cross-check ${cross}${
+      details.cross_check_detail ? `: ${escapeHtml(details.cross_check_detail)}` : ""
+    }`;
+  }
+  if (action === "extraction_failed") {
+    return escapeHtml(details.error || "no error message recorded");
+  }
+  if (action === "auto_approved") {
+    const pct = Math.round((details.overall_confidence ?? 0) * 100);
+    return `${escapeHtml(details.reason || "")} (${pct}% confidence)`;
+  }
+  if (action === "qa_sampled") {
+    return `random spot-check sample, ${Math.round((details.sample_rate ?? 0) * 100)}% of approvals reviewed`;
+  }
+  return null;
+}
+
+// A human_correction/quick_review_field's `details` is keyed by field name,
+// each either {old, new} (what changed) or, for a replaced line-item table,
+// {count} -- there's no single before/after to show for a whole table
+// swapped at once, so that case gets its own phrasing instead of printing
+// "[object Object]".
+function auditDetailLine(action, details) {
+  const systemLine = auditSystemDetailLine(action, details || {});
+  if (systemLine !== null) return systemLine;
+  if (!details || typeof details !== "object" || !Object.keys(details).length) return "";
+  const fmt = (v) => (v === null || v === undefined || v === "" ? "empty" : escapeHtml(String(v)));
+  const parts = Object.entries(details).map(([field, value]) => {
+    const label = escapeHtml(field.replace(/_/g, " "));
+    if (value && typeof value === "object" && "old" in value && "new" in value) {
+      return `${label}: ${fmt(value.old)} → ${fmt(value.new)}`;
+    }
+    if (value && typeof value === "object" && "count" in value) {
+      return `${label}: ${value.count} line item${value.count === 1 ? "" : "s"} replaced`;
+    }
+    return `${label} updated`;
+  });
+  return parts.join("; ");
+}
+
+function renderAuditTrail(entries) {
+  if (!entries.length) return `<p class="hint">No activity recorded yet.</p>`;
+  return `<ul class="audit-trail-list">${entries
+    .map((e) => {
+      const detail = auditDetailLine(e.action, e.details);
+      return `
+      <li class="audit-entry">
+        <span class="audit-entry-when">${new Date(e.created_at).toLocaleString()}</span>
+        <span class="audit-entry-actor">${escapeHtml(e.actor || "System")}</span>
+        <span class="audit-entry-action">${escapeHtml(auditActionLabel(e.action))}</span>
+        ${detail ? `<span class="audit-entry-detail">${detail}</span>` : ""}
+      </li>`;
+    })
+    .join("")}</ul>`;
+}
+
+// Loaded on first expand only, not on every detail-pane render -- opening a
+// document already fires several requests (doc preview, match results,
+// accounts), and an audit trail nobody looks at yet is one more the common
+// case doesn't need.
+function wireAuditTrail(kind, id, detailsElId, bodyElId) {
+  const details = document.getElementById(detailsElId);
+  if (!details) return;
+  let loaded = false;
+  details.addEventListener("toggle", async () => {
+    if (!details.open || loaded) return;
+    loaded = true;
+    const body = document.getElementById(bodyElId);
+    const res = await apiFetch(`/api/${kind}/${id}/audit-log`);
+    if (!res.ok) {
+      body.innerHTML = `<p class="hint">Couldn't load the audit trail.</p>`;
+      return;
+    }
+    body.innerHTML = renderAuditTrail(await res.json());
+  });
 }
 
 function numOrNull(v) {
@@ -1496,6 +1621,11 @@ function renderExpenseDetail(r) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="expense-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="expense-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   document.getElementById("ebtn-save").addEventListener("click", () => saveExpenseCorrections(r.id));
@@ -1504,6 +1634,7 @@ function renderExpenseDetail(r) {
   document.getElementById("ebtn-retry")?.addEventListener("click", () => retryExpense(r.id));
   document.getElementById("ebtn-delete").addEventListener("click", () => deleteExpense(r.id));
 
+  wireAuditTrail("expenses", r.id, "expense-audit-trail-details", "expense-audit-trail-body");
   loadExpenseDocPreview(r);
 }
 
@@ -1879,6 +2010,11 @@ function renderVendorDocDetail(d) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="vendordoc-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="vendordoc-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   document.getElementById("vbtn-save").addEventListener("click", () => saveVendorDocCorrections(d.id));
@@ -1887,6 +2023,7 @@ function renderVendorDocDetail(d) {
   document.getElementById("vbtn-retry")?.addEventListener("click", () => retryVendorDoc(d.id));
   document.getElementById("vbtn-delete").addEventListener("click", () => deleteVendorDoc(d.id));
 
+  wireAuditTrail("vendor-documents", d.id, "vendordoc-audit-trail-details", "vendordoc-audit-trail-body");
   loadVendorDocPreview(d);
 }
 
@@ -2274,6 +2411,11 @@ function renderLeaseDetail(l) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="lease-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="lease-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   document.getElementById("lbtn-save").addEventListener("click", () => saveLeaseCorrections(l.id));
@@ -2282,6 +2424,7 @@ function renderLeaseDetail(l) {
   document.getElementById("lbtn-retry")?.addEventListener("click", () => retryLease(l.id));
   document.getElementById("lbtn-delete").addEventListener("click", () => deleteLease(l.id));
 
+  wireAuditTrail("leases", l.id, "lease-audit-trail-details", "lease-audit-trail-body");
   loadLeasePreview(l);
 }
 
@@ -2694,6 +2837,11 @@ function renderTaxDocDetail(t) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="taxdoc-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="taxdoc-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   document.getElementById("tbtn-save").addEventListener("click", () => saveTaxDocCorrections(t.id));
@@ -2702,6 +2850,7 @@ function renderTaxDocDetail(t) {
   document.getElementById("tbtn-retry")?.addEventListener("click", () => retryTaxDoc(t.id));
   document.getElementById("tbtn-delete").addEventListener("click", () => deleteTaxDoc(t.id));
 
+  wireAuditTrail("tax-documents", t.id, "taxdoc-audit-trail-details", "taxdoc-audit-trail-body");
   loadTaxDocPreview(t);
 }
 
@@ -10913,6 +11062,11 @@ function renderCheckDetail(c) {
         ${preview}
       </div>
     </div>
+
+    <details class="audit-trail" id="check-audit-trail-details">
+      <summary>Audit trail</summary>
+      <div id="check-audit-trail-body" class="hint">Loading…</div>
+    </details>
   `;
 
   if (linked) {
@@ -10924,6 +11078,7 @@ function renderCheckDetail(c) {
     document.getElementById("cbtn-delete").addEventListener("click", () => deleteCheck(c.id));
   }
 
+  wireAuditTrail("checks", c.id, "check-audit-trail-details", "check-audit-trail-body");
   loadCheckPreview(c);
   renderCheckLinkArea(c);
 }

@@ -4,6 +4,32 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.87
+
+Surfaced the audit trail that already existed for every document type
+(invoices, expenses, vendor documents, leases, tax documents, checks) but
+had no frontend at all -- the backend has written `uploaded`,
+`extraction_completed`, `human_correction`, `approved`, and a dozen other
+events since early in this app's history, and none of them were visible
+anywhere. Every detail pane now has a collapsed "Audit trail" section,
+fetched only when first expanded (matching the lazy-load pattern the close
+checklist already uses) so it doesn't add a request to the common case.
+System events render with the context that made the decision -- extraction
+confidence and cross-check result, the reason auto-approval fired, the
+spot-check sample rate -- and human corrections render as a field-by-field
+before/after rather than a raw JSON blob. This is the trust story this app
+should be leading with: every number on the books traces back to who (or
+what) touched it and why, not just what the current value is.
+
+Fixed a real mobile overflow bug found while checking the new audit trail
+at 390px: the two-column review/expense/vendor-doc/lease/tax-doc/check
+queue layout never collapsed to one column below 900px, and none of the
+six queue tables nor the line-items table had their own scroll container,
+so the whole page scrolled sideways instead of just the table. The queue
+layout's media query needed `minmax(0, 1fr)`, not bare `1fr` -- the same
+implicit-minimum trap as flexbox's `min-width: auto`, where a single grid
+track still grows to its content's min-content width unless told not to.
+
 ## v1.86
 
 Added a board report: cash on hand, burn rate, and runway alongside an

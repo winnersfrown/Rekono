@@ -796,7 +796,7 @@
                 <button type="button" class="reject" id="bulk-reject-btn">Reject</button>
                 <button type="button" class="btn-logout" id="bulk-clear-btn">Clear</button>
               </div>
-              <table id="invoice-table">
+              <table id="invoice-table" class="queue-table">
                 <thead>
                   <tr>
                     <th style="width: 1.6rem;"><input type="checkbox" id="select-all-invoices" aria-label="Select all" /></th>
@@ -845,7 +845,7 @@
                 <button class="filter-btn expense-filter-btn" data-status="failed">Failed</button>
               </div>
               <input type="search" id="expense-search" class="queue-search" placeholder="Search merchant…" aria-label="Search expenses" />
-              <table id="expense-table">
+              <table id="expense-table" class="queue-table">
                 <thead>
                   <tr>
                     <th class="expense-sortable" data-sort="merchant_name">Merchant</th>
@@ -894,7 +894,7 @@
                 <button class="filter-btn vendordoc-filter-btn" data-status="expiring_soon">Expiring within 30 days</button>
               </div>
               <input type="search" id="vendordoc-search" class="queue-search" placeholder="Search vendor…" aria-label="Search vendor documents" />
-              <table id="vendordoc-table">
+              <table id="vendordoc-table" class="queue-table">
                 <thead>
                   <tr>
                     <th class="vendordoc-sortable" data-sort="vendor_name">Vendor</th>
@@ -944,7 +944,7 @@
                 <button class="filter-btn lease-filter-btn" data-status="expiring_soon">Expiring or renewal notice due within 90 days</button>
               </div>
               <input type="search" id="lease-search" class="queue-search" placeholder="Search landlord…" aria-label="Search leases" />
-              <table id="lease-table">
+              <table id="lease-table" class="queue-table">
                 <thead>
                   <tr>
                     <th class="lease-sortable" data-sort="landlord_name">Landlord</th>
@@ -1005,7 +1005,7 @@
               </div>
               <div id="taxdoc-totals" class="hint"></div>
               <input type="search" id="taxdoc-search" class="queue-search" placeholder="Search payer…" aria-label="Search tax documents" />
-              <table id="taxdoc-table">
+              <table id="taxdoc-table" class="queue-table">
                 <thead>
                   <tr>
                     <th class="taxdoc-sortable" data-sort="document_type">Form</th>
@@ -1057,7 +1057,7 @@
               </div>
               <div id="check-totals" class="hint"></div>
               <input type="search" id="check-search" class="queue-search" placeholder="Search payee…" aria-label="Search checks" />
-              <table id="check-table">
+              <table id="check-table" class="queue-table">
                 <thead>
                   <tr>
                     <th class="check-sortable" data-sort="check_date">Date</th>
