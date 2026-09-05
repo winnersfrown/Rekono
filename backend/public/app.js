@@ -4346,6 +4346,109 @@ document.getElementById("twofa-regenerate-btn").addEventListener("click", async 
   }
 });
 
+// ---- Import opening balances (trial balance CSV) ----
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
+let obiCsvText = null;
+
+document.getElementById("obi-preview-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("obi-status");
+  const previewEl = document.getElementById("obi-preview");
+  statusEl.textContent = "";
+  previewEl.style.display = "none";
+
+  const file = document.getElementById("obi-file").files[0];
+  if (!file) {
+    statusEl.textContent = "Choose a CSV file first.";
+    return;
+  }
+  obiCsvText = await readFileAsText(file);
+
+  statusEl.textContent = "Reading…";
+  const res = await apiFetch("/api/onboarding/import-trial-balance/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv: obiCsvText }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = errorText(body.detail, "Couldn't read that file.");
+    return;
+  }
+  statusEl.textContent = "";
+
+  document.getElementById("obi-preview-summary").textContent =
+    `${body.rows.length} account${body.rows.length === 1 ? "" : "s"} -- ` +
+    `${body.accounts_matched} already on your chart, ${body.accounts_to_create} to be created. ` +
+    `Debits ${fmtMoney(body.total_debit)}, credits ${fmtMoney(body.total_credit)}` +
+    (body.balances ? " -- balances." : " -- does not balance.");
+
+  const unresolvedEl = document.getElementById("obi-preview-unresolved");
+  unresolvedEl.innerHTML = body.unresolved.length
+    ? `<p class="hint kpi-sub-bad">Add a Type column (asset/liability/equity/revenue/expense) for: ${body.unresolved
+        .map((u) => escapeHtml(u.name))
+        .join(", ")}.</p>`
+    : "";
+
+  document.getElementById("obi-preview-body").innerHTML = body.rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.name)}${r.will_create_account ? ' <span class="hint">(new)</span>' : ""}</td>
+        <td>${r.debit ? fmtMoney(r.debit) : ""}</td>
+        <td>${r.credit ? fmtMoney(r.credit) : ""}</td>
+      </tr>`
+    )
+    .join("");
+
+  const canImport = body.balances && body.unresolved.length === 0;
+  document.getElementById("obi-import-btn").disabled = !canImport;
+  previewEl.style.display = "";
+});
+
+document.getElementById("obi-import-btn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("obi-status");
+  const asOfDate = document.getElementById("obi-date").value;
+  if (!asOfDate) {
+    statusEl.textContent = "Pick an as-of date first.";
+    return;
+  }
+  if (!obiCsvText) {
+    statusEl.textContent = "Preview the file first.";
+    return;
+  }
+
+  const confirmed = await confirmDialog(
+    "Import these opening balances?",
+    "This posts one journal entry dated as of the day you chose, and creates any new accounts the file needs. It can be corrected afterward like any other entry, by voiding it.",
+    { confirmLabel: "Import" }
+  );
+  if (!confirmed) return;
+
+  const res = await apiFetch("/api/onboarding/import-trial-balance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ csv: obiCsvText, as_of_date: asOfDate }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = errorText(body.detail, "Couldn't import that file.");
+    return;
+  }
+
+  statusEl.textContent = `Imported -- ${body.accounts_matched} matched, ${body.accounts_created} created.`;
+  document.getElementById("obi-preview").style.display = "none";
+  document.getElementById("obi-form").reset();
+  obiCsvText = null;
+});
+
 document.getElementById("settings-org-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("settings-org-status");

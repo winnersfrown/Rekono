@@ -4,6 +4,44 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.91
+
+Researched Rillet -- the accrual-accounting competitor named in DESIGN.md --
+against Rekono's own shipped feature set, and built the two changes the
+research actually supported rather than a marketing rewrite. Rillet's
+5.0/5 G2 rating and native multi-entity consolidation are real strengths;
+its two verified weak points are a reported ~45-day implementation and
+quote-only pricing in the $20K-$35K/yr range, against a business that,
+before this release, could not switch its books into Rekono in less than
+that same manual-re-entry effort.
+
+`openingBalanceImport.js` closes that gap: upload a trial balance CSV
+(Account, Type, Debit, Credit columns, common header aliases and
+$/comma-formatted amounts accepted) and it posts one balanced opening
+journal entry through `postJournalEntry`, the same single write path
+every other posting route uses, so it inherits period-locking and
+balance enforcement for free. It refuses rather than guesses on anything
+ambiguous: a negative amount in a two-column trial balance has no
+legitimate meaning, so it's rejected by row and column rather than
+silently flipped or clamped to zero; an unresolved account name or an
+unbalanced file refuses before any write, not partway through one; and
+accounts it creates while resolving the file are deleted again if the
+posting itself is refused (`postJournalEntry`'s own guardrails are the
+authority, not a second copy of them here). New `Settings` panel
+(`#obi-preview-btn` / `#obi-import-btn`) previews the match against
+existing accounts before committing. New journal entry source
+`opening_balance_import`.
+
+On the marketing site, `/vs-rillet.html` is a new standalone page (Vite
+multi-page entry, not a router) built the same way: every Rekono claim
+traces to this codebase's own `plans.js` pricing and shipped features,
+every Rillet claim traces to a publicly reported figure (G2, Numeric,
+ERP Scorecard, Vendr), and the one category where Rillet is ahead --
+native multi-entity consolidation, which Rekono does not have -- says so
+in its own section instead of being left out. A comparison page that
+only ever finds itself winning is marketing, not evidence, and would
+undercut the rows that are true.
+
 ## v1.90
 
 Remodeled the Home tab toward the minimal end of the design system it
