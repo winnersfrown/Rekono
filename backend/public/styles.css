@@ -681,6 +681,22 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    The detail pane is the thing with slack in it (its widest child is a
    two-column field grid), so the ratio inverts. */
 .queue-layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-xl); align-items: start; }
+/* The minmax(0, ...) tracks stop the grid itself from blowing out (a real
+   fix, not decorative -- remove it and the whole page goes as wide as the
+   table demands), but at a phone width even a fair share of the row is too
+   narrow for a data table and a full edit form side by side. Stacking is
+   the actual mobile fix; every table below still needs its own overflow
+   handling regardless, since the list and detail panes are full-width
+   documents in their own right even in a single column. */
+@media (max-width: 900px) {
+  /* minmax(0, 1fr), not bare 1fr -- a grid track's implicit minimum is
+     "auto" (its content's own min-content size) unless told otherwise, the
+     exact same trap as flexbox's min-width: auto. Bare 1fr let the single
+     column grow to fit the table inside it instead of the other way
+     around, which is how this override shipped still 650px wide on a
+     390px screen the first time. */
+  .queue-layout { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* Vendor is the column people scan; total, status and confidence are all
    fixed-width content. Left to `table-layout: auto` the three short columns
@@ -1026,7 +1042,37 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .doc-preview-frame img { display: block; width: 100%; height: auto; }
 .doc-preview-frame iframe { display: block; width: 100%; height: 640px; border: none; }
 
-.actions { display: flex; gap: 0.5rem; margin-top: 1.2rem; }
+/* Collapsed by default -- a document detail pane already shows the
+   extraction result and the source side by side, and the audit trail is
+   corroborating evidence for when someone asks "did a human actually check
+   this," not something every reviewer needs open on every document. */
+.audit-trail { margin-top: 1.2rem; border-top: 1px solid var(--rule); padding-top: 0.8rem; }
+.audit-trail summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+.audit-trail-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.audit-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-md);
+  background: var(--paper-sunk);
+  font-size: 0.82rem;
+  /* Same flexbox min-width: auto trap as .line-item-table (v1.84): flex-wrap
+     alone only wraps whole items onto new lines, it doesn't shrink one --
+     an actor email or a filename with no natural break point stayed a
+     single unbroken line at its own intrinsic width and pushed the whole
+     page wider on narrow screens. min-width: 0 lets this box shrink to the
+     space it's actually given; overflow-wrap below lets the long strings
+     inside it then wrap onto more than one line instead of overflowing. */
+  min-width: 0;
+}
+.audit-entry-when { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); flex: none; }
+.audit-entry-actor { color: var(--muted); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.audit-entry-action { font-weight: 600; flex: none; }
+.audit-entry-detail { flex-basis: 100%; min-width: 0; overflow-wrap: anywhere; color: var(--muted); }
+
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.2rem; }
 .actions .approve { background: var(--pos); border-color: var(--pos); color: #fff; }
 .actions .approve:hover { background: #0f5c33; border-color: #0f5c33; }
 .actions .reject { background: var(--neg); border-color: var(--neg); color: #fff; }
@@ -1044,7 +1090,19 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .actions .delete { background: transparent; color: var(--neg); border: 1px solid var(--neg); margin-left: auto; }
 .actions .delete:hover { background: var(--neg); color: #fff; }
 
-.line-items-table { margin-top: 0.5rem; margin-bottom: 1.2rem; }
+/* display:block makes the table's own box the horizontal-scroll container
+   instead of the page -- same fix as .queue-table below, and needed for
+   the same reason: this table sits inside .queue-detail, which is not a
+   direct child of .tab-panel/.panel, so v1.84's child-combinator fix for
+   bare tables never reached it. */
+.line-items-table { margin-top: 0.5rem; margin-bottom: 1.2rem; display: block; overflow-x: auto; }
+
+/* The review/expense/vendor-doc/lease/tax-doc/check queue tables: nested
+   two levels inside .tab-panel (queue-layout > queue-list > table), so
+   v1.84's `.tab-panel > table` fix doesn't reach these either. Same
+   display:block + overflow-x:auto treatment, given a shared class since
+   all six queue tabs use it identically. */
+.queue-table { display: block; overflow-x: auto; }
 
 .cross-check { padding: 0.7rem 0.85rem; border-radius: var(--radius-md); font-size: 0.82rem; margin-bottom: 1.2rem; border: 1px solid transparent; }
 .cross-check.pass { background: rgba(23, 128, 72, 0.08); border-color: rgba(23, 128, 72, 0.25); color: var(--pos); }
