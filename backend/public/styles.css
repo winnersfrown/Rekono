@@ -2174,7 +2174,7 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    now carries real content (KPIs, charts, queues), so vertical centering
    would push the most important row below the fold. */
 
-.dash-head { margin-bottom: 1.5rem; }
+.dash-head { margin-bottom: var(--sp-xl); }
 /* Used by the Net Worth sub-header below the org dashboard on this same
    tab -- the divider above it already does the separating, so this one
    doesn't need its own full margin on top of that. */
@@ -2232,9 +2232,28 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--sp-md);
-  margin-bottom: var(--sp-lg);
+  margin-bottom: var(--sp-2xl);
 }
 @media (max-width: 1240px) { .dash-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* The Home tab's KPI row reads as a single ruled summary line -- ink and a
+   hairline rule, no boxed cards -- rather than six white tiles competing
+   for attention above everything else on the screen. Scoped to #dash-kpis
+   rather than redefining .kpi-card itself, which Board Report and the
+   staff usage dashboard also render as boxed cards; changing the shared
+   class would have restyled both of those without being asked. */
+#dash-kpis .kpi-card {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--rule-soft);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.85rem 0 1.1rem;
+}
+#dash-kpis .kpi-card.is-loading {
+  background: var(--paper-sunk);
+  border-bottom-color: var(--rule-soft);
+}
 
 .kpi-card {
   position: relative;
@@ -2325,16 +2344,21 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    its status badge on one line, so the badge overflowed the panel's right
    edge and sat on the rule. */
 .dash-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--sp-lg); align-items: start; }
-.dash-col-main, .dash-col-side { display: flex; flex-direction: column; gap: var(--sp-lg); min-width: 0; }
+/* --sp-2xl, not --sp-lg: DESIGN.md's own floor for space between sections
+   (48-64px) is exactly what a panel that is no longer a boxed card needs
+   to read as a separate section rather than as more of the panel above
+   it -- the box used to do that job, and now the gap has to. */
+.dash-col-main, .dash-col-side { display: flex; flex-direction: column; gap: var(--sp-2xl); min-width: 0; }
 
+/* Flattened as part of the Home tab's minimalist remodel: no background,
+   border, radius or shadow. What used to be a floating card is now a
+   section of the page, separated from its neighbors by the gap above and
+   identified by the rule under its own head (.dash-panel-head) -- the
+   same ruled-document language a statement already uses, rather than a
+   grid of dashboard widgets. Exclusive to the Home tab (Board Report and
+   the rest of the product use .panel), so nothing else changes. */
 .dash-panel {
-  border-radius: var(--radius-lg);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-  padding: var(--sp-lg);
+  padding: 0;
 }
 
 /* Label over title, not label beside title. These panels live in a narrow
@@ -2610,10 +2634,9 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
    sparkline, sized to sit next to Quick actions rather than fill a full
    panel -- the org dashboard and this one both need to fit on screen
    together, so this card carries the whole feature until someone asks for
-   more via the toggle below it. --glass-tint is the same "this card is
-   worth a second look" treatment the marketing site uses on its own
-   featured cards, reused here rather than invented fresh. */
-.dash-panel-nw { background: var(--glass-tint); }
+   more via the toggle below it. No background tint distinguishing it from
+   the panels around it -- the minimalist remodel dropped that in favor of
+   position (it opens the main column) and size doing that job instead. */
 
 .nw-summary-value {
   font-family: var(--font-display);
