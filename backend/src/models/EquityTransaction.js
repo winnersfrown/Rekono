@@ -19,6 +19,7 @@ export const EQUITY_TRANSACTION_TYPES = [
   "dividend_paid", // settles a previously declared dividend
   "treasury_purchase", // the company buys back its own shares
   "treasury_reissue", // and sells them on again
+  "safe_conversion", // a SAFE/convertible note's principal becomes Common Stock + APIC
 ];
 
 export const EquityTransaction = sequelize.define(
@@ -29,8 +30,10 @@ export const EquityTransaction = sequelize.define(
     type: { type: DataTypes.ENUM(...EQUITY_TRANSACTION_TYPES), allowNull: false },
     transactionDate: { type: DataTypes.DATEONLY, allowNull: false },
     amountCents: { type: DataTypes.INTEGER, allowNull: false },
-    // The account cash moved through. Null for `dividend_declared`, which
-    // moves no cash -- it only creates the obligation.
+    // The account the money moved through -- or, for `safe_conversion`, the
+    // liability account the principal converted out of. Null only for
+    // `dividend_declared`, which moves no cash and touches no liability; it
+    // only creates the obligation.
     cashAccountId: { type: DataTypes.STRING(32), allowNull: true },
     // Set together when a contribution is a share issuance rather than a
     // plain capital injection: the par portion lands in Common Stock and

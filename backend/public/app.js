@@ -7912,8 +7912,215 @@ async function loadCapTable() {
   // loadEquityAccounts is the equity tab's, reused here because exercising
   // posts a contribution and needs the same list of cash accounts.
   await Promise.all([loadCapClasses(), loadCapHolders(), loadCapFunding(), loadEquityAccounts()]);
-  await Promise.all([loadCapPositions(), loadCapCounts(), loadShareTransactions(), loadEquityPlans(), loadAwards(), loadFullyDiluted(), loadStockComp()]);
+  await Promise.all([
+    loadCapPositions(),
+    loadCapCounts(),
+    loadShareTransactions(),
+    loadEquityPlans(),
+    loadAwards(),
+    loadFullyDiluted(),
+    loadStockComp(),
+    loadConvertibleInstruments(),
+  ]);
 }
+
+// ---- Convertible instruments (SAFEs & notes) ----
+// See convertibleInstruments.js: neither instrument is on the cap table
+// above until it converts -- a SAFE holder isn't a shareholder yet -- so
+// this list lives beside the cap table rather than merged into it.
+
+const CI_TYPE_LABELS = { safe: "SAFE", convertible_note: "Convertible note" };
+const CI_STATUS_LABELS = { outstanding: "Outstanding", converted: "Converted", repaid: "Repaid", voided: "Voided" };
+
+let ciInstruments = [];
+
+function updateCiForm() {
+  const type = document.getElementById("ci-type").value;
+  document.getElementById("ci-safetype-field").style.display = type === "safe" ? "" : "none";
+  document.getElementById("ci-interest-field").style.display = type === "convertible_note" ? "" : "none";
+  document.getElementById("ci-maturity-field").style.display = type === "convertible_note" ? "" : "none";
+}
+document.getElementById("ci-type").addEventListener("change", updateCiForm);
+
+async function loadConvertibleInstruments() {
+  document.getElementById("ci-holder").innerHTML = holderOptions(capHolders.filter((h) => h.active));
+  const assetAccounts = eqAccounts.filter((a) => a.type === "asset");
+  document.getElementById("ci-cash").innerHTML = groupedAccountOptionsHtml(assetAccounts, null);
+  document.getElementById("cr-cash").innerHTML = groupedAccountOptionsHtml(assetAccounts, null);
+  document.getElementById("cc-class").innerHTML = capClasses
+    .filter((c) => c.active)
+    .map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+    .join("");
+  updateCiForm();
+
+  const data = await (await apiFetch("/api/convertible-instruments")).json();
+  ciInstruments = data.items;
+
+  document.getElementById("ci-summary").textContent = data.outstanding_principal
+    ? `${fmtMoney(data.outstanding_principal)} outstanding, not yet on the cap table above.`
+    : "";
+
+  const outstanding = ciInstruments.filter((i) => i.status === "outstanding");
+  const instrumentOption = (i) => `<option value="${i.id}">${i.issue_date} — ${i.shareholder_name}, ${fmtMoney(i.principal)}</option>`;
+  document.getElementById("cc-instrument").innerHTML = outstanding.map(instrumentOption).join("");
+  document.getElementById("cr-instrument").innerHTML = outstanding
+    .filter((i) => i.instrument_type === "convertible_note")
+    .map(instrumentOption)
+    .join("");
+  // Hidden rather than shown empty: an org with nothing outstanding has
+  // nothing to convert or repay, and an empty dropdown reads like
+  // something failed to load.
+  document.getElementById("ci-convert-form").closest(".panel").style.display = outstanding.length ? "" : "none";
+  document.getElementById("ci-repay-form").closest(".panel").style.display =
+    outstanding.some((i) => i.instrument_type === "convertible_note") ? "" : "none";
+
+  const body = document.getElementById("ci-body");
+  if (!ciInstruments.length) {
+    body.innerHTML = `<tr><td colspan="8" class="table-empty-row">No SAFEs or convertible notes on file yet.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = ciInstruments
+    .map(
+      (i) => `
+    <tr>
+      <td>${i.issue_date}</td>
+      <td>${escapeHtml(i.shareholder_name || "—")}</td>
+      <td>${escapeHtml(CI_TYPE_LABELS[i.instrument_type] || i.instrument_type)}</td>
+      <td>${fmtMoney(i.principal)}</td>
+      <td>${i.valuation_cap === null ? "—" : fmtMoney(i.valuation_cap)}</td>
+      <td>${i.discount_rate_percent === null ? "—" : `${i.discount_rate_percent}%`}</td>
+      <td>${escapeHtml(CI_STATUS_LABELS[i.status] || i.status)}</td>
+      <td>${i.status === "outstanding" ? `<button type="button" class="ci-void-btn linklike" data-id="${i.id}">Void</button>` : "—"}</td>
+    </tr>
+  `
+    )
+    .join("");
+
+  body.querySelectorAll(".ci-void-btn").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const confirmed = await confirmDialog(
+        "Void this instrument?",
+        "Its issuance is reversed. The record itself is kept -- an instrument entered by mistake is history worth keeping.",
+        { confirmLabel: "Void", danger: true }
+      );
+      if (!confirmed) return;
+      const res = await apiFetch(`/api/convertible-instruments/${btn.dataset.id}/void`, { method: "POST" });
+      if (!res.ok) {
+        const parsed = await res.json().catch(() => ({}));
+        await alertDialog("Couldn't void that", errorText(parsed.detail, "Something went wrong."));
+        return;
+      }
+      loadConvertibleInstruments();
+    })
+  );
+}
+
+document.getElementById("ci-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("ci-status");
+  statusEl.textContent = "";
+  const type = document.getElementById("ci-type").value;
+
+  const body = {
+    shareholder_id: document.getElementById("ci-holder").value,
+    instrument_type: type,
+    safe_type: type === "safe" ? document.getElementById("ci-safetype").value : null,
+    issue_date: document.getElementById("ci-date").value,
+    principal: Number(document.getElementById("ci-principal").value),
+    cash_account_id: document.getElementById("ci-cash").value,
+    valuation_cap: document.getElementById("ci-cap").value ? Number(document.getElementById("ci-cap").value) : null,
+    discount_rate_percent: document.getElementById("ci-discount").value ? Number(document.getElementById("ci-discount").value) : null,
+    ...(type === "convertible_note"
+      ? {
+          interest_rate_percent: document.getElementById("ci-interest").value ? Number(document.getElementById("ci-interest").value) : null,
+          maturity_date: document.getElementById("ci-maturity").value || null,
+        }
+      : {}),
+  };
+
+  const res = await apiFetch("/api/convertible-instruments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = errorText(parsed.detail, "Something went wrong.");
+    return;
+  }
+  statusEl.textContent = `Recorded a ${CI_TYPE_LABELS[type]} for ${fmtMoney(parsed.principal)}.`;
+  document.getElementById("ci-principal").value = "";
+  document.getElementById("ci-cap").value = "";
+  document.getElementById("ci-discount").value = "";
+  document.getElementById("ci-interest").value = "";
+  document.getElementById("ci-maturity").value = "";
+  loadConvertibleInstruments();
+});
+
+document.getElementById("ci-convert-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("ci-convert-status");
+  statusEl.textContent = "";
+  const id = document.getElementById("cc-instrument").value;
+  if (!id) {
+    statusEl.textContent = "No outstanding instrument to convert.";
+    return;
+  }
+
+  const res = await apiFetch(`/api/convertible-instruments/${id}/convert`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transaction_date: document.getElementById("cc-date").value,
+      share_class_id: document.getElementById("cc-class").value,
+      shares: Number(document.getElementById("cc-shares").value),
+      par_value: Number(document.getElementById("cc-par").value),
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = errorText(parsed.detail, "Something went wrong.");
+    return;
+  }
+  statusEl.textContent = "Converted.";
+  document.getElementById("cc-shares").value = "";
+  document.getElementById("cc-par").value = "";
+  loadConvertibleInstruments();
+  loadCapPositions();
+  loadCapCounts();
+  loadShareTransactions();
+  loadCapFunding();
+});
+
+document.getElementById("ci-repay-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("ci-repay-status");
+  statusEl.textContent = "";
+  const id = document.getElementById("cr-instrument").value;
+  if (!id) {
+    statusEl.textContent = "No outstanding note to repay.";
+    return;
+  }
+
+  const res = await apiFetch(`/api/convertible-instruments/${id}/repay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      transaction_date: document.getElementById("cr-date").value,
+      amount: Number(document.getElementById("cr-amount").value),
+      cash_account_id: document.getElementById("cr-cash").value,
+    }),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    statusEl.textContent = errorText(parsed.detail, "Something went wrong.");
+    return;
+  }
+  statusEl.textContent = "Repaid.";
+  document.getElementById("cr-amount").value = "";
+  loadConvertibleInstruments();
+});
 
 function holderOptions(holders) {
   return holders.map((h) => `<option value="${h.id}">${escapeHtml(h.name)}</option>`).join("");

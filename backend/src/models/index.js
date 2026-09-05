@@ -56,6 +56,7 @@ import { VendorCreditMemoApplication } from "./VendorCreditMemoApplication.js";
 import { PrepaidExpense } from "./PrepaidExpense.js";
 import { PrepaidExpenseScheduleEntry } from "./PrepaidExpenseScheduleEntry.js";
 import { BadDebtWriteOff } from "./BadDebtWriteOff.js";
+import { ConvertibleInstrument } from "./ConvertibleInstrument.js";
 
 Organization.hasMany(User, { foreignKey: "orgId", as: "users" });
 User.belongsTo(Organization, { foreignKey: "orgId", as: "organization" });
@@ -238,6 +239,15 @@ EquityAward.belongsTo(Shareholder, { foreignKey: "shareholderId", as: "sharehold
 EquityAward.hasMany(AwardEvent, { foreignKey: "equityAwardId", as: "events", onDelete: "CASCADE", hooks: true });
 AwardEvent.belongsTo(EquityAward, { foreignKey: "equityAwardId" });
 AwardEvent.belongsTo(ShareTransaction, { foreignKey: "shareTransactionId", as: "shareTransaction" });
+
+// A SAFE or note names its holder, the account its cash landed in, and --
+// once it resolves -- the two records (in two different ledgers) that
+// resolution created. No cascades: an instrument outlives edits to any of
+// these, same reasoning as the equity transactions above.
+ConvertibleInstrument.belongsTo(Shareholder, { foreignKey: "shareholderId", as: "shareholder" });
+ConvertibleInstrument.belongsTo(Account, { foreignKey: "cashAccountId", as: "cashAccount" });
+ConvertibleInstrument.belongsTo(EquityTransaction, { foreignKey: "conversionEquityTransactionId", as: "conversionEquityTransaction" });
+ConvertibleInstrument.belongsTo(ShareTransaction, { foreignKey: "conversionShareTransactionId", as: "conversionShareTransaction" });
 
 // A connection (one Plaid Item/login) owns the real accounts underneath
 // it. Removing a connection also removes the accounts Plaid told us about
@@ -463,4 +473,5 @@ export {
   PrepaidExpense,
   PrepaidExpenseScheduleEntry,
   BadDebtWriteOff,
+  ConvertibleInstrument,
 };
