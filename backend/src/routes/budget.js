@@ -5,7 +5,7 @@ import { z } from "zod";
 import { requireAuth } from "../auth.js";
 import { requireActivePlan } from "../plan.js";
 import { LedgerError, dollarsToCents } from "../ledger.js";
-import { DEFAULT_FISCAL_YEAR_END_MONTH, fiscalYearFor } from "../fiscalYear.js";
+import { currentFiscalYearEndYear } from "../fiscalYear.js";
 import {
   computeBudgetVsActual,
   ensureBudget,
@@ -13,18 +13,11 @@ import {
   setAccountBudget,
   splitAnnualBudgetCents,
 } from "../budget.js";
-import { AuditLog, Budget, Organization } from "../models/index.js";
+import { AuditLog, Budget } from "../models/index.js";
 
 const router = Router();
 
 const PERIOD_MONTH = /^\d{4}-\d{2}$/;
-
-async function currentFiscalYearEndYear(orgId) {
-  const org = await Organization.findByPk(orgId, { attributes: ["fiscalYearEndMonth"], raw: true });
-  const endMonth = org?.fiscalYearEndMonth ?? DEFAULT_FISCAL_YEAR_END_MONTH;
-  const today = new Date().toISOString().slice(0, 10);
-  return Number(fiscalYearFor(today, endMonth).end.slice(0, 4));
-}
 
 // The fiscal year a budget belongs to is looked up server-side rather
 // than trusted from the request, so a client can't split an annual amount

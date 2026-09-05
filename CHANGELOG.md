@@ -4,6 +4,27 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.86
+
+Added a board report: cash on hand, burn rate, and runway alongside an
+income statement, balance sheet, budget vs actual, and cap table, all
+pulled from the same statements this app already computes and tests
+independently rather than a second copy of the numbers to keep in sync.
+Burn and runway are new arithmetic (`boardReport.js`) -- averaged over the
+trailing three months, since one month alone swings on invoice timing --
+and null-safe: a board that isn't spending faster than it's earning shows
+"Not burning," not a divide-by-zero or a misleading 0-month runway.
+
+New endpoint `GET /api/reports/board`, and a Board Report tab with a
+"Print / Save PDF" button that hides everything but the report itself
+(`@media print`, visibility-based rather than hiding every other tab
+individually, so it can't miss one).
+
+Pulled `currentFiscalYearEndYear` out of routes/budget.js into
+fiscalYear.js once boardReport.js needed the identical five lines a
+second time, and added `computeCashPosition` to financialStatements.js
+for the same reason no other report needed a cash-only figure before.
+
 ## v1.85
 
 Added a stored trial-balance snapshot at close, from the roadmap: closing a

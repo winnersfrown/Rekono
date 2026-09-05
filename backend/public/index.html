@@ -421,6 +421,11 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>
             Budget vs Actual
           </button>
+            <div class="topnav-section">Reports</div>
+          <button class="tab-btn" data-tab="boardreport">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+            Board Report
+          </button>
             <div class="topnav-section">Equity</div>
           <button class="tab-btn" data-tab="equity">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-8H4v8"/><path d="M1 21h22"/><path d="M12 3L2 9h20z"/><path d="M9 13v8M15 13v8"/></svg>
@@ -2338,6 +2343,57 @@
             <tbody id="budget-body"></tbody>
             <tfoot><tr id="budget-totals"></tr></tfoot>
           </table>
+        </section>
+
+        <section id="tab-boardreport" class="tab-panel">
+          <header class="board-report-head">
+            <div>
+              <h1>Board Report</h1>
+              <p class="hint">A single package built from the same ledger every other statement here reads from -- nothing here is a separate number to keep in sync. Burn and runway are averaged over the trailing three months, since one month alone swings on timing.</p>
+            </div>
+            <div class="board-report-actions board-report-noprint">
+              <label>As of<input type="date" id="boardreport-as-of" /></label>
+              <button type="button" id="boardreport-print-btn">Print / Save PDF</button>
+            </div>
+          </header>
+
+          <p id="boardreport-status" class="hint"></p>
+
+          <div id="boardreport-kpis" class="dash-kpis" aria-busy="true">
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+            <div class="kpi-card is-loading"></div>
+          </div>
+
+          <div class="panel-columns">
+            <div class="panel">
+              <h3>Income Statement<span class="board-report-period" id="boardreport-pnl-period"></span></h3>
+              <table class="board-summary-table">
+                <tbody id="boardreport-pnl-body"></tbody>
+              </table>
+            </div>
+
+            <div class="panel">
+              <h3>Balance Sheet<span class="board-report-period" id="boardreport-bs-period"></span></h3>
+              <table class="board-summary-table">
+                <tbody id="boardreport-bs-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel" id="boardreport-budget-panel">
+            <h3>Budget vs Actual<span class="board-report-period" id="boardreport-budget-period"></span></h3>
+            <div id="boardreport-budget-body"></div>
+          </div>
+
+          <div class="panel">
+            <h3>Cap Table<span class="board-report-period" id="boardreport-captable-period"></span></h3>
+            <table class="board-captable-table">
+              <thead><tr><th>Holder</th><th>Shares</th><th>Fully diluted %</th></tr></thead>
+              <tbody id="boardreport-captable-body"></tbody>
+            </table>
+          </div>
         </section>
 
         <section id="tab-team" class="tab-panel">

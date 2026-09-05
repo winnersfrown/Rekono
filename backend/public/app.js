@@ -387,6 +387,7 @@ function switchTab(name) {
   if (name === "balancesheet") loadBalanceSheet();
   if (name === "cashflow") loadCashFlow();
   if (name === "budget") loadBudget();
+  if (name === "boardreport") loadBoardReport();
   if (name === "equity") { loadEquityAccounts(); loadEquityStatement(); loadEquityTransactions(); }
   if (name === "captable") { loadCapTable(); }
   if (name === "customers") loadCustomers();
@@ -6150,6 +6151,105 @@ document.getElementById("budget-period-form").addEventListener("submit", (e) => 
   e.preventDefault();
   loadBudget();
 });
+
+async function loadBoardReport() {
+  const asOfEl = document.getElementById("boardreport-as-of");
+  if (!asOfEl.value) asOfEl.value = new Date().toISOString().slice(0, 10);
+
+  document.getElementById("boardreport-status").textContent = "Loading…";
+  const res = await apiFetch(`/api/reports/board?as_of=${asOfEl.value}`);
+  if (!res.ok) {
+    document.getElementById("boardreport-status").textContent = "Couldn't load the board report.";
+    return;
+  }
+  renderBoardReport(await res.json());
+}
+
+function renderBoardReport(data) {
+  document.getElementById("boardreport-status").textContent = "";
+
+  const kpis = document.getElementById("boardreport-kpis");
+  kpis.removeAttribute("aria-busy");
+  kpis.innerHTML = [
+    kpiCard({ label: "Cash on hand", value: fmtCompactMoney(data.cash.on_hand), sub: `As of ${data.as_of}` }),
+    kpiCard({
+      label: "Monthly burn",
+      value: data.cash.monthly_burn > 0 ? fmtCompactMoney(data.cash.monthly_burn) : "—",
+      sub: `Avg. over ${data.burn_window.months} months`,
+      subTone: data.cash.monthly_burn > 0 ? "bad" : "",
+    }),
+    kpiCard({
+      label: "Runway",
+      value: data.cash.runway_months === null ? "Not burning" : `${data.cash.runway_months} mo`,
+      sub: data.cash.runway_months === null ? "Cash flow is flat or positive" : "At the current burn rate",
+      subTone: data.cash.runway_months !== null && data.cash.runway_months < 6 ? "bad" : "",
+    }),
+    kpiCard({
+      label: "Net income",
+      value: fmtCompactMoney(data.profit_and_loss.net_income),
+      sub: `${data.burn_window.from} to ${data.burn_window.to}`,
+    }),
+  ].join("");
+
+  const periodLabel = (from, to) => ` <span class="hint">${from} to ${to}</span>`;
+  document.getElementById("boardreport-pnl-period").innerHTML = periodLabel(data.burn_window.from, data.burn_window.to);
+  document.getElementById("boardreport-bs-period").innerHTML = ` <span class="hint">As of ${data.as_of}</span>`;
+  document.getElementById("boardreport-captable-period").innerHTML = ` <span class="hint">As of ${data.as_of}</span>`;
+
+  const pnl = data.profit_and_loss;
+  const pnlRow = (label, value, emphasize = false) =>
+    `<tr${emphasize ? ' class="report-total-row"' : ""}><td>${label}</td><td>${fmtMoney(value)}</td></tr>`;
+  document.getElementById("boardreport-pnl-body").innerHTML =
+    pnlRow("Revenue", pnl.revenue.total) +
+    (pnl.cost_of_revenue.total !== 0 ? pnlRow("Cost of revenue", -pnl.cost_of_revenue.total) : "") +
+    (pnl.cost_of_revenue.total !== 0 ? pnlRow("Gross profit", pnl.gross_profit, true) : "") +
+    pnlRow("Operating expenses", -pnl.expenses.total) +
+    pnlRow("Operating income", pnl.operating_income) +
+    (pnl.income_tax_expense !== 0 ? pnlRow("Income tax expense", -pnl.income_tax_expense) : "") +
+    pnlRow("Net income", pnl.net_income, true);
+
+  const bs = data.balance_sheet;
+  document.getElementById("boardreport-bs-body").innerHTML =
+    pnlRow("Total assets", bs.assets.total) +
+    pnlRow("Total liabilities", bs.liabilities.total) +
+    pnlRow("Total equity", bs.equity.total) +
+    `<tr><td colspan="2" class="hint">${bs.balanced ? "Balanced -- assets equal liabilities plus equity." : "Not balanced -- please contact support."}</td></tr>`;
+
+  const bva = data.budget_vs_actual;
+  document.getElementById("boardreport-budget-period").innerHTML = periodLabel(bva.fiscal_year_start, bva.through_month || bva.fiscal_year_end);
+  const budgetBody = document.getElementById("boardreport-budget-body");
+  if (!bva.has_budget) {
+    budgetBody.innerHTML = `<p class="hint">No budget set for ${bva.fiscal_year_label} yet.</p>`;
+  } else {
+    budgetBody.innerHTML = `
+      <table class="board-summary-table">
+        <tbody>
+          ${pnlRow("Budgeted net income", bva.totals.budget_net_income)}
+          ${pnlRow("Actual net income", bva.totals.actual_net_income, true)}
+        </tbody>
+      </table>`;
+  }
+
+  const ct = data.cap_table;
+  const holderRows = ct.holders
+    .map(
+      (h) => `
+    <tr>
+      <td>${escapeHtml(h.shareholder_name)}</td>
+      <td>${h.fully_diluted_shares.toLocaleString()}</td>
+      <td>${h.percent.toFixed(2)}%</td>
+    </tr>`
+    )
+    .join("");
+  document.getElementById("boardreport-captable-body").innerHTML =
+    (holderRows || `<tr><td colspan="3" class="table-empty-row">No shares issued yet.</td></tr>`) +
+    (ct.unallocated_pool_shares
+      ? `<tr><td><em>Unallocated option pool</em></td><td>${ct.unallocated_pool_shares.toLocaleString()}</td><td>${ct.unallocated_pool_percent.toFixed(2)}%</td></tr>`
+      : "");
+}
+
+document.getElementById("boardreport-as-of").addEventListener("change", loadBoardReport);
+document.getElementById("boardreport-print-btn").addEventListener("click", () => window.print());
 
 document.getElementById("budget-create-btn").addEventListener("click", async () => {
   const yearEl = document.getElementById("budget-fiscal-year");
