@@ -30,6 +30,9 @@ export const JOURNAL_ENTRY_SOURCES = [
   "equity_dividend_paid", // cash out: a previously declared dividend settled
   "equity_treasury_purchase", // cash out: the company bought back its own shares
   "equity_treasury_reissue", // cash in: previously repurchased shares sold back out
+  "equity_safe_conversion", // a SAFE/note's principal converted into Common Stock + APIC -- no cash moves, so this stays out of the cash journals
+  "convertible_instrument_issued", // cash in: a SAFE or convertible note was issued
+  "convertible_instrument_repaid", // cash out: a convertible note was repaid instead of converting
   "stock_compensation", // ASC 718: a month of an equity award's cost was earned
   "income_tax", // the tax provision accrued -- no cash moves, so this stays out of the cash journals
   "income_tax_payment", // cash out: the accrued tax was actually paid

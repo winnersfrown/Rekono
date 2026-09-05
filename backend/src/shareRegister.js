@@ -45,14 +45,17 @@ function outstanding(counts) {
   return counts.issued - counts.treasury;
 }
 
-// The equity transaction type that pays for each kind of share movement.
-// A transfer is absent on purpose: the money changes hands between two
-// shareholders, not through the company, so there is nothing for the
-// company's ledger to record and nothing to link to.
+// The equity transaction type(s) that can pay for each kind of share
+// movement. A transfer is absent on purpose: the money changes hands
+// between two shareholders, not through the company, so there is nothing
+// for the company's ledger to record and nothing to link to. "issue" has
+// two: a cash contribution and a SAFE/note conversion both put new shares
+// in a holder's hands for the first time, and the register doesn't care
+// which paid for it -- only equity.js's ledger postings tell them apart.
 const FUNDING_TYPE = {
-  issue: "contribution",
-  repurchase: "treasury_purchase",
-  reissue: "treasury_reissue",
+  issue: ["contribution", "safe_conversion"],
+  repurchase: ["treasury_purchase"],
+  reissue: ["treasury_reissue"],
 };
 
 // Transactions in the order they actually happened. Date is the real
@@ -154,8 +157,9 @@ async function validateFundingLink(orgId, { type, shares, equityTransactionId })
 
   const funding = await EquityTransaction.findOne({ where: { id: equityTransactionId, orgId } });
   if (!funding) throw new LedgerError("Equity transaction not found.", 404);
-  if (funding.type !== expected) {
-    throw new LedgerError(`This share movement is paid for by a ${expected.replace(/_/g, " ")}, not a ${funding.type.replace(/_/g, " ")}.`);
+  if (!expected.includes(funding.type)) {
+    const expectedLabel = expected.map((t) => t.replace(/_/g, " ")).join(" or a ");
+    throw new LedgerError(`This share movement is paid for by a ${expectedLabel}, not a ${funding.type.replace(/_/g, " ")}.`);
   }
   if (!funding.journalEntryId) {
     throw new LedgerError("That equity transaction was voided, so it can't fund a share movement.");
@@ -409,7 +413,7 @@ export async function reconcileShareRegister(orgId, { asOf = null } = {}) {
   // movement claims. These are the usual cause of a discrepancy, and
   // naming them turns "you are off by $4,000" into a list to go fix.
   const linkedIds = new Set(transactions.map((t) => t.equityTransactionId).filter(Boolean));
-  const fundingWhere = { orgId, type: { [Op.in]: Object.values(FUNDING_TYPE) }, shares: { [Op.ne]: null } };
+  const fundingWhere = { orgId, type: { [Op.in]: Object.values(FUNDING_TYPE).flat() }, shares: { [Op.ne]: null } };
   if (asOf) fundingWhere.transactionDate = { [Op.lte]: asOf };
   const funding = await EquityTransaction.findAll({ where: fundingWhere, order: [["transactionDate", "ASC"]] });
   const unlinked = funding

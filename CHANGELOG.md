@@ -4,6 +4,40 @@ Versions are numbered `1.0`, `1.1`, `1.2`, … in order. Each release is one
 merged change, and its commit subject carries the number (`v1.1: ...`), so
 `git log --oneline` reads as the release history without needing tags.
 
+## v1.88
+
+Added SAFE and convertible note tracking -- the instrument almost every
+pre-seed company actually raises on before there's a priced round to put
+shares against, and something QuickBooks has no concept of at all. Neither
+instrument is equity the day it's issued (a SAFE holder isn't a shareholder
+yet, and a note holder is a creditor, not an owner), so the cash books as a
+new liability, Convertible Notes & SAFEs Payable, and stays there until one
+of two things happens: it converts, or it's repaid in cash instead.
+
+Conversion reuses the exact two postings a priced-round share issuance
+already makes -- `equity.js` gets a new `safe_conversion` type that splits
+the principal into Common Stock and APIC (pulled the par/premium math out
+into a shared `issueSharesLines` helper once a second caller needed it),
+and the resulting shares land on the share register through the same
+`recordShareTransaction` path a contribution funds. `shareRegister.js`'s
+funding-type check now accepts either a contribution or a SAFE conversion
+as valid payment for a share issuance. If the share register refuses the
+issuance (over-authorized, say), the equity posting that already went
+through gets voided rather than left half-done with a liability that's
+gone and no shares to show for it.
+
+What this deliberately doesn't do: turn a valuation cap and a discount into
+a conversion price. That needs the round's own price and a definition of
+"fully diluted" that two SAFEs from the same financing can define
+differently -- the same reason `incomeTax.js` and `stockCompensation.js`
+refuse to derive a tax rate or a fair value. The cap and discount are kept
+for reference; the share count and price at conversion come from the
+round's paperwork.
+
+New Cap Table section: issue, convert, repay, or void an instrument, with
+outstanding principal called out separately since none of it is on the cap
+table above until it converts.
+
 ## v1.87
 
 Surfaced the audit trail that already existed for every document type

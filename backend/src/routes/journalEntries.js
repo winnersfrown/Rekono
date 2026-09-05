@@ -37,7 +37,7 @@ const MAX_PAGE_SIZE = 500;
 const SPECIAL_JOURNAL_SOURCES = {
   sales: ["customer_invoice"],
   purchases: ["invoice_approval"],
-  cash_receipts: ["customer_payment", "equity_contribution", "equity_treasury_reissue"],
+  cash_receipts: ["customer_payment", "equity_contribution", "equity_treasury_reissue", "convertible_instrument_issued"],
   cash_payments: [
     "bill_payment",
     "payroll_run",
@@ -46,6 +46,7 @@ const SPECIAL_JOURNAL_SOURCES = {
     "equity_distribution",
     "equity_dividend_paid",
     "equity_treasury_purchase",
+    "convertible_instrument_repaid",
   ],
 };
 const GENERAL_JOURNAL_SOURCES = Object.values(SPECIAL_JOURNAL_SOURCES).flat();

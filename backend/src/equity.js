@@ -75,6 +75,55 @@ async function requireCashAccount(orgId, cashAccountId, label) {
   return account;
 }
 
+async function requireLiabilityAccount(orgId, accountId, label) {
+  const account = await Account.findOne({ where: { id: accountId, orgId } });
+  // A conversion is definitionally the opposite of cash moving: an asset
+  // account here would mean "money became stock," which isn't what a SAFE
+  // or note conversion is -- an existing liability becomes stock instead.
+  if (!account || account.type !== "liability") {
+    throw new LedgerError(`${label} must be a liability account you own.`);
+  }
+  return account;
+}
+
+// The Common Stock / Additional Paid-In Capital split shared by a
+// share-issuing contribution and a SAFE/note conversion -- the two places
+// this app turns a dollar amount plus a share count into equity. Pulled out
+// once a second caller needed the identical rounding and no-par handling,
+// rather than kept as a copy the two could quietly drift apart from.
+async function issueSharesLines(orgId, sourceAccountId, { amountCents, shares, parValueMicros }) {
+  // Multiply first, round once. 1,000,000 shares at $0.001 par is $1,000 of
+  // par -- but converting $0.001 to cents first gives zero and loses the
+  // whole thing, which is why par is carried in millionths (10,000 micros
+  // to the cent).
+  const parTotal = Math.round((shares * parValueMicros) / 10000);
+  if (parTotal > amountCents) {
+    // Issuing below par is prohibited in most jurisdictions and would
+    // produce a negative APIC, which is not a thing.
+    throw new LedgerError("Shares can't be issued below par value.");
+  }
+  const [commonStock, apic] = await Promise.all([
+    ensureAccount(orgId, EQUITY_SUBTYPES.COMMON_STOCK),
+    ensureAccount(orgId, EQUITY_SUBTYPES.APIC),
+  ]);
+  // True no-par stock (or par so small it rounds under a cent across the
+  // whole issuance) puts everything in Common Stock. Emitting a zero-value
+  // par line instead would be rejected by the ledger, which requires every
+  // line to be a debit or a credit.
+  if (parTotal === 0) {
+    return [
+      { accountId: sourceAccountId, debitCents: amountCents },
+      { accountId: commonStock.id, creditCents: amountCents },
+    ];
+  }
+  const lines = [
+    { accountId: sourceAccountId, debitCents: amountCents },
+    { accountId: commonStock.id, creditCents: parTotal },
+  ];
+  if (amountCents > parTotal) lines.push({ accountId: apic.id, creditCents: amountCents - parTotal });
+  return lines;
+}
+
 // The current balance of one account, in its normal direction. Used by the
 // treasury reissue waterfall, which has to know how much Additional
 // Paid-In Capital is actually available before charging a shortfall
@@ -105,36 +154,7 @@ async function buildLines(orgId, { type, amountCents, cashAccountId, shares, par
       // a par value were given, rather than from an org-level "are you a
       // corporation" flag -- the same company can do both.
       if (shares && parValueMicros !== null && parValueMicros !== undefined) {
-        // Multiply first, round once. 1,000,000 shares at $0.001 par is
-        // $1,000 of par -- but converting $0.001 to cents first gives zero
-        // and loses the whole thing, which is why par is carried in
-        // millionths (10,000 micros to the cent).
-        const parTotal = Math.round((shares * parValueMicros) / 10000);
-        if (parTotal > amountCents) {
-          // Issuing below par is prohibited in most jurisdictions and
-          // would produce a negative APIC, which is not a thing.
-          throw new LedgerError("Shares can't be issued below par value.");
-        }
-        const [commonStock, apic] = await Promise.all([
-          ensureAccount(orgId, EQUITY_SUBTYPES.COMMON_STOCK),
-          ensureAccount(orgId, EQUITY_SUBTYPES.APIC),
-        ]);
-        // True no-par stock (or par so small it rounds under a cent across
-        // the whole issuance) puts everything in Common Stock. Emitting a
-        // zero-value par line instead would be rejected by the ledger,
-        // which requires every line to be a debit or a credit.
-        if (parTotal === 0) {
-          return [
-            { accountId: cash.id, debitCents: amountCents },
-            { accountId: commonStock.id, creditCents: amountCents },
-          ];
-        }
-        const lines = [
-          { accountId: cash.id, debitCents: amountCents },
-          { accountId: commonStock.id, creditCents: parTotal },
-        ];
-        if (amountCents > parTotal) lines.push({ accountId: apic.id, creditCents: amountCents - parTotal });
-        return lines;
+        return issueSharesLines(orgId, cash.id, { amountCents, shares, parValueMicros });
       }
 
       const equity = await ownersEquityAccount(orgId);
@@ -142,6 +162,19 @@ async function buildLines(orgId, { type, amountCents, cashAccountId, shares, par
         { accountId: cash.id, debitCents: amountCents },
         { accountId: equity.id, creditCents: amountCents },
       ];
+    }
+
+    case "safe_conversion": {
+      // The liability the principal is converting out of -- a SAFE or
+      // note's Convertible Notes & SAFEs Payable balance, named the same
+      // way a contribution names the cash account the money came in
+      // through. Always a share issuance: unlike a plain capital
+      // contribution, a SAFE/note conversion always produces shares.
+      const liability = await requireLiabilityAccount(orgId, cashAccountId, "The instrument this converts");
+      if (!shares || parValueMicros === null || parValueMicros === undefined) {
+        throw new LedgerError("A SAFE/note conversion needs the share count and par value it converted at.");
+      }
+      return issueSharesLines(orgId, liability.id, { amountCents, shares, parValueMicros });
     }
 
     case "distribution": {
@@ -236,14 +269,16 @@ const MEMO_BY_TYPE = {
   dividend_paid: "Dividend paid",
   treasury_purchase: "Treasury stock purchased",
   treasury_reissue: "Treasury stock reissued",
+  safe_conversion: "SAFE/note converted to equity",
 };
 
-// Which journal an equity event belongs in. "dividend_declared" just
-// recognizes a liability -- no cash moves, so it's the one type that stays
-// on the general journal's default "equity_transaction" source. Every other
-// type either brings cash in or pays it out, so each gets its own source
-// value to route into the cash receipts/cash payments journals
-// (routes/journalEntries.js's SPECIAL_JOURNAL_SOURCES) instead.
+// Which journal an equity event belongs in. "dividend_declared" and
+// "safe_conversion" just recognize a liability, or turn one into equity --
+// no cash moves either way, so both stay on the general journal's default
+// "equity_transaction" source. Every other type either brings cash in or
+// pays it out, so each gets its own source value to route into the cash
+// receipts/cash payments journals (routes/journalEntries.js's
+// SPECIAL_JOURNAL_SOURCES) instead.
 const JOURNAL_SOURCE_BY_TYPE = {
   contribution: "equity_contribution",
   distribution: "equity_distribution",
@@ -251,6 +286,7 @@ const JOURNAL_SOURCE_BY_TYPE = {
   dividend_paid: "equity_dividend_paid",
   treasury_purchase: "equity_treasury_purchase",
   treasury_reissue: "equity_treasury_reissue",
+  safe_conversion: "equity_safe_conversion",
 };
 
 // Records the event and posts it, unwinding the row if the ledger refuses.

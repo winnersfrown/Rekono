@@ -2150,6 +2150,80 @@
             <tbody id="fd-body"></tbody>
           </table>
 
+          <h3 class="cap-section">SAFEs &amp; convertible notes</h3>
+          <p class="hint">Cash an investor put in before there was a priced round to price it against. Neither is on the cap table above -- a SAFE holder isn't a shareholder yet -- so this is where that money lives until it converts or is repaid.</p>
+          <p class="hint" id="ci-summary"></p>
+          <div class="panel">
+            <h3>Record an issuance</h3>
+            <form id="ci-form" class="line-item-form">
+              <div class="line-item-fields">
+                <label>Investor<select id="ci-holder"></select></label>
+                <label>Type<select id="ci-type">
+                  <option value="safe">SAFE</option>
+                  <option value="convertible_note">Convertible note</option>
+                </select></label>
+                <label id="ci-safetype-field">SAFE type<select id="ci-safetype">
+                  <option value="post_money">Post-money</option>
+                  <option value="pre_money">Pre-money</option>
+                </select></label>
+                <label>Issue date<input type="date" id="ci-date" required /></label>
+                <label>Principal<input type="number" id="ci-principal" step="0.01" min="0.01" required /></label>
+                <label>Cash account<select id="ci-cash"></select></label>
+                <label>Valuation cap<input type="number" id="ci-cap" step="0.01" min="0" placeholder="Optional" /></label>
+                <label>Discount %<input type="number" id="ci-discount" step="0.1" min="0" max="100" placeholder="Optional" /></label>
+                <label id="ci-interest-field">Interest %<input type="number" id="ci-interest" step="0.1" min="0" max="100" placeholder="Optional" /></label>
+                <label id="ci-maturity-field">Maturity date<input type="date" id="ci-maturity" /></label>
+              </div>
+              <div class="line-item-footer">
+                <p class="hint" id="ci-hint">Terms are kept for reference. Converting asks for the share count and price the round's own paperwork settled on -- Rekono won't derive one from the cap and discount itself.</p>
+                <button type="submit" class="line-item-submit">Record</button>
+              </div>
+              <div id="ci-status" class="hint"></div>
+            </form>
+          </div>
+
+          <table>
+            <thead><tr><th>Issued</th><th>Investor</th><th>Type</th><th>Principal</th><th>Cap</th><th>Discount</th><th>Status</th><th></th></tr></thead>
+            <tbody id="ci-body"></tbody>
+          </table>
+
+          <div class="panel-grid">
+            <div class="panel">
+              <h3>Convert an instrument</h3>
+              <form id="ci-convert-form" class="line-item-form">
+                <div class="line-item-fields">
+                  <label>Instrument<select id="cc-instrument"></select></label>
+                  <label>Date<input type="date" id="cc-date" required /></label>
+                  <label>Class<select id="cc-class"></select></label>
+                  <label>Shares<input type="number" id="cc-shares" min="1" step="1" required /></label>
+                  <label>Par value<input type="number" id="cc-par" min="0" step="0.0001" required /></label>
+                </div>
+                <div class="line-item-footer">
+                  <p class="hint">Shares and par come from the round's own paperwork -- see the hint above.</p>
+                  <button type="submit" class="line-item-submit">Convert</button>
+                </div>
+                <div id="ci-convert-status" class="hint"></div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <h3>Repay an instrument</h3>
+              <form id="ci-repay-form" class="line-item-form">
+                <div class="line-item-fields">
+                  <label>Instrument<select id="cr-instrument"></select></label>
+                  <label>Date<input type="date" id="cr-date" required /></label>
+                  <label>Amount<input type="number" id="cr-amount" min="0.01" step="0.01" required /></label>
+                  <label>Cash account<select id="cr-cash"></select></label>
+                </div>
+                <div class="line-item-footer">
+                  <p class="hint">A note repaid in cash instead of converting.</p>
+                  <button type="submit" class="line-item-submit">Repay</button>
+                </div>
+                <div id="ci-repay-status" class="hint"></div>
+              </form>
+            </div>
+          </div>
+
           <h3 class="cap-section">Option pool</h3>
           <table>
             <thead><tr><th>Plan</th><th>Class</th><th>Reserved</th><th>Granted</th><th>Exercised</th><th>Outstanding</th><th>Available</th></tr></thead>
