@@ -38,6 +38,7 @@ export const JOURNAL_ENTRY_SOURCES = [
   "income_tax_payment", // cash out: the accrued tax was actually paid
   "sales_tax_remittance", // cash out: sales tax collected on invoices was paid to the state
   "payroll_run", // gross wages, withholding, and the employer's own payroll tax cost
+  "opening_balance_import", // a trial balance imported from another system on switching to Rekono
   "void",
 ];
 

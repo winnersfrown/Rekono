@@ -2653,6 +2653,31 @@
           </div>
 
           <div class="panel">
+            <h3>Import opening balances</h3>
+            <p class="hint">Switching from Rillet, QuickBooks, Xero, or anything else? Export its trial balance as a CSV and bring your chart of accounts and opening balances over in one step, instead of re-typing them by hand.</p>
+            <form id="obi-form">
+              <label>Trial balance CSV<input type="file" id="obi-file" accept=".csv,text/csv" required /></label>
+              <label>As of<input type="date" id="obi-date" required /></label>
+              <div class="line-item-footer">
+                <p class="hint" id="obi-hint">Needs a header row with an Account/Name column and Debit/Credit columns (a Type column too, for any account not already on your chart).</p>
+                <button type="button" id="obi-preview-btn">Preview</button>
+              </div>
+            </form>
+            <div id="obi-preview" style="display: none;">
+              <p class="hint" id="obi-preview-summary"></p>
+              <div id="obi-preview-unresolved"></div>
+              <table class="board-summary-table">
+                <tbody id="obi-preview-body"></tbody>
+              </table>
+              <div class="line-item-footer">
+                <p class="hint"></p>
+                <button type="button" id="obi-import-btn">Import</button>
+              </div>
+            </div>
+            <div id="obi-status" class="hint"></div>
+          </div>
+
+          <div class="panel">
             <h3>Accounting</h3>
             <p class="hint">Which month your fiscal year ends in. Drives how the balance sheet splits prior-year retained earnings from current-year earnings -- changing it re-slices those two lines but posts nothing and rewrites nothing.</p>
             <form id="settings-fiscal-form">
